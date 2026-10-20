@@ -24,7 +24,7 @@ sha2 = "0.11.1"
 # Plain HTTP only in M1: every default endpoint is loopback. TLS is added behind a
 # feature when external providers arrive (M7/M8), so local-only builds cannot do HTTPS.
 ureq = { version = "3.4.2", default-features = false, features = ["json"] }
-sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+sysinfo = { version = "0.39.6", default-features = false, features = ["system", "disk"] }
 dunce = "1.0.5"
 humantime = "2.4.0"
 tempfile = "3.27.0"
