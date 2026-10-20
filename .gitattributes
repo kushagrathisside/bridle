@@ -1,0 +1,10 @@
+# Normalise line endings in the repository; Windows-only scripts keep CRLF.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binary guards (weights must never be committed; see .gitignore)
+*.gguf binary
+*.png binary
+*.jpg binary

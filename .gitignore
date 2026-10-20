@@ -1,0 +1,40 @@
+# --- Rust build output ---
+/target/
+**/*.rs.bk
+
+# --- TS shim tooling (type-check only) ---
+node_modules/
+*.tsbuildinfo
+
+# --- Harness runtime state (R-16.2) ---
+.local-agent/
+.worktrees/
+
+# --- Model weights & runtimes: never committed (R-42.1, D-2) ---
+models/
+runtimes/
+*.gguf
+*.safetensors
+*.onnx
+*.pt
+*.pth
+*.ckpt
+
+# --- Secrets (R-27.2, R-35.2) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Eval artefacts (raw results are regenerated; curated reports live in evals/reports/) ---
+evals/results/
+
+# --- Logs / OS / editors ---
+*.log
+logs/
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
