@@ -224,23 +224,15 @@ pub struct Sampling {
     pub repeat_penalty: Option<f32>,
 }
 
-/// Reasoning ("thinking") controls. Both Qwen3.5 and Bonsai think by default (audit K-8).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Reasoning ("thinking") controls. Both Qwen3.5 and Bonsai think by default (audit K-8); the
+/// harness default is off, and profiles opt in per model.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Reasoning {
     /// Sent as `chat_template_kwargs.enable_thinking`.
     pub enabled: bool,
     /// Token budget for thinking (`--reasoning-budget`); `None` = unlimited / server default.
     pub budget_tokens: Option<u32>,
-}
-
-impl Default for Reasoning {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            budget_tokens: None,
-        }
-    }
 }
 
 /// How `agent models serve <slot>` launches a local server for this slot.
