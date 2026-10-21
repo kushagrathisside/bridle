@@ -299,27 +299,43 @@ impl ToolPolicy {
 
 /// Null devices may be written to by shell redirection; they are not paths inside the workspace.
 fn is_null_device(word: &str) -> bool {
-    matches!(word, "/dev/null" | "NUL" | "nul" | "$null" | "$Null" | "$NULL")
+    matches!(
+        word,
+        "/dev/null" | "NUL" | "nul" | "$null" | "$Null" | "$NULL"
+    )
 }
 
 /// Heuristic: an argument that could name a file system location.
 fn looks_like_path(word: &str) -> bool {
     !word.starts_with('-')
-        && (word.contains('/') || word.contains('\\') || word.starts_with('.') || word.contains(':'))
+        && (word.contains('/')
+            || word.contains('\\')
+            || word.starts_with('.')
+            || word.contains(':'))
 }
 
 /// Representative secret names. A glob argument is denied when it could match any of them,
 /// because the shell expands `.e*` to `.env` before the program runs.
 const SECRET_SAMPLES: &[&str] = &[
-    ".env", ".env.local", ".netrc", ".npmrc", "id_rsa", "id_ed25519", "server.pem", "server.key",
-    "credentials", "secrets.json",
+    ".env",
+    ".env.local",
+    ".netrc",
+    ".npmrc",
+    "id_rsa",
+    "id_ed25519",
+    "server.pem",
+    "server.key",
+    "credentials",
+    "secrets.json",
 ];
 
 fn glob_may_match_secret(word: &str) -> bool {
     if !word.contains(['*', '?']) {
         return false;
     }
-    SECRET_SAMPLES.iter().any(|sample| wildcard_matches(word, sample))
+    SECRET_SAMPLES
+        .iter()
+        .any(|sample| wildcard_matches(word, sample))
 }
 
 /// Shell-style `*` and `?` matching over whole strings.
@@ -372,7 +388,12 @@ mod tests {
     fn shell_reads_of_secret_files_are_denied() {
         let dir = tempfile::tempdir().expect("tempdir");
         let p = policy(dir.path());
-        for cmd in ["cat .env", "grep TOKEN .env.local", "type ./deploy/id_ed25519", "cat ~/.netrc"] {
+        for cmd in [
+            "cat .env",
+            "grep TOKEN .env.local",
+            "type ./deploy/id_ed25519",
+            "cat ~/.netrc",
+        ] {
             let d = p.evaluate(&shell(cmd));
             assert_eq!(d.verdict, Verdict::Deny, "{cmd}");
             assert_eq!(d.rule, "secret_file", "{cmd}");

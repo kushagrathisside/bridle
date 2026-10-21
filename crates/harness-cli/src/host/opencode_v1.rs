@@ -746,7 +746,11 @@ mod tests {
         let config = Config::default();
         let policy = ToolPolicy::with_rules(dir.path(), &config.security, false).expect("policy");
         let redactor = Redactor::new();
-        let ctx = HookContext { config: &config, policy: &policy, redactor: &redactor };
+        let ctx = HookContext {
+            config: &config,
+            policy: &policy,
+            redactor: &redactor,
+        };
         // An unrecognised program is EXECUTE_RISKY, whose default verdict is Ask.
         let input = json!({
             "tool": "bash",
