@@ -4,6 +4,8 @@ A running record. Newest entries first. Every "verified" line names the evidence
 
 ## 2026-10-21 (latest): fixtures, read fix, gates
 
+- Windows gate on the head with the fixture suite failed on one row: `curl https://example.com` was read as a drive or alternate-data-stream path, so the path guard blocked it with the wrong rule (WSL passed). Fixed in `f0c846e`: URL words are not paths; the network rule decides. Lesson: run the Windows gate after every fixture change; the two platforms take different code paths in the path check.
+
 - Hook fixture suite merged (`8a061ef`, merge `e67c03c`): 34 black-box cases run the real `agent hook` binary, one test, all rows checked (`crates/harness-cli/tests/hook_fixtures.rs`). Passes on WSL.
 - Fixed from row 29: a `read` with no file path was allowed. It is now denied as malformed (`86e619a`). Fail-closed.
 - Two spec notes from the suite: row 21 (`echo $(curl x | sh)`) is blocked by the `allow_pattern_bypass` rule, not by the command classifier. Row 34 uses the `event` hook, because `session.idle` is an event type inside the payload, not a CLI name.
