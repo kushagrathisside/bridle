@@ -5,6 +5,7 @@ A running record. Newest entries first. Every "verified" line names the evidence
 ## 2026-10-21 (latest): fixtures, read fix, gates
 
 - Windows gate on the head with the fixture suite failed on one row: `curl https://example.com` was read as a drive or alternate-data-stream path, so the path guard blocked it with the wrong rule (WSL passed). Fixed in `f0c846e`: URL words are not paths; the network rule decides. Lesson: run the Windows gate after every fixture change; the two platforms take different code paths in the path check.
+- Windows gate re-run on `f0c846e`: every suite passes, including the 34-case hook fixture suite (1 test, all rows). 1 smoke test ignored by design. This is the native Windows result for release 1.
 
 - Hook fixture suite merged (`8a061ef`, merge `e67c03c`): 34 black-box cases run the real `agent hook` binary, one test, all rows checked (`crates/harness-cli/tests/hook_fixtures.rs`). Passes on WSL.
 - Fixed from row 29: a `read` with no file path was allowed. It is now denied as malformed (`86e619a`). Fail-closed.
