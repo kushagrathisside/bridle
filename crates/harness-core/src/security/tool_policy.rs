@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::ToolClass;
-use super::command_risk::{CommandAssessment, ShellKind, assess_command};
+use super::command_risk::{CommandAssessment, ShellKind, argument_words, assess_command};
 use super::path_guard::PathGuard;
 use super::redact::is_secret_file;
 use crate::config::{SecuritySection, Verdict};
@@ -142,6 +142,35 @@ impl ToolPolicy {
         assess_command(command, self.shell, &self.security.safe_commands)
     }
 
+    /// Denies a shell command whose arguments name a secret file, a glob that could expand to one,
+    /// or a path outside the authorised roots. Returns `None` when every argument passes.
+    fn shell_argument_violation(&self, command: &str, base: &Path) -> Option<PolicyDecision> {
+        for word in argument_words(command) {
+            if is_null_device(&word) {
+                continue;
+            }
+            if is_secret_file(Path::new(&word)) || glob_may_match_secret(&word) {
+                return Some(PolicyDecision::new(
+                    Verdict::Deny,
+                    ToolClass::ReadOnly,
+                    "secret_file",
+                    format!("`{word}` may name credentials; shell access to it is denied"),
+                ));
+            }
+            if looks_like_path(&word) {
+                if let Err(v) = self.guard.check(Path::new(&word), base) {
+                    return Some(PolicyDecision::new(
+                        Verdict::Deny,
+                        ToolClass::Privileged,
+                        "path_guard",
+                        format!("{word}: {v}"),
+                    ));
+                }
+            }
+        }
+        None
+    }
+
     pub fn evaluate(&self, req: &ToolRequest) -> PolicyDecision {
         // 1. Every path must stay inside the authorised roots, whatever the tool.
         let base = match &req.workdir {
@@ -229,6 +258,11 @@ impl ToolPolicy {
                         "shell call without a command",
                     );
                 };
+                // Shell arguments are paths too. A command must not read a secret file, or
+                // leave the workspace, just because the program is harmless (`cat .env`).
+                if let Some(decision) = self.shell_argument_violation(cmd, &base) {
+                    return decision;
+                }
                 let a = self.assess(cmd);
                 PolicyDecision {
                     verdict: self.class_verdict(a.class),
@@ -260,5 +294,131 @@ impl ToolPolicy {
                 format!("unrecognised tool `{name}`"),
             ),
         }
+    }
+}
+
+/// Null devices may be written to by shell redirection; they are not paths inside the workspace.
+fn is_null_device(word: &str) -> bool {
+    matches!(word, "/dev/null" | "NUL" | "nul" | "$null" | "$Null" | "$NULL")
+}
+
+/// Heuristic: an argument that could name a file system location.
+fn looks_like_path(word: &str) -> bool {
+    !word.starts_with('-')
+        && (word.contains('/') || word.contains('\\') || word.starts_with('.') || word.contains(':'))
+}
+
+/// Representative secret names. A glob argument is denied when it could match any of them,
+/// because the shell expands `.e*` to `.env` before the program runs.
+const SECRET_SAMPLES: &[&str] = &[
+    ".env", ".env.local", ".netrc", ".npmrc", "id_rsa", "id_ed25519", "server.pem", "server.key",
+    "credentials", "secrets.json",
+];
+
+fn glob_may_match_secret(word: &str) -> bool {
+    if !word.contains(['*', '?']) {
+        return false;
+    }
+    SECRET_SAMPLES.iter().any(|sample| wildcard_matches(word, sample))
+}
+
+/// Shell-style `*` and `?` matching over whole strings.
+fn wildcard_matches(pattern: &str, text: &str) -> bool {
+    let p: Vec<char> = pattern.chars().collect();
+    let t: Vec<char> = text.chars().collect();
+    let (mut pi, mut ti) = (0usize, 0usize);
+    let (mut star, mut mark) = (None::<usize>, 0usize);
+    while ti < t.len() {
+        if pi < p.len() && (p[pi] == '?' || p[pi] == t[ti]) {
+            pi += 1;
+            ti += 1;
+        } else if pi < p.len() && p[pi] == '*' {
+            star = Some(pi);
+            mark = ti;
+            pi += 1;
+        } else if let Some(s) = star {
+            pi = s + 1;
+            mark += 1;
+            ti = mark;
+        } else {
+            return false;
+        }
+    }
+    p[pi..].iter().all(|&c| c == '*')
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    fn policy(dir: &Path) -> ToolPolicy {
+        ToolPolicy::with_rules(dir, &SecuritySection::default(), false).expect("policy")
+    }
+
+    fn shell(command: &str) -> ToolRequest {
+        let mut req = ToolRequest::new(ToolKind::Shell);
+        req.command = Some(command.to_owned());
+        req
+    }
+
+    fn read(path: &str) -> ToolRequest {
+        let mut req = ToolRequest::new(ToolKind::Read);
+        req.paths = vec![path.to_owned()];
+        req
+    }
+
+    #[test]
+    fn shell_reads_of_secret_files_are_denied() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        for cmd in ["cat .env", "grep TOKEN .env.local", "type ./deploy/id_ed25519", "cat ~/.netrc"] {
+            let d = p.evaluate(&shell(cmd));
+            assert_eq!(d.verdict, Verdict::Deny, "{cmd}");
+            assert_eq!(d.rule, "secret_file", "{cmd}");
+        }
+    }
+
+    #[test]
+    fn globs_that_could_expand_to_a_secret_are_denied() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        assert_eq!(p.evaluate(&shell("cat .e*")).verdict, Verdict::Deny);
+        assert_eq!(p.evaluate(&shell("grep x *.pem")).verdict, Verdict::Deny);
+        // A glob that cannot match any secret sample is not denied by this rule.
+        assert_ne!(p.evaluate(&shell("cat *.rs")).rule, "secret_file");
+    }
+
+    #[test]
+    fn ordinary_reads_are_allowed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        assert_eq!(p.evaluate(&shell("cat README.md")).verdict, Verdict::Allow);
+        assert_eq!(p.evaluate(&shell("ls src")).verdict, Verdict::Allow);
+    }
+
+    #[test]
+    fn shell_paths_outside_the_workspace_are_denied() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        let d = p.evaluate(&shell("cat ../outside.txt"));
+        assert_eq!(d.verdict, Verdict::Deny);
+        assert_eq!(d.rule, "path_guard");
+    }
+
+    #[test]
+    fn null_device_redirection_is_not_a_path_violation() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        assert_ne!(p.evaluate(&shell("ls > /dev/null")).rule, "path_guard");
+    }
+
+    #[test]
+    fn read_tool_on_a_secret_file_is_denied() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        let d = p.evaluate(&read(".env"));
+        assert_eq!(d.verdict, Verdict::Deny);
+        assert_eq!(d.rule, "secret_file");
     }
 }
