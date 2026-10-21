@@ -8,7 +8,7 @@
 //! | V1 | Error | `models` is empty |
 //! | V2 | Error | `agent.default_model` is not a key of `models` |
 //! | V3 | Error | an endpoint does not start with `http://` or `https://`, or has an empty host |
-//! | V4 | Error | an endpoint host is not loopback (`127.0.0.0/8`, `localhost`, `[::1]`), or `capabilities.local == false`, while `external.cloud_models.enabled == false` (local-first, R-27.4) |
+//! | V4 | Error | an endpoint host is not loopback (`127.0.0.0/8`, `localhost`, `[::1]`) unless `external.cloud_models.enabled` and the scheme is `https`; or `capabilities.local == false` while `external.cloud_models.enabled == false` (local-first, R-27.4) |
 //! | V5 | Error | `context == 0`, or `max_output_tokens >= context` |
 //! | V6 | Error | `launch.runtime` is not a key of `runtimes` |
 //! | V7 | Error | provider `prism_bonsai` with a launch runtime whose kind is not `prism_llama_cpp`; or a ternary quantisation (`PTQ1_0`/`PQ2_0` in `source.quantization` or in the `launch.model_file` name, case-insensitive) launched with a `llama_cpp` runtime |
@@ -25,6 +25,7 @@
 //! | V18 | Warning | `paths.models_dir` is on the system drive (`env.system_drive`, compare case-insensitively on the drive prefix such as `C:`) — directive D-2 |
 //! | V19 | Warning | `decisions.fallback != rules` — the fallback should be deterministic (R-30) |
 //! | V20 | Error | provider `mock` in any profile other than `test` |
+//! | V21 | Error | `context.hard_limit > models[agent.default_model].context` (skipped when the default model is missing) |
 //!
 //! Unit tests: one passing baseline config (no issues) and at least one failing case per rule.
 
@@ -37,8 +38,8 @@ use serde::Serialize;
 
 use super::is_absolute_any_platform;
 use super::schema::{
-    Config, DecisionProviderKind, LaunchConfig, ModelConfig, ProviderKind, RuntimeConfig,
-    RuntimeKind,
+    Config, DecisionProviderKind, LaunchConfig, ModelConfig, ProfileKind, ProviderKind,
+    RuntimeConfig, RuntimeKind,
 };
 
 /// How serious a finding is. Errors make the config unusable; warnings are advisory.
@@ -91,7 +92,7 @@ pub fn validate(cfg: &Config) -> Vec<ConfigIssue> {
     validate_with(cfg, &ValidationEnv::from_process())
 }
 
-/// Runs every rule (V1 to V20) and returns all issues found, in rule order.
+/// Runs every rule (V1 to V21) and returns all issues found, in rule order.
 pub fn validate_with(cfg: &Config, env: &ValidationEnv) -> Vec<ConfigIssue> {
     let mut report = Report::default();
 
@@ -106,6 +107,7 @@ pub fn validate_with(cfg: &Config, env: &ValidationEnv) -> Vec<ConfigIssue> {
     check_decisions(cfg, &mut report);
     check_routing(cfg, &mut report);
     check_context(cfg, &mut report);
+    check_hard_limit_against_default_model(cfg, &mut report);
     check_verification(cfg, &mut report);
     check_paths(cfg, env, &mut report);
 
@@ -171,13 +173,13 @@ fn check_model(cfg: &Config, slot: &str, model: &ModelConfig, report: &mut Repor
         model.api_key_env.as_deref(),
         report,
     );
-    if model.provider == ProviderKind::Mock && cfg.profile != "test" {
+    if model.provider == ProviderKind::Mock && cfg.profile != ProfileKind::Test {
         report.error(
             "V20",
             model_path(slot, "provider"),
             format!(
                 "provider `mock` is only allowed in the `test` profile, not `{}`",
-                cfg.profile
+                cfg.profile.as_str()
             ),
         );
     }
@@ -186,8 +188,9 @@ fn check_model(cfg: &Config, slot: &str, model: &ModelConfig, report: &mut Repor
     }
 }
 
-/// V3 and V4: the endpoint is an http(s) URL with a host, and a non-local endpoint or model is
-/// only allowed when the cloud opt-in is enabled.
+/// V3 and V4: the endpoint is an http(s) URL with a host. A non-loopback endpoint is only allowed
+/// when the cloud opt-in is enabled and the scheme is `https`; a non-local model is only allowed
+/// when the cloud opt-in is enabled.
 fn check_endpoint(cfg: &Config, slot: &str, model: &ModelConfig, report: &mut Report) {
     let host = endpoint_host(&model.endpoint).filter(|host| !host.is_empty());
     if host.is_none() {
@@ -198,15 +201,23 @@ fn check_endpoint(cfg: &Config, slot: &str, model: &ModelConfig, report: &mut Re
         );
     }
 
-    if cfg.external.cloud_models.enabled {
-        return;
-    }
-    if let Some(host) = host.filter(|host| !is_loopback_host(host)) {
+    let cloud_enabled = cfg.external.cloud_models.enabled;
+    if let Some(host) = host.filter(|host| !is_loopback_host(host))
+        && !(cloud_enabled && is_https(&model.endpoint))
+    {
+        let hint = if cloud_enabled {
+            "a non-loopback endpoint must use https:// when external.cloud_models is enabled"
+        } else {
+            "set external.cloud_models.enabled and use https:// to reach a non-loopback host"
+        };
         report.error(
             "V4",
             model_path(slot, "endpoint"),
-            format!("host `{host}` is not loopback; set external.cloud_models.enabled to use it"),
+            format!("host `{host}` is not loopback; {hint}"),
         );
+    }
+    if cloud_enabled {
+        return;
     }
     if !model.capabilities.local {
         report.error(
@@ -398,7 +409,7 @@ fn check_runtimes(cfg: &Config, report: &mut Report) {
 
 /// V12: the local-only profile forbids every external opt-in (R-36.2).
 fn check_profile(cfg: &Config, report: &mut Report) {
-    if cfg.profile != "local-only" {
+    if cfg.profile != ProfileKind::LocalOnly {
         return;
     }
     if cfg.external.jev.enabled {
@@ -478,6 +489,24 @@ fn check_context(cfg: &Config, report: &mut Report) {
     }
 }
 
+/// V21: the hard context limit cannot exceed the window of the default model. Skipped when the
+/// default model is missing (V2 reports that).
+fn check_hard_limit_against_default_model(cfg: &Config, report: &mut Report) {
+    let Some(model) = cfg.models.get(&cfg.agent.default_model) else {
+        return;
+    };
+    if cfg.context.hard_limit > model.context {
+        report.error(
+            "V21",
+            "context.hard_limit",
+            format!(
+                "hard_limit ({}) exceeds the context ({}) of the default model `{}`",
+                cfg.context.hard_limit, model.context, cfg.agent.default_model
+            ),
+        );
+    }
+}
+
 /// V15: verification that is required for DONE but has no steps can never succeed.
 fn check_verification(cfg: &Config, report: &mut Report) {
     let verification = &cfg.verification;
@@ -539,6 +568,13 @@ fn endpoint_host(endpoint: &str) -> Option<&str> {
             .split_once(':')
             .map_or(host_port, |(host, _)| host),
     )
+}
+
+/// True when the endpoint's scheme is `https` (case-insensitive).
+fn is_https(endpoint: &str) -> bool {
+    endpoint
+        .split_once("://")
+        .is_some_and(|(scheme, _)| scheme.eq_ignore_ascii_case("https"))
 }
 
 /// Loopback test for an endpoint host: `localhost`, any `127.0.0.0/8` address, or `::1`.
@@ -603,7 +639,7 @@ mod tests {
 
         [context]
         target_tokens = 16000
-        hard_limit = 24000
+        hard_limit = 16384
 
         [verification]
         enabled = true
@@ -690,12 +726,28 @@ mod tests {
     #[test]
     fn v4_remote_endpoint_needs_cloud_opt_in() {
         let mut cfg = baseline();
-        main_model(&mut cfg).endpoint = "http://192.168.1.20:8001/v1".to_owned();
+        main_model(&mut cfg).endpoint = "http://10.0.0.5/v1".to_owned();
+        assert_issue(&cfg, "V4", Severity::Error, "models.main.endpoint");
+    }
+
+    #[test]
+    fn v4_remote_https_endpoint_needs_cloud_opt_in() {
+        let mut cfg = baseline();
+        main_model(&mut cfg).endpoint = "https://api.example.com/v1".to_owned();
         assert_issue(&cfg, "V4", Severity::Error, "models.main.endpoint");
 
-        cfg.profile = "development".to_owned();
+        cfg.profile = ProfileKind::Development;
         cfg.external.cloud_models.enabled = true;
         assert_no_rule(&cfg, "V4");
+    }
+
+    #[test]
+    fn v4_remote_endpoint_over_plain_http_is_rejected_even_with_cloud() {
+        let mut cfg = baseline();
+        cfg.profile = ProfileKind::Development;
+        cfg.external.cloud_models.enabled = true;
+        main_model(&mut cfg).endpoint = "http://10.0.0.5/v1".to_owned();
+        assert_issue(&cfg, "V4", Severity::Error, "models.main.endpoint");
     }
 
     #[test]
@@ -709,7 +761,7 @@ mod tests {
             "models.main.capabilities.local",
         );
 
-        cfg.profile = "development".to_owned();
+        cfg.profile = ProfileKind::Development;
         cfg.external.cloud_models.enabled = true;
         assert_no_rule(&cfg, "V4");
     }
@@ -717,6 +769,7 @@ mod tests {
     #[test]
     fn v4_loopback_hosts_are_accepted() {
         for endpoint in [
+            "http://127.0.0.1:8001/v1",
             "http://localhost:8001/v1",
             "HTTP://LOCALHOST/v1",
             "http://[::1]:8001/v1",
@@ -856,7 +909,7 @@ mod tests {
         );
 
         let mut cfg = baseline();
-        cfg.profile = "development".to_owned();
+        cfg.profile = ProfileKind::Development;
         cfg.external.jev.enabled = true;
         cfg.external.cloud_models.enabled = true;
         assert_no_rule(&cfg, "V12");
@@ -967,8 +1020,64 @@ mod tests {
         main_model(&mut cfg).provider = ProviderKind::Mock;
         assert_issue(&cfg, "V20", Severity::Error, "models.main.provider");
 
-        cfg.profile = "test".to_owned();
+        cfg.profile = ProfileKind::Test;
         assert_no_rule(&cfg, "V20");
+    }
+
+    #[test]
+    fn v21_hard_limit_within_default_model_context() {
+        let mut cfg = baseline();
+        assert_no_rule(&cfg, "V21");
+
+        cfg.context.hard_limit = 16_385;
+        assert_issue(&cfg, "V21", Severity::Error, "context.hard_limit");
+
+        // A missing default model is V2's problem, not V21's.
+        cfg.agent.default_model = "deep".to_owned();
+        assert_issue(&cfg, "V2", Severity::Error, "agent.default_model");
+        assert_no_rule(&cfg, "V21");
+    }
+
+    #[test]
+    fn profile_spellings_parse_and_unknown_ones_fail() {
+        for (text, kind) in [
+            ("local-only", ProfileKind::LocalOnly),
+            ("development", ProfileKind::Development),
+            ("local-with-jev", ProfileKind::LocalWithJev),
+            ("hybrid", ProfileKind::Hybrid),
+            ("benchmark", ProfileKind::Benchmark),
+            ("test", ProfileKind::Test),
+        ] {
+            let cfg = from_toml_str(&format!("profile = \"{text}\"\n")).expect("parses");
+            assert_eq!(cfg.profile, kind);
+            assert_eq!(kind.as_str(), text);
+        }
+        assert!(from_toml_str("profile = \"mock\"\n").is_err());
+        assert!(from_toml_str("profile = \"LocalOnly\"\n").is_err());
+    }
+
+    #[test]
+    fn shipped_profiles_validate_without_errors() {
+        for (name, text) in [
+            (
+                "local-only",
+                include_str!("../../../../configs/local-only.toml"),
+            ),
+            (
+                "development",
+                include_str!("../../../../configs/development.toml"),
+            ),
+        ] {
+            let mut cfg = from_toml_str(text).unwrap_or_else(|err| panic!("{name}: {err:?}"));
+            // The shipped files leave machine locations to the machine config (see their headers).
+            cfg.paths.models_dir = Some(PathBuf::from("/data/models"));
+            cfg.paths.runtimes_dir = Some(PathBuf::from("/data/runtimes"));
+            let errors: Vec<_> = issues(&cfg)
+                .into_iter()
+                .filter(|i| i.severity == Severity::Error)
+                .collect();
+            assert!(errors.is_empty(), "{name}: {errors:#?}");
+        }
     }
 
     #[test]
