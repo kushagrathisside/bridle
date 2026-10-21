@@ -157,15 +157,15 @@ impl ToolPolicy {
                     format!("`{word}` may name credentials; shell access to it is denied"),
                 ));
             }
-            if looks_like_path(&word) {
-                if let Err(v) = self.guard.check(Path::new(&word), base) {
-                    return Some(PolicyDecision::new(
-                        Verdict::Deny,
-                        ToolClass::Privileged,
-                        "path_guard",
-                        format!("{word}: {v}"),
-                    ));
-                }
+            if looks_like_path(&word)
+                && let Err(v) = self.guard.check(Path::new(&word), base)
+            {
+                return Some(PolicyDecision::new(
+                    Verdict::Deny,
+                    ToolClass::Privileged,
+                    "path_guard",
+                    format!("{word}: {v}"),
+                ));
             }
         }
         None
