@@ -210,11 +210,7 @@ pub fn wait_until_healthy(
     mut child: Option<&mut Child>,
 ) -> Result<Duration, LaunchError> {
     let started = Instant::now();
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_global(Some(HEALTH_REQUEST_TIMEOUT))
-        .http_status_as_error(false)
-        .build()
-        .into();
+    let agent = crate::http::loopback_agent(HEALTH_REQUEST_TIMEOUT);
     loop {
         if let Some(server) = child.as_deref_mut()
             && let Some(status) = server.try_wait()?

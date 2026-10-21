@@ -54,11 +54,7 @@ impl OpenAiCompatProvider {
     /// counts as no key.
     pub fn new(model: &ModelConfig, api_key: Option<String>) -> Self {
         let timeout = Duration::from_millis(model.timeout_ms);
-        let agent: ureq::Agent = ureq::Agent::config_builder()
-            .timeout_global(Some(timeout))
-            .http_status_as_error(false)
-            .build()
-            .into();
+        let agent = crate::http::loopback_agent(timeout);
         Self {
             model_id: model.id.clone(),
             base_url: model.endpoint.trim_end_matches('/').to_owned(),
