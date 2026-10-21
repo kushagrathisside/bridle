@@ -125,7 +125,7 @@ fn launcher_wait_fails_fast_when_the_child_exits() {
 }
 
 #[test]
-fn launcher_args_for_a_gpu_model_offload_all_layers_with_q8_kv_and_flash_attention() {
+fn launcher_args_snapshot_for_a_gpu_model() {
     let (model, launch) = fixture(
         json!({
             "provider": "llama_cpp",
@@ -142,6 +142,9 @@ fn launcher_args_for_a_gpu_model_offload_all_layers_with_q8_kv_and_flash_attenti
             "model_file": "qwen3.5-9b.gguf",
             "gpu_layers": 99,
             "flash_attn": true,
+            "load_mode": "mmap",
+            "parallel": 1,
+            "cache_ram_mib": 1024,
         }),
     );
     let args = server_args(&model, &launch, Path::new("/models/qwen3.5-9b.gguf"), false)
@@ -164,20 +167,28 @@ fn launcher_args_for_a_gpu_model_offload_all_layers_with_q8_kv_and_flash_attenti
             "--metrics",
             "-ngl",
             "99",
-            "--flash-attn",
+            "-fa",
             "on",
             "-ctk",
             "q8_0",
             "-ctv",
             "q8_0",
+            "--load-mode",
+            "mmap",
+            "-np",
+            "1",
+            "--cache-ram",
+            "1024",
             "--reasoning-budget",
             "2048",
         ]
     );
+    assert!(!args.iter().any(|a| a == "--no-mmap"));
+    assert!(!args.iter().any(|a| a == "--spec-type"));
 }
 
 #[test]
-fn launcher_args_for_a_cpu_model_keep_zero_layers_and_set_threads() {
+fn launcher_args_snapshot_for_a_cpu_model() {
     let (model, launch) = fixture(
         json!({
             "provider": "llama_cpp",
@@ -192,6 +203,7 @@ fn launcher_args_for_a_cpu_model_keep_zero_layers_and_set_threads() {
             "model_file": "lfm2.5-1.2b.gguf",
             "gpu_layers": 0,
             "threads": 8,
+            "load_mode": "none",
         }),
     );
     let args = server_args(
@@ -221,12 +233,18 @@ fn launcher_args_for_a_cpu_model_keep_zero_layers_and_set_threads() {
             "0",
             "-t",
             "8",
+            "--load-mode",
+            "none",
+            "-np",
+            "1",
         ]
     );
+    assert!(!args.iter().any(|a| a == "--no-mmap"));
+    assert!(!args.iter().any(|a| a == "--spec-type"));
 }
 
 #[test]
-fn launcher_args_append_no_mmap_and_extra_args_last() {
+fn launcher_args_put_extra_args_last_verbatim() {
     let (model, launch) = fixture(
         json!({
             "provider": "llama_cpp",
@@ -239,8 +257,7 @@ fn launcher_args_append_no_mmap_and_extra_args_last() {
         json!({
             "runtime": "prism",
             "model_file": "bonsai.gguf",
-            "no_mmap": true,
-            "extra_args": ["--spec-type", "mtp"],
+            "extra_args": ["--custom-flag", "value"],
         }),
     );
     let args = server_args(&model, &launch, Path::new("bonsai.gguf"), false)
@@ -261,9 +278,10 @@ fn launcher_args_append_no_mmap_and_extra_args_last() {
             "8192",
             "--jinja",
             "--metrics",
-            "--no-mmap",
-            "--spec-type",
-            "mtp",
+            "-np",
+            "1",
+            "--custom-flag",
+            "value",
         ]
     );
 }

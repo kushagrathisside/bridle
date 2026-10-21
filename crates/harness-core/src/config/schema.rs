@@ -235,6 +235,22 @@ pub struct Reasoning {
     pub budget_tokens: Option<u32>,
 }
 
+/// How llama-server loads model weights (`--load-mode`, llama.cpp b11756).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoadMode {
+    /// Let llama-server choose (its default).
+    Auto,
+    /// Memory-map the weights file.
+    Mmap,
+    /// Read the weights into memory without mapping.
+    None,
+}
+
+fn default_parallel() -> u32 {
+    1
+}
+
 /// How `agent models serve <slot>` launches a local server for this slot.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -249,12 +265,21 @@ pub struct LaunchConfig {
     /// CPU threads (`-t`). `None` lets llama.cpp decide.
     #[serde(default)]
     pub threads: Option<u32>,
+    /// Flash attention on or off (`-fa on|off`). `None` lets llama.cpp decide.
     #[serde(default)]
     pub flash_attn: Option<bool>,
-    /// Load the whole model into RAM/VRAM instead of memory-mapping it (`--no-mmap`).
+    /// Weight loading mode (`--load-mode auto|mmap|none`). `None` keeps the server default.
     #[serde(default)]
-    pub no_mmap: bool,
-    /// Extra raw `llama-server` arguments, appended verbatim (e.g. MTP flags).
+    pub load_mode: Option<LoadMode>,
+    /// Number of parallel request slots (`-np`). Defaults to 1, which keeps one context for one
+    /// agent at a time.
+    #[serde(default = "default_parallel")]
+    pub parallel: u32,
+    /// Upper bound on the server's prompt cache in MiB (`--cache-ram`). `None` keeps the default.
+    #[serde(default)]
+    pub cache_ram_mib: Option<i64>,
+    /// Extra raw `llama-server` arguments, appended verbatim as the last arguments. Use this for
+    /// flags the harness does not model yet; nothing is added on your behalf.
     #[serde(default)]
     pub extra_args: Vec<String>,
 }
