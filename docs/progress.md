@@ -4,6 +4,11 @@ A running record. Newest entries first. Every "verified" line names the evidence
 
 ## 2026-10-21 (later): docs, hook fixtures, MCP run
 
+- MCP verified through OpenCode: `local-agent_git_status` was called, allowed as READ_ONLY, completed in 137 ms, and the model answered from its output (`run3.out`, `tool-events.jsonl`).
+- Gap found: the after-hook saw 0 output bytes for the MCP call, while built-in tools showed real sizes. So the shim's redaction does not reach MCP output (security.md, residual risk 7). Needs a fix or a documented limit.
+- Model accuracy: the status answer said "6 untracked files"; git reports 4. The branch and the modified file were correct. Tool output is deterministic, so prefer quoting the structured result over counting.
+- Serve/prefill: the server processed requests of about 8,196 tokens (OpenCode's system prompt and tool schemas). Prefill cost matters for latency; measure before M3.
+
 - Docs written: README, architecture, installation, configuration, security, models, troubleshooting.
 - In progress: hook fixture suite (34 black-box cases, `crates/harness-cli/tests/hook_fixtures.rs`) by a Haiku subagent; MCP `git_status` run through OpenCode.
 - The background task "Remove todo in command_risk.rs" in another session is stale: the `todo!()` was removed when the classifier merged. Stop it.
