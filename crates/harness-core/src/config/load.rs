@@ -209,6 +209,7 @@ mod tests {
     use std::fs;
 
     use super::*;
+    use crate::config::ProfileKind;
 
     fn no_env(_: &str) -> Option<String> {
         None
@@ -297,7 +298,7 @@ mod tests {
         let loaded = load_layered(&all, &no_env).expect("layers load");
         assert_eq!(loaded.config.agent.max_iterations, 7);
         assert_eq!(loaded.config.agent.max_same_failure, 4);
-        assert_eq!(loaded.config.profile, "development");
+        assert_eq!(loaded.config.profile, ProfileKind::Development);
         assert_eq!(loaded.files, vec![machine.clone(), repo.clone(), explicit]);
 
         let without_explicit = ConfigSources {
@@ -490,7 +491,7 @@ mod tests {
         assert_eq!(
             cfg,
             Config {
-                profile: "test".to_owned(),
+                profile: ProfileKind::Test,
                 ..Config::default()
             }
         );

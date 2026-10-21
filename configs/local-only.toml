@@ -178,7 +178,7 @@ fallback = "rules"
 
 [context]
 target_tokens = 16000           # DEF
-hard_limit = 24000              # DEF
+hard_limit = 16384             # equals main model context (V21)
 compact_tool_outputs = true
 
 [security]
