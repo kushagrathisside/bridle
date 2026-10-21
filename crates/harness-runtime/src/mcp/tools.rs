@@ -1273,7 +1273,6 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
     }
 
     #[test]
-    #[ignore = "needs command_risk::assess_command"]
     fn run_verification_passing_and_failing_steps() {
         let dir = tempfile::tempdir().unwrap();
         let mut ctx = ctx_for(dir.path());
@@ -1286,7 +1285,8 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
             },
             VerificationStep {
                 name: Some("fail".to_owned()),
-                command: "exit 1".to_owned(),
+                // `pytest` is EXECUTE_SAFE, so the step is run, and an unknown option makes it exit non-zero.
+                command: "pytest --no-such-option-xyz".to_owned(),
                 timeout_ms: Some(30_000),
                 cwd: None,
             },
@@ -1298,11 +1298,11 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
         assert_eq!(structured["steps"][0]["status"], json!("passed"));
         assert_eq!(structured["steps"][0]["exit_code"], json!(0));
         assert_eq!(structured["steps"][1]["status"], json!("failed"));
-        assert_eq!(structured["steps"][1]["exit_code"], json!(1));
+        // Exact code depends on whether pytest is installed (127 when missing); non-zero is the contract.
+        assert_ne!(structured["steps"][1]["exit_code"], json!(0));
     }
 
     #[test]
-    #[ignore = "needs command_risk::assess_command"]
     fn run_verification_blocks_risky_steps() {
         let dir = tempfile::tempdir().unwrap();
         let mut ctx = ctx_for(dir.path());

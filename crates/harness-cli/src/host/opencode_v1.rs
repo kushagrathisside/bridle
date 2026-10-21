@@ -312,7 +312,9 @@ fn tool_before(input: &Value, ctx: &HookContext<'_>) -> (Value, Option<Event>) {
         );
     }
 
-    let allow = decision.verdict != Verdict::Deny;
+    // Decision D3: `Ask` is never allowed. Under `--auto` OpenCode approves anything we do not
+    // deny, so only an explicit Allow gets through.
+    let allow = decision.verdict == Verdict::Allow;
     let message = if allow {
         String::new()
     } else {
@@ -374,10 +376,10 @@ fn permission(input: &Value, ctx: &HookContext<'_>) -> (Value, Option<Event>) {
     let perm = input.get("permission").cloned().unwrap_or(Value::Null);
     let req = map_permission(&perm);
     let decision = ctx.policy.evaluate(&req);
+    // Decision D3: `Ask` maps to deny, so `--auto` cannot approve a call we did not vet.
     let status = match decision.verdict {
         Verdict::Allow => "allow",
-        Verdict::Ask => "ask",
-        Verdict::Deny => "deny",
+        Verdict::Ask | Verdict::Deny => "deny",
     };
     let mut ev = decision_event(base_event(EventKind::Permission, &perm), &decision);
     ev.status = Some(status.to_owned());
@@ -733,6 +735,27 @@ mod tests {
         assert!(set.contains_key("OPENAI_API_KEY"));
         assert!(set.contains_key("GITHUB_TOKEN"));
         assert!(!set.contains_key("PATH"));
+    }
+
+    #[test]
+    fn ask_verdicts_are_blocked_not_allowed() {
+        use harness_core::config::Config;
+        use harness_core::security::{redact::Redactor, tool_policy::ToolPolicy};
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config = Config::default();
+        let policy = ToolPolicy::with_rules(dir.path(), &config.security, false).expect("policy");
+        let redactor = Redactor::new();
+        let ctx = HookContext { config: &config, policy: &policy, redactor: &redactor };
+        // An unrecognised program is EXECUTE_RISKY, whose default verdict is Ask.
+        let input = json!({
+            "tool": "bash",
+            "args": { "command": "some-unknown-tool --flag" },
+            "sessionID": "s",
+            "callID": "c"
+        });
+        let (answer, _) = handle(HookEvent::ToolBefore, &input, &ctx);
+        assert_eq!(answer["action"], "block");
     }
 
     #[test]
