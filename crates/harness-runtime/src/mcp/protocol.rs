@@ -34,6 +34,8 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use serde_json::{Value, json};
 
+use harness_core::security::redact::Redactor;
+
 use super::tools::{McpTool, ToolContext, ToolOutput};
 
 /// Supported protocol revisions, newest first.
@@ -271,6 +273,9 @@ impl Server {
             .cloned()
             .unwrap_or_else(|| json!({}));
         let output = run_tool(tool.as_ref(), &args, &self.ctx);
+        // Every result leaves the server redacted, whatever the tool returned. The host's
+        // after-hook may not see MCP output (observed 2026-10-21), so this is the guarantee.
+        let output = redact_output(output, &self.ctx.redactor);
         Ok(tool_result(output))
     }
 }
@@ -284,6 +289,23 @@ fn run_tool(tool: &dyn McpTool, args: &Value, ctx: &ToolContext) -> ToolOutput {
             eprintln!("harness mcp: tool `{}` panicked", tool.name());
             tool_error("internal tool error")
         }
+    }
+}
+
+/// Redacts a tool output's text and structured content with the server's redactor.
+fn redact_output(output: ToolOutput, redactor: &Redactor) -> ToolOutput {
+    let ToolOutput {
+        text,
+        mut structured,
+        is_error,
+    } = output;
+    if let Some(value) = structured.as_mut() {
+        redactor.redact_json(value);
+    }
+    ToolOutput {
+        text: redactor.redact(&text).into_owned(),
+        structured,
+        is_error,
     }
 }
 
@@ -641,5 +663,23 @@ mod tests {
             names,
             ["git_status", "git_diff", "run_verification", "harness_info"]
         );
+    }
+
+    #[test]
+    fn tool_results_are_redacted_before_they_leave_the_server() {
+        let output = ToolOutput {
+            text: "API_KEY=sk-test-SECRET123456789012".to_owned(),
+            structured: Some(json!({"password": "hunter2", "note": "ok"})),
+            is_error: false,
+        };
+        let redacted = redact_output(output, &Redactor::new());
+        assert!(
+            !redacted.text.contains("SECRET123456789012"),
+            "{}",
+            redacted.text
+        );
+        let structured = redacted.structured.expect("structured kept");
+        assert_eq!(structured["note"], json!("ok"));
+        assert!(!structured.to_string().contains("hunter2"), "{structured}");
     }
 }
