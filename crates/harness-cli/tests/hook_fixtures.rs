@@ -300,15 +300,14 @@ fn rows() -> Vec<Row> {
             NO_ENV,
             BlockMessage("invalid hook payload"),
         ),
-        // 29: `read` with no path argument. `map_tool_call` yields ToolKind::Read with no paths, and
-        // the policy has no path to check, so the read tool-kind rule allows it. Pinned as the current
-        // behaviour: a path-less read is not blocked by the hook (OpenCode still runs the read).
+        // 29: `read` with no path argument is a malformed call. The policy denies it (fail closed),
+        // rather than allowing a read it cannot check.
         row(
             "29 read with no filePath",
             BEFORE,
             before("read", json!({})),
             NO_ENV,
-            Allow,
+            BlockMessage("malformed"),
         ),
         // 30-31: permission requests. `Ask` is mapped to `deny`.
         row(
