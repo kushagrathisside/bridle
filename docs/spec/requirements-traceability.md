@@ -124,7 +124,7 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-7.1 | CON | Never hard-code the harness against one model server | all | open |
-| R-7.2 | REQ | `ModelProvider` with adapters: OpenAICompatible, LlamaCpp, PrismBonsai, LiteLLM, JevDecision, Mock | M1 (OpenAICompatible, LlamaCpp, Mock), M5, M7, M8 | open |
+| R-7.2 | REQ | `ModelProvider` with adapters: OpenAICompatible, LlamaCpp, PrismBonsai, LiteLLM, JevDecision, Mock | M1 (OpenAICompatible, LlamaCpp, Mock), M5, M7, M8 | in-progress (OpenAI-compatible and llama.cpp done; PrismBonsai, LiteLLM, Jev, Mock pending) |
 | R-7.3 | REQ | Primary LLM calls flow ModelRegistry → ModelRouter → ModelProvider | M1, M4 | open |
 | R-7.4 | REQ | Declarative model-registry config. The format is negotiable; the separation is not. | M1 | open (format: TOML, ADR-0001) |
 | R-7.5 | REQ | Per-model config: name, endpoint, API-key *source*, context, temperature, max output, reasoning budget, MTP, KV-cache mode, timeout, retries, role, capabilities, hardware profile | M1 | open |
@@ -134,7 +134,7 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-8.1 | CON | LiteLLM is optional infrastructure and is not embedded in the agent loop | all | open |
-| R-8.2 | REQ | Minimal mode: OpenCode → direct local model endpoints | M1 | open |
+| R-8.2 | REQ | Minimal mode: OpenCode → direct local model endpoints | M1 | done (OpenCode to Qwen directly, end-to-end run 2026-10-21) |
 | R-8.3 | REQ | Advanced mode: OpenCode → LiteLLM → local/cloud/decision providers | M8 | open |
 | R-8.4 | CLAIM | LiteLLM supports OpenCode as a harness, model groups, and TypeSafe/Jev (`/v1/decisions`, `/v1/systemone`, Jev routing, Jev compaction) | M0 | verified (decision routes need LiteLLM ≥ v1.104.2 / ≥ v1.105.0-rc.3) |
 
@@ -205,7 +205,7 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-16.1 | REQ | Local state, separate from OpenCode's, under `.local-agent/`: state.json, task.json, plan.json, repo-map.json, decisions.jsonl, failures.jsonl, tool-events.jsonl, summaries/, benchmarks/ | M3 | open |
-| R-16.2 | REQ | `.local-agent/` is gitignored by default | M1 | open |
+| R-16.2 | REQ | `.local-agent/` is gitignored by default | M1 | done (`.local-agent/` added by `agent init`; checked in toy repo) |
 | R-16.3 | REQ | State can be reconstructed from Git and logs where possible | M3 | open |
 | R-16.4 | REQ | `TaskState` holds task_id, repository, branch/worktree, original_prompt, current_objective, phase, iteration, active_model, last_action, last_test, failure_class, failure_count, escalation_count, context_version, status | M3 | open |
 
@@ -294,8 +294,8 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-27.1 | REQ | Path protection: confine operations to the authorised workspace. Block `../` traversal, absolute-path escape, symlink escape, and junction/reparse-point escape. | M1 (baseline), M9 | open |
-| R-27.2 | REQ | Never inject API keys, SSH private keys, `.env` secrets, cloud credentials, browser cookies, or Windows credential stores into model context | M1, M9 | open |
+| R-27.1 | REQ | Path protection: confine operations to the authorised workspace. Block `../` traversal, absolute-path escape, symlink escape, and junction/reparse-point escape. | M1 (baseline), M9 | done (path guard and shell argument checks; tests in harness-core) |
+| R-27.2 | REQ | Never inject API keys, SSH private keys, `.env` secrets, cloud credentials, browser cookies, or Windows credential stores into model context | M1, M9 | in-progress (redactor tests pass; hook and event log redact; secret read denied end to end) |
 | R-27.3 | REQ | Redact API_KEY, TOKEN, PASSWORD, SECRET, AUTHORIZATION, and PRIVATE KEY patterns from telemetry | M1, M9 | open |
 | R-27.4 | REQ | Local-first mode never sends repo content to the network unexpectedly. External providers require explicit configuration. | M1 | open |
 | R-27.5 | ASM | Optional external/cloud models are supported. The default install is local-only and transmits no repo content. | M1, M8 | open |
@@ -351,14 +351,14 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-34.1 | REQ | Before execution: policy check → path check → risk classification → approval if required → execute | M1, M9 | open |
-| R-34.2 | REQ | After execution: redaction → normalisation → failure classification → event log → context manager | M1, M3 | open |
+| R-34.1 | REQ | Before execution: policy check → path check → risk classification → approval if required → execute | M1, M9 | done (hook decides before execution; Ask denied; verified by end-to-end runs) |
+| R-34.2 | REQ | After execution: redaction → normalisation → failure classification → event log → context manager | M1, M3 | in-progress (redaction and event log done; failure classification and context manager pending) |
 
 ## §35 Configuration design
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-35.1 | REQ | One top-level project config with sections: agent, models, routing, decisions, context, security, verification, telemetry, external | M1 | open |
+| R-35.1 | REQ | One top-level project config with sections: agent, models, routing, decisions, context, security, verification, telemetry, external | M1 | done (config schema, validation V1-V21, profiles) |
 | R-35.2 | CON | No API secrets in the config file. Reference env vars or key sources instead. | M1 | open |
 
 ## §36 Environment profiles
@@ -366,7 +366,7 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-36.1 | REQ | Profiles: local-only, local-with-jev, hybrid, development, benchmark | M1 (local-only, development), M7, M8, M10 | open |
-| R-36.2 | REQ | local-only has no external network dependency except model download during installation | M1 | open |
+| R-36.2 | REQ | local-only has no external network dependency except model download during installation | M1 | in-progress (harness makes no external calls; OpenCode fetches its model catalog unless disabled) |
 | R-36.3 | ASM | The user may accept an external Jev dependency while the coding models stay local | M7 | open |
 
 ## §37 Optional cloud frontier escalation
@@ -381,7 +381,7 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-38.1 | REQ | Distinguish model identity, version, quantization, runtime version, runtime build, hardware, configuration | M1 | open |
-| R-38.2 | REQ | Persist a model manifest `{model, quantization, source, revision, sha256, runtime, runtime_revision, cuda, driver}` for Qwen, LFM, and Bonsai | M1, M4, M5 | open |
+| R-38.2 | REQ | Persist a model manifest `{model, quantization, source, revision, sha256, runtime, runtime_revision, cuda, driver}` for Qwen, LFM, and Bonsai | M1, M4, M5 | in-progress (manifest code and tests exist; not run end to end) |
 
 ## §39 System benchmark
 
