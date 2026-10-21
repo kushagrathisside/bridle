@@ -95,3 +95,12 @@ Script and raw output: `D:\runtimes\p1\run-p1.ps1` and `run.out.txt`.
 Consequence: on this 16 GB host, the server plus the WSL VM leaves almost no headroom. The real Qwen run in the
 M1 exit must close other heavy applications first, and the WSL memory cap (or shutdown) becomes part of the
 run procedure. This feeds risk R8 and R19 in the plan.
+
+## Amendment (2026-10-21): release 1 is Windows-only
+
+The project lead asked for whichever OS path gets a working M1 earliest, with the other added in a later
+release. The Windows path is ahead: the P1 proof-of-concept passed, the Windows build and tests run, and the
+end-to-end loop ran through OpenCode on Windows. The WSL path still needs mirrored networking, a WSL shutdown,
+and a Linux CUDA build or interop, so it is deferred to release 2. The decision to support both stays; only
+the release scope changes. The deviation from R-6.1 is therefore limited to the planned WSL support, which
+remains unbuilt.
