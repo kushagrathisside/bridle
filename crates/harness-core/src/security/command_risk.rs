@@ -99,7 +99,11 @@ impl ShellKind {
     /// run). So Windows uses the `cmd` lexer, where backslash is a literal character. POSIX is
     /// used elsewhere.
     pub fn host_default() -> Self {
-        if cfg!(windows) { Self::Cmd } else { Self::Posix }
+        if cfg!(windows) {
+            Self::Cmd
+        } else {
+            Self::Posix
+        }
     }
 }
 
@@ -1296,10 +1300,11 @@ mod windows_shell_tests {
     /// Regression: POSIX lexing turned `D:\e2e\toy` into `D:e2etoy` (first end-to-end run).
     #[test]
     fn cmd_lexing_keeps_windows_paths_intact() {
-        let words: Vec<String> = analyse(r"cd D:\e2e\toy && python -m pytest", ShellKind::Cmd, &[], 0)
-            .into_iter()
-            .flat_map(|a| a.args)
-            .collect();
+        let words: Vec<String> =
+            analyse(r"cd D:\e2e\toy && python -m pytest", ShellKind::Cmd, &[], 0)
+                .into_iter()
+                .flat_map(|a| a.args)
+                .collect();
         assert!(words.contains(&r"D:\e2e\toy".to_owned()), "{words:?}");
     }
 

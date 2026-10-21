@@ -640,7 +640,8 @@ mod speculative_tests {
     #[test]
     fn off_state_strings_are_not_speculative_decoding() {
         // Exact shape reported by llama.cpp b11756 `/props` when MTP is not configured.
-        let props = json!({"default_generation_settings": {"params": {"speculative": {"types": "none"}}}});
+        let props =
+            json!({"default_generation_settings": {"params": {"speculative": {"types": "none"}}}});
         assert_eq!(speculative_flag(&props), Some(false));
     }
 
