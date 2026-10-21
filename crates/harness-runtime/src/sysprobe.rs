@@ -598,6 +598,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn command_version_reads_stdout_then_falls_back_to_stderr() {
         let stdout = command_version(
             Path::new("sh"),
@@ -605,6 +606,16 @@ mod tests {
         );
         assert_eq!(stdout.as_deref(), Some("v1.2.3"));
         let stderr = command_version(Path::new("sh"), &["-c", "echo oops >&2"]);
+        assert_eq!(stderr.as_deref(), Some("oops"));
+    }
+
+    // `sh` is not on the default Windows PATH, so the Windows variant uses `cmd`.
+    #[cfg(windows)]
+    #[test]
+    fn command_version_reads_stdout_then_falls_back_to_stderr() {
+        let stdout = command_version(Path::new("cmd"), &["/C", "echo   v1.2.3  "]);
+        assert_eq!(stdout.as_deref(), Some("v1.2.3"));
+        let stderr = command_version(Path::new("cmd"), &["/C", "echo oops 1>&2"]);
         assert_eq!(stderr.as_deref(), Some("oops"));
     }
 
