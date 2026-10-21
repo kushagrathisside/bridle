@@ -15,7 +15,10 @@ path = "src/main.rs"
 harness-core.workspace = true
 harness-runtime.workspace = true
 serde.workspace = true
-serde_json.workspace = true
+# preserve_order: OpenCode evaluates permission rules in insertion order.
+serde_json = { workspace = true, features = ["preserve_order"] }
+dunce.workspace = true
+sha2.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 toml.workspace = true
