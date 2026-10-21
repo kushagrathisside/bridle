@@ -6,9 +6,11 @@
 //!   `LaunchError::Endpoint`). Emit, in this order:
 //!   `-m <model_file> --host <host> --port <port> --alias <model.id> -c <model.context> --jinja
 //!   --metrics`, then `-ngl <n>` if `gpu_layers` set, `-t <n>` if `threads` set,
-//!   `--flash-attn on|off` if `flash_attn` set, `--no-mmap` if `no_mmap`,
-//!   `-ctk <kv> -ctv <kv>` if `model.kv_cache` set, `--reasoning-budget <n>` if
-//!   `model.reasoning.budget_tokens` set, then `launch.extra_args` verbatim.
+//!   `-fa on|off` if `flash_attn` set, `-ctk <kv> -ctv <kv>` if `model.kv_cache` set,
+//!   `--load-mode <mode>` if `load_mode` set, `-np <parallel>`, `--cache-ram <n>` if
+//!   `cache_ram_mib` set, `--reasoning-budget <n>` if `model.reasoning.budget_tokens` set,
+//!   then `launch.extra_args` verbatim. Never `--no-mmap` (absent from b11756); never
+//!   `--spec-type` unless the user passes it in `extra_args`.
 //!   Host must be loopback unless the caller passes `allow_remote_bind = true` (→
 //!   `LaunchError::NonLoopbackBind`) — servers never listen on the LAN by accident.
 //! - `spawn_server(bin, args, log_file) -> Result<std::process::Child, LaunchError>`: stdout and
@@ -34,7 +36,7 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use harness_core::config::{LaunchConfig, ModelConfig};
+use harness_core::config::{LaunchConfig, LoadMode, ModelConfig};
 use thiserror::Error;
 
 /// `CREATE_NO_WINDOW`: stops a console-subsystem server from opening its own console window.
@@ -96,20 +98,33 @@ pub fn server_args(
         push_pair(&mut args, "-t", threads);
     }
     if let Some(on) = launch.flash_attn {
-        push_pair(&mut args, "--flash-attn", if on { "on" } else { "off" });
-    }
-    if launch.no_mmap {
-        args.push("--no-mmap".to_owned());
+        push_pair(&mut args, "-fa", if on { "on" } else { "off" });
     }
     if let Some(kv) = &model.kv_cache {
         push_pair(&mut args, "-ctk", kv);
         push_pair(&mut args, "-ctv", kv);
+    }
+    if let Some(mode) = launch.load_mode {
+        push_pair(&mut args, "--load-mode", load_mode_arg(mode));
+    }
+    push_pair(&mut args, "-np", launch.parallel);
+    if let Some(mib) = launch.cache_ram_mib {
+        push_pair(&mut args, "--cache-ram", mib);
     }
     if let Some(budget) = model.reasoning.budget_tokens {
         push_pair(&mut args, "--reasoning-budget", budget);
     }
     args.extend(launch.extra_args.iter().cloned());
     Ok(args)
+}
+
+/// The `--load-mode` value llama-server b11756 accepts for each mode.
+fn load_mode_arg(mode: LoadMode) -> &'static str {
+    match mode {
+        LoadMode::Auto => "auto",
+        LoadMode::Mmap => "mmap",
+        LoadMode::None => "none",
+    }
 }
 
 fn push_pair(args: &mut Vec<String>, flag: &str, value: impl Display) {
@@ -334,6 +349,8 @@ mod tests {
                 "4096",
                 "--jinja",
                 "--metrics",
+                "-np",
+                "1",
             ]
         );
     }
