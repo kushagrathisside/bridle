@@ -225,6 +225,16 @@ impl ToolPolicy {
             }
         }
 
+        // A file read names no file: it is malformed, and fail-closed says deny it.
+        if req.kind == ToolKind::Read && req.paths.is_empty() {
+            return PolicyDecision::new(
+                Verdict::Deny,
+                ToolClass::ReadOnly,
+                "malformed",
+                "read call without a file path",
+            );
+        }
+
         // 3. Classify by tool family.
         match &req.kind {
             ToolKind::Read
