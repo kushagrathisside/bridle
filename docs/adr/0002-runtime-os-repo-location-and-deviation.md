@@ -74,3 +74,24 @@ answer on 2026-10-21, with these conditions:
 - P1 (Windows) and P2 (WSL) each log: launch, `/health` 200, one completion, one Qwen tool call, memory readings,
   and the binary used. The result file is attached to this ADR.
 - `cargo test --workspace` passes on native Windows (T17) and in WSL, against the same commit.
+
+## P1 result (native Windows, 2026-10-21)
+
+Binary: llama.cpp b11756 CUDA 12.4 (`llama-server.exe`). Model: Qwen3.5-9B Q4_K_M (checksum verified).
+Argv: `-m … --host 127.0.0.1 --port 8001 --alias qwen3.5-9b -c 16384 --jinja --metrics -ngl 99 -fa on
+-ctk q8_0 -ctv q8_0 -np 1 --cache-ram 1024 --load-mode mmap --reasoning-budget 0`.
+Script and raw output: `D:\runtimes\p1\run-p1.ps1` and `run.out.txt`.
+
+| Check | Result |
+|---|---|
+| Health `/health` 200 | Yes, after 11 s |
+| VRAM after load | 5443 MiB of 8188 MiB |
+| Completion (`READY`) | Correct |
+| Tool call (`get_weather`, `city: Paris`) | Correct; `finish_reason: tool_calls` |
+| Server RSS | 3494 MB |
+| Host free RAM with server running | 382 MB of 16088 MB |
+| Host free RAM after stop | 3834 MB; `vmmemWSL` holds about 3493 MB while idle |
+
+Consequence: on this 16 GB host, the server plus the WSL VM leaves almost no headroom. The real Qwen run in the
+M1 exit must close other heavy applications first, and the WSL memory cap (or shutdown) becomes part of the
+run procedure. This feeds risk R8 and R19 in the plan.
