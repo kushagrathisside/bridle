@@ -14,8 +14,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
-    /// Name of the profile this config was derived from (`local-only`, `development`, ...).
-    pub profile: String,
+    /// Profile this config was derived from (`local-only`, `development`, ...).
+    pub profile: ProfileKind,
     pub agent: AgentSection,
     pub paths: PathsSection,
     pub host: HostSection,
@@ -35,7 +35,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            profile: "local-only".to_owned(),
+            profile: ProfileKind::LocalOnly,
             agent: AgentSection::default(),
             paths: PathsSection::default(),
             host: HostSection::default(),
@@ -397,6 +397,33 @@ impl Default for DecisionsSection {
         Self {
             provider: DecisionProviderKind::Rules,
             fallback: DecisionProviderKind::Rules,
+        }
+    }
+}
+
+/// Named configuration profile (§36). Spelled in TOML as the kebab-case name, e.g. `local-with-jev`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProfileKind {
+    LocalOnly,
+    Development,
+    LocalWithJev,
+    Hybrid,
+    Benchmark,
+    /// Test-only profile; the only one in which scripted (`mock`) providers are allowed.
+    Test,
+}
+
+impl ProfileKind {
+    /// The TOML spelling of this profile.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::LocalOnly => "local-only",
+            Self::Development => "development",
+            Self::LocalWithJev => "local-with-jev",
+            Self::Hybrid => "hybrid",
+            Self::Benchmark => "benchmark",
+            Self::Test => "test",
         }
     }
 }
