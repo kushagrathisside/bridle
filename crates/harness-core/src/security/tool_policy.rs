@@ -318,10 +318,24 @@ fn is_null_device(word: &str) -> bool {
 /// Heuristic: an argument that could name a file system location.
 fn looks_like_path(word: &str) -> bool {
     !word.starts_with('-')
+        && !is_url(word)
         && (word.contains('/')
             || word.contains('\\')
             || word.starts_with('.')
             || word.contains(':'))
+}
+
+/// `scheme://...` words are URLs, not file paths. On Windows the colon would otherwise read as a
+/// drive or alternate-data-stream separator (`https:` ), so the network rule must decide instead.
+fn is_url(word: &str) -> bool {
+    let Some((scheme, rest)) = word.split_once("://") else {
+        return false;
+    };
+    !scheme.is_empty()
+        && scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.')
+        && !rest.is_empty()
 }
 
 /// Representative secret names. A glob argument is denied when it could match any of them,
@@ -442,6 +456,18 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let p = policy(dir.path());
         assert_ne!(p.evaluate(&shell("ls > /dev/null")).rule, "path_guard");
+    }
+
+    #[test]
+    fn url_arguments_are_not_treated_as_paths() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        // The network rule decides: the policy says Ask, and the hook turns Ask into a block (D3).
+        let d = p.evaluate(&shell("curl https://example.com"));
+        assert_eq!(d.verdict, Verdict::Ask);
+        assert_eq!(d.rule, "command_risk");
+        assert!(super::is_url("https://example.com/x"));
+        assert!(!super::is_url("C:\\data\\x"));
     }
 
     #[test]
