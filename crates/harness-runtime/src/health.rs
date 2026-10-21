@@ -573,12 +573,17 @@ fn collect_speculative(value: &Value, found: &mut Option<bool>) {
 }
 
 /// Scalars are truthy when non-zero, non-empty or `true`. Containers are truthy when any value is.
+/// Strings that name an off state are falsy: llama.cpp reports `"types": "none"` when no
+/// speculative decoding is configured (checked against b11756 `/props`).
 fn is_truthy(value: &Value) -> bool {
     match value {
         Value::Null => false,
         Value::Bool(flag) => *flag,
         Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
-        Value::String(s) => !s.is_empty(),
+        Value::String(s) => !matches!(
+            s.trim().to_ascii_lowercase().as_str(),
+            "" | "none" | "off" | "false" | "disabled" | "0"
+        ),
         Value::Array(items) => items.iter().any(is_truthy),
         Value::Object(map) => map.values().any(is_truthy),
     }
@@ -622,5 +627,31 @@ fn preview(text: &str, max_chars: usize) -> String {
     match text.char_indices().nth(max_chars) {
         Some((cut, _)) => format!("{}...", &text[..cut]),
         None => text.to_owned(),
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod speculative_tests {
+    use serde_json::json;
+
+    use super::speculative_flag;
+
+    #[test]
+    fn off_state_strings_are_not_speculative_decoding() {
+        // Exact shape reported by llama.cpp b11756 `/props` when MTP is not configured.
+        let props = json!({"default_generation_settings": {"params": {"speculative": {"types": "none"}}}});
+        assert_eq!(speculative_flag(&props), Some(false));
+    }
+
+    #[test]
+    fn an_active_draft_type_is_speculative_decoding() {
+        let props = json!({"speculative": {"types": "draft-mtp"}});
+        assert_eq!(speculative_flag(&props), Some(true));
+    }
+
+    #[test]
+    fn absent_key_is_unknown() {
+        assert_eq!(speculative_flag(&json!({"n_ctx": 16384})), None);
     }
 }
