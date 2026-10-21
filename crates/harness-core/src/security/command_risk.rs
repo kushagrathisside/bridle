@@ -93,11 +93,13 @@ pub enum ShellKind {
 }
 
 impl ShellKind {
-    /// The shell OpenCode's bash tool uses on this platform: Git Bash/WSL bash on Windows when
-    /// available is still POSIX syntax, so POSIX is the default everywhere. PowerShell-specific
-    /// constructs are recognised in POSIX mode too (cmdlet names, `-enc`).
+    /// The shell the agent's commands run in on this platform. On Windows the model's commands
+    /// use `D:\dir` paths, and POSIX lexing would treat each backslash as an escape, turning
+    /// `D:\e2e\toy` into `D:e2etoy` and breaking the path check (observed in the first end-to-end
+    /// run). So Windows uses the `cmd` lexer, where backslash is a literal character. POSIX is
+    /// used elsewhere.
     pub fn host_default() -> Self {
-        Self::Posix
+        if cfg!(windows) { Self::Cmd } else { Self::Posix }
     }
 }
 
@@ -1283,5 +1285,30 @@ mod tests {
         assert!(!is_assignment("=1"));
         assert!(!is_assignment("--opt=1"));
         assert!(!is_assignment("plain"));
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod windows_shell_tests {
+    use super::*;
+
+    /// Regression: POSIX lexing turned `D:\e2e\toy` into `D:e2etoy` (first end-to-end run).
+    #[test]
+    fn cmd_lexing_keeps_windows_paths_intact() {
+        let words: Vec<String> = analyse(r"cd D:\e2e\toy && python -m pytest", ShellKind::Cmd, &[], 0)
+            .into_iter()
+            .flat_map(|a| a.args)
+            .collect();
+        assert!(words.contains(&r"D:\e2e\toy".to_owned()), "{words:?}");
+    }
+
+    #[test]
+    fn posix_lexing_still_treats_backslash_as_escape() {
+        let words: Vec<String> = analyse(r"cat a\ b", ShellKind::Posix, &[], 0)
+            .into_iter()
+            .flat_map(|a| a.args)
+            .collect();
+        assert_eq!(words, vec!["a b".to_owned()]);
     }
 }
