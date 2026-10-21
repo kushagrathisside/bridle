@@ -8,7 +8,8 @@
 // Generated into `.opencode/plugins/local-agent.ts` by `agent init`, which replaces the
 // placeholder below with the absolute path of the agent executable. Edit the template in the
 // harness repository (opencode-plugin/local-agent.ts), not the generated copy.
-// Pinned against @opencode-ai/plugin 1.19.3; the type import is erased at runtime.
+// Pinned against @opencode-ai/plugin 1.19.3 and type-checked against it by `npm run typecheck`
+// (in opencode-plugin/); the type import is erased at runtime.
 
 import type { Plugin } from "@opencode-ai/plugin"
 import { spawn } from "node:child_process"
