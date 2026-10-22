@@ -502,6 +502,38 @@ pub struct VerificationStep {
     /// Working directory relative to the workspace root.
     #[serde(default)]
     pub cwd: Option<PathBuf>,
+    /// What the step checks. `run_tests`, `run_linter` and `run_typechecker` pick steps by kind;
+    /// `run_verification` runs every step.
+    #[serde(default)]
+    pub kind: StepKind,
+    /// Whether `run_tests` may append test targets (files, node ids or test names) to the command.
+    #[serde(default)]
+    pub targets: bool,
+}
+
+/// What a verification step checks (§21).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StepKind {
+    /// Tests (the default: most projects declare their test command first).
+    #[default]
+    Test,
+    Lint,
+    Typecheck,
+    Build,
+    Other,
+}
+
+impl StepKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Test => "test",
+            Self::Lint => "lint",
+            Self::Typecheck => "typecheck",
+            Self::Build => "build",
+            Self::Other => "other",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

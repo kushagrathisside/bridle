@@ -28,6 +28,7 @@
 //! | V21 | Error | `context.hard_limit > models[agent.default_model].context` (skipped when the default model is missing) |
 //! | V22 | Error | `launch.extra_args` contains a reserved flag ([`super::RESERVED_LAUNCH_FLAGS`]: listener, model, alias, context, key, served or written paths), as `--flag` or `--flag=value` |
 //! | V23 | Error | `timeout_ms` outside `1_000..=3_600_000`, or `retries > 10` |
+//! | V24 | Warning | a verification step sets `targets = true` but its `kind` is not `test` |
 //!
 //! Unit tests: one passing baseline config (no issues) and at least one failing case per rule.
 
@@ -40,7 +41,7 @@ use serde::Serialize;
 
 use super::schema::{
     Config, DecisionProviderKind, LaunchConfig, ModelConfig, ProfileKind, ProviderKind,
-    RuntimeConfig, RuntimeKind,
+    RuntimeConfig, RuntimeKind, StepKind,
 };
 use super::{is_absolute_any_platform, reserved_launch_flag};
 
@@ -94,7 +95,7 @@ pub fn validate(cfg: &Config) -> Vec<ConfigIssue> {
     validate_with(cfg, &ValidationEnv::from_process())
 }
 
-/// Runs every rule (V1 to V23) and returns all issues found, in rule order.
+/// Runs every rule (V1 to V24) and returns all issues found, in rule order.
 pub fn validate_with(cfg: &Config, env: &ValidationEnv) -> Vec<ConfigIssue> {
     let mut report = Report::default();
 
@@ -557,6 +558,18 @@ fn check_verification(cfg: &Config, report: &mut Report) {
             "verification.steps",
             "verification is required for DONE but no steps are defined",
         );
+    }
+    for (index, step) in verification.steps.iter().enumerate() {
+        if step.targets && step.kind != StepKind::Test {
+            report.warning(
+                "V24",
+                format!("verification.steps[{index}].targets"),
+                format!(
+                    "targets are only passed by run_tests, but this step's kind is `{}`",
+                    step.kind.as_str()
+                ),
+            );
+        }
     }
 }
 

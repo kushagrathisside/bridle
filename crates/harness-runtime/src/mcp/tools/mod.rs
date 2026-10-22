@@ -142,6 +142,9 @@ pub fn default_tools() -> Vec<Box<dyn McpTool>> {
         Box::new(history::GitHistoryTool),
         Box::new(history::GitLogRangeTool),
         Box::new(RunVerificationTool),
+        Box::new(verify::RUN_TESTS),
+        Box::new(verify::RUN_LINTER),
+        Box::new(verify::RUN_TYPECHECKER),
         Box::new(HarnessInfoTool),
     ]
 }
@@ -740,45 +743,50 @@ impl McpTool for RunVerificationTool {
         let selected = select_steps(&ctx.verification.steps, requested.as_deref())?;
         let results: Vec<StepResult> = selected
             .into_iter()
-            .map(|(name, step)| run_step(ctx, name, step))
+            .map(|(name, step)| run_step(ctx, name, step, &[]))
             .collect();
-        let passing = results.iter().filter(|step| step.status == PASSED).count();
-        let passed = passing == results.len();
+        report_steps("Verification", &results)
+    }
+}
 
-        let mut text = format!(
-            "Verification {}: {passing} of {} steps passed.",
-            if passed { "passed" } else { "failed" },
-            results.len()
-        );
-        for step in &results {
-            let exit = step
-                .exit_code
-                .map(|code| format!(", exit {code}"))
-                .unwrap_or_default();
-            text.push_str(&format!(
-                "\n- {}: {}{exit} ({} ms)",
-                step.name, step.status, step.duration_ms
-            ));
-            if step.status != PASSED {
-                for line in step.output_tail.trim_end().lines() {
-                    text.push_str(&format!("\n    {line}"));
-                }
-                for line in step.stderr_tail.trim_end().lines() {
-                    text.push_str(&format!("\n    {line}"));
-                }
+/// The text and structured result for a set of step results, under a label such as `Tests`.
+fn report_steps(label: &str, results: &[StepResult]) -> Result<ToolOutput, String> {
+    let passing = results.iter().filter(|step| step.status == PASSED).count();
+    let passed = passing == results.len();
+
+    let mut text = format!(
+        "{label} {}: {passing} of {} steps passed.",
+        if passed { "passed" } else { "failed" },
+        results.len()
+    );
+    for step in results {
+        let exit = step
+            .exit_code
+            .map(|code| format!(", exit {code}"))
+            .unwrap_or_default();
+        text.push_str(&format!(
+            "\n- {}: {}{exit} ({} ms)",
+            step.name, step.status, step.duration_ms
+        ));
+        if step.status != PASSED {
+            for line in step.output_tail.trim_end().lines() {
+                text.push_str(&format!("\n    {line}"));
+            }
+            for line in step.stderr_tail.trim_end().lines() {
+                text.push_str(&format!("\n    {line}"));
             }
         }
-
-        let structured = json!({
-            "passed": passed,
-            "steps": serde_json::to_value(&results).map_err(|error| error.to_string())?,
-        });
-        Ok(ToolOutput {
-            text,
-            structured: Some(structured),
-            is_error: false,
-        })
     }
+
+    let structured = json!({
+        "passed": passed,
+        "steps": serde_json::to_value(results).map_err(|error| error.to_string())?,
+    });
+    Ok(ToolOutput {
+        text,
+        structured: Some(structured),
+        is_error: false,
+    })
 }
 
 /// The name a step is reported under: its configured name, or `step-N` (1-based).
@@ -817,9 +825,21 @@ fn select_steps<'a>(
         .collect())
 }
 
-/// Classifies one step, then runs it unless the policy refuses it.
-fn run_step(ctx: &ToolContext, name: String, step: &VerificationStep) -> StepResult {
-    let assessment = ctx.policy.assess_in(&step.command, STEP_SHELL);
+/// Classifies one step, with any `extra` arguments appended, then runs it unless the policy
+/// refuses it. Extra arguments are already checked by the caller; they are classified with the
+/// command all the same.
+fn run_step(
+    ctx: &ToolContext,
+    name: String,
+    step: &VerificationStep,
+    extra: &[String],
+) -> StepResult {
+    let command = if extra.is_empty() {
+        step.command.clone()
+    } else {
+        format!("{} {}", step.command, extra.join(" "))
+    };
+    let assessment = ctx.policy.assess_in(&command, STEP_SHELL);
     let verdict = ctx.policy.class_verdict(assessment.class);
     if !matches!(verdict, Verdict::Allow) {
         let reasons = if assessment.reasons.is_empty() {
@@ -829,7 +849,7 @@ fn run_step(ctx: &ToolContext, name: String, step: &VerificationStep) -> StepRes
         };
         return StepResult {
             name,
-            command: step.command.clone(),
+            command,
             status: BLOCKED,
             exit_code: None,
             duration_ms: 0,
@@ -849,7 +869,7 @@ fn run_step(ctx: &ToolContext, name: String, step: &VerificationStep) -> StepRes
         .timeout_ms
         .unwrap_or(ctx.verification.default_timeout_ms);
     let started = Instant::now();
-    let outcome = execute(&step.command, &cwd, Duration::from_millis(timeout_ms));
+    let outcome = execute(&command, &cwd, Duration::from_millis(timeout_ms));
     let duration_ms = elapsed_ms(started);
 
     let (status, exit_code, stdout, stderr) = match outcome {
@@ -869,7 +889,7 @@ fn run_step(ctx: &ToolContext, name: String, step: &VerificationStep) -> StepRes
     // Redact each whole stream before cutting its tail, so no secret is shown in halves.
     StepResult {
         name,
-        command: step.command.clone(),
+        command,
         status,
         exit_code,
         duration_ms,
@@ -1178,6 +1198,7 @@ impl McpTool for HarnessInfoTool {
 
 /// A context for tests: the given workspace, default config and policy.
 pub mod history;
+pub mod verify;
 
 #[cfg(test)]
 mod test_support;
@@ -1199,6 +1220,8 @@ pub(crate) fn test_context(workspace: &Path) -> ToolContext {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::fs;
+
+    use harness_core::config::StepKind;
 
     use super::test_support::{commit_files, git, git_available, init_repo};
     use super::*;
@@ -1491,6 +1514,8 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
             command: "echo ok".to_owned(),
             timeout_ms: None,
             cwd: None,
+            kind: StepKind::Test,
+            targets: false,
         });
         let error = RunVerificationTool
             .call(&json!({"steps": ["lint"]}), &ctx)
@@ -1534,6 +1559,8 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
                 command: "echo hello".to_owned(),
                 timeout_ms: Some(30_000),
                 cwd: None,
+                kind: StepKind::Test,
+                targets: false,
             },
             VerificationStep {
                 name: Some("fail".to_owned()),
@@ -1541,6 +1568,8 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
                 command: "pytest --no-such-option-xyz".to_owned(),
                 timeout_ms: Some(30_000),
                 cwd: None,
+                kind: StepKind::Test,
+                targets: false,
             },
         ];
         let output = RunVerificationTool.call(&json!({}), &ctx).unwrap();
@@ -1563,6 +1592,8 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
             command: "rm -rf x".to_owned(),
             timeout_ms: None,
             cwd: None,
+            kind: StepKind::Test,
+            targets: false,
         }];
         let output = RunVerificationTool.call(&json!({}), &ctx).unwrap();
         assert_eq!(
@@ -1588,6 +1619,8 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
             command: command.to_owned(),
             timeout_ms: None,
             cwd: None,
+            kind: StepKind::Test,
+            targets: false,
         }];
         let output = RunVerificationTool.call(&json!({}), &ctx).unwrap();
         assert_eq!(
@@ -1605,6 +1638,8 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
             command: "echo ok".to_owned(),
             timeout_ms: None,
             cwd: None,
+            kind: StepKind::Test,
+            targets: false,
         });
         let output = HarnessInfoTool.call(&json!({}), &ctx).unwrap();
         let structured = output.structured.unwrap();
@@ -1627,6 +1662,9 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
                 "git_history",
                 "git_log_range",
                 "run_verification",
+                "run_tests",
+                "run_linter",
+                "run_typechecker",
                 "harness_info"
             ]
         );
@@ -1821,6 +1859,8 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
             command: format!("echo important-stdout; echo {} 1>&2", "E".repeat(5_000)),
             timeout_ms: Some(30_000),
             cwd: None,
+            kind: StepKind::Test,
+            targets: false,
         }];
         let output = RunVerificationTool.call(&json!({}), &ctx).unwrap();
         let step = &output.structured.unwrap()["steps"][0];
