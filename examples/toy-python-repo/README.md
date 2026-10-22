@@ -7,13 +7,10 @@ Run the tests with `python -m unittest -q`.
 To exercise the harness end to end (Windows, release 1):
 
 1. Copy this folder to a new location and `git init` it.
-2. `agent init --profile local-only` in that folder. Add a verification step and the safe command to
-   `local-agent.toml`:
+2. `agent init --profile local-only` in that folder. Add a verification step to `local-agent.toml`
+   (`python -m unittest` is a built-in safe command, so no `safe_commands` entry is needed):
 
    ```toml
-   [security]
-   safe_commands = ["python -m unittest"]
-
    [[verification.steps]]
    name = "unit tests"
    command = "python -m unittest -q"

@@ -26,6 +26,8 @@
 //! | V19 | Warning | `decisions.fallback != rules` — the fallback should be deterministic (R-30) |
 //! | V20 | Error | provider `mock` in any profile other than `test` |
 //! | V21 | Error | `context.hard_limit > models[agent.default_model].context` (skipped when the default model is missing) |
+//! | V22 | Error | `launch.extra_args` contains a reserved flag ([`super::RESERVED_LAUNCH_FLAGS`]: listener, model, alias, context, key, served or written paths), as `--flag` or `--flag=value` |
+//! | V23 | Error | `timeout_ms` outside `1_000..=3_600_000`, or `retries > 10` |
 //!
 //! Unit tests: one passing baseline config (no issues) and at least one failing case per rule.
 
@@ -36,11 +38,11 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use super::is_absolute_any_platform;
 use super::schema::{
     Config, DecisionProviderKind, LaunchConfig, ModelConfig, ProfileKind, ProviderKind,
     RuntimeConfig, RuntimeKind,
 };
+use super::{is_absolute_any_platform, reserved_launch_flag};
 
 /// How serious a finding is. Errors make the config unusable; warnings are advisory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -92,7 +94,7 @@ pub fn validate(cfg: &Config) -> Vec<ConfigIssue> {
     validate_with(cfg, &ValidationEnv::from_process())
 }
 
-/// Runs every rule (V1 to V21) and returns all issues found, in rule order.
+/// Runs every rule (V1 to V23) and returns all issues found, in rule order.
 pub fn validate_with(cfg: &Config, env: &ValidationEnv) -> Vec<ConfigIssue> {
     let mut report = Report::default();
 
@@ -168,6 +170,7 @@ fn check_model(cfg: &Config, slot: &str, model: &ModelConfig, report: &mut Repor
     check_token_budget(slot, model, report);
     check_sampling(slot, model, report);
     check_kv_cache(slot, model, report);
+    check_request_limits(slot, model, report);
     check_api_key_env(
         model_path(slot, "api_key_env"),
         model.api_key_env.as_deref(),
@@ -278,6 +281,11 @@ fn check_sampling(slot: &str, model: &ModelConfig, report: &mut Report) {
 }
 
 /// Cache types known to the llama.cpp server for `--cache-type-k` / `--cache-type-v`.
+/// V23 bounds for one model request: at least a second, at most an hour, at most ten retries.
+const MIN_TIMEOUT_MS: u64 = 1_000;
+const MAX_TIMEOUT_MS: u64 = 3_600_000;
+const MAX_RETRIES: u32 = 10;
+
 const KV_CACHE_TYPES: [&str; 8] = [
     "f16", "bf16", "q8_0", "q4_0", "q4_1", "q5_0", "q5_1", "iq4_nl",
 ];
@@ -331,6 +339,39 @@ fn check_launch(
             "V16",
             model_path(slot, "launch.model_file"),
             "model_file is relative but paths.models_dir is not set",
+        );
+    }
+
+    if let Some(flag) = reserved_launch_flag(&launch.extra_args) {
+        report.error(
+            "V22",
+            model_path(slot, "launch.extra_args"),
+            format!(
+                "`{flag}` is set by the launcher or changes what the server listens on, serves or \
+                 writes; it cannot be passed in extra_args"
+            ),
+        );
+    }
+}
+
+/// V23: request timeouts and retries stay in a sane range, so a typo cannot hang the agent for
+/// days or retry forever.
+fn check_request_limits(slot: &str, model: &ModelConfig, report: &mut Report) {
+    if !(MIN_TIMEOUT_MS..=MAX_TIMEOUT_MS).contains(&model.timeout_ms) {
+        report.error(
+            "V23",
+            model_path(slot, "timeout_ms"),
+            format!(
+                "timeout_ms {} is outside {MIN_TIMEOUT_MS}..={MAX_TIMEOUT_MS}",
+                model.timeout_ms
+            ),
+        );
+    }
+    if model.retries > MAX_RETRIES {
+        report.error(
+            "V23",
+            model_path(slot, "retries"),
+            format!("retries {} is above {MAX_RETRIES}", model.retries),
         );
     }
 }
@@ -546,7 +587,7 @@ fn on_drive(path: &Path, drive: &str) -> bool {
 /// Host part of an `http://` or `https://` endpoint, without userinfo, port or path. Returns an
 /// empty host when the authority has none, and `None` when the scheme is not http(s) or a
 /// bracketed IPv6 host is unterminated.
-fn endpoint_host(endpoint: &str) -> Option<&str> {
+pub(super) fn endpoint_host(endpoint: &str) -> Option<&str> {
     let (scheme, rest) = endpoint.split_once("://")?;
     if !scheme.eq_ignore_ascii_case("http") && !scheme.eq_ignore_ascii_case("https") {
         return None;
@@ -578,7 +619,7 @@ fn is_https(endpoint: &str) -> bool {
 }
 
 /// Loopback test for an endpoint host: `localhost`, any `127.0.0.0/8` address, or `::1`.
-fn is_loopback_host(host: &str) -> bool {
+pub(super) fn is_loopback_host(host: &str) -> bool {
     if host.eq_ignore_ascii_case("localhost") {
         return true;
     }
@@ -802,6 +843,56 @@ mod tests {
             .expect("launch")
             .runtime = "missing".to_owned();
         assert_issue(&cfg, "V6", Severity::Error, "models.main.launch.runtime");
+    }
+
+    #[test]
+    fn v22_extra_args_may_not_rebind_or_redirect_the_server() {
+        for args in [
+            vec!["--host", "0.0.0.0"],
+            vec!["--port=9000"],
+            vec!["-m", "/tmp/other.gguf"],
+            vec!["--log-file", "C:\\Users\\x\\.bashrc"],
+            vec!["--slot-save-path=/tmp"],
+            vec!["-hf", "someone/model"],
+        ] {
+            let mut cfg = baseline();
+            main_model(&mut cfg)
+                .launch
+                .as_mut()
+                .expect("launch")
+                .extra_args = args.iter().map(|a| (*a).to_owned()).collect();
+            assert_issue(
+                &cfg,
+                "V22",
+                Severity::Error,
+                "models.main.launch.extra_args",
+            );
+        }
+        let mut cfg = baseline();
+        main_model(&mut cfg)
+            .launch
+            .as_mut()
+            .expect("launch")
+            .extra_args = vec!["--spec-type".to_owned(), "draft-mtp".to_owned()];
+        assert_no_rule(&cfg, "V22");
+    }
+
+    #[test]
+    fn v23_request_limits_are_bounded() {
+        let mut cfg = baseline();
+        main_model(&mut cfg).timeout_ms = 999;
+        assert_issue(&cfg, "V23", Severity::Error, "models.main.timeout_ms");
+        main_model(&mut cfg).timeout_ms = 3_600_001;
+        assert_issue(&cfg, "V23", Severity::Error, "models.main.timeout_ms");
+
+        let mut cfg = baseline();
+        main_model(&mut cfg).retries = 11;
+        assert_issue(&cfg, "V23", Severity::Error, "models.main.retries");
+
+        let mut cfg = baseline();
+        main_model(&mut cfg).timeout_ms = 3_600_000;
+        main_model(&mut cfg).retries = 10;
+        assert_no_rule(&cfg, "V23");
     }
 
     #[test]
