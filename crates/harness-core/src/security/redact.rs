@@ -895,4 +895,161 @@ mod tests {
             );
         }
     }
+
+    // Review findings: escaped quotes (JSON embedded in a string).
+
+    #[test]
+    fn escaped_quotes_around_assignment_values_are_redacted() {
+        assert_redacts(r#"password=\"hunter2\""#, r#"password=\"[REDACTED]\""#);
+        assert_redacts(
+            r#"{\"api_key\":\"hunter2\"}"#,
+            r#"{\"api_key\":\"[REDACTED]\"}"#,
+        );
+    }
+
+    #[test]
+    fn escaped_quote_inside_a_quoted_value_does_not_end_it() {
+        assert_redacts(r#"DB_PASSWORD="p\"w0rd""#, r#"DB_PASSWORD="[REDACTED]""#);
+    }
+
+    // Review findings: more sensitive names.
+
+    #[test]
+    fn passphrase_session_id_and_key_suffixed_names_are_redacted() {
+        assert_redacts(
+            "ENCRYPTION_KEY=3fa9c2d81b7e4f60",
+            "ENCRYPTION_KEY=[REDACTED]",
+        );
+        assert_redacts("PASSPHRASE=hunter2", "PASSPHRASE=[REDACTED]");
+        assert_redacts("sessionid=hunter2", "sessionid=[REDACTED]");
+        assert_redacts("SESSION_ID=abc123", "SESSION_ID=[REDACTED]");
+        assert_redacts("SIGNING_KEY=abc123", "SIGNING_KEY=[REDACTED]");
+        assert_redacts("x-api-key: abc123", "x-api-key: [REDACTED]");
+        assert_redacts("signingKey: abc123", "signingKey: [REDACTED]");
+    }
+
+    #[test]
+    fn secret_suffix_names_are_sensitive_for_env_scrubbing() {
+        for name in [
+            "ENCRYPTION_KEY",
+            "PASSPHRASE",
+            "SESSIONID",
+            "SESSION_ID",
+            "SIGNING_KEY",
+            "CLIENT_SECRET",
+            "PRIVATE_KEY",
+            "signingKey",
+            "x-api-key",
+        ] {
+            assert!(is_sensitive_name(name), "{name} should be sensitive");
+        }
+    }
+
+    // Review findings: command-line credentials.
+
+    #[test]
+    fn curl_user_option_redacts_only_the_password() {
+        assert_redacts(
+            "curl -u admin:hunter2 https://x",
+            "curl -u admin:[REDACTED] https://x",
+        );
+        assert_redacts(
+            "curl --user admin:hunter2",
+            "curl --user admin:[REDACTED]",
+        );
+        assert_redacts(
+            "curl --user=admin:hunter2 https://x",
+            "curl --user=admin:[REDACTED] https://x",
+        );
+    }
+
+    #[test]
+    fn credential_flags_with_a_separate_value_are_redacted() {
+        assert_redacts("tool --token hunter2 --verbose", "tool --token [REDACTED] --verbose");
+        assert_redacts("tool --password hunter2", "tool --password [REDACTED]");
+        assert_redacts("tool --passwd hunter2", "tool --passwd [REDACTED]");
+        assert_redacts("tool --api-key hunter2", "tool --api-key [REDACTED]");
+        assert_redacts("tool --secret s3cr3t", "tool --secret [REDACTED]");
+        assert_redacts(
+            "tool --client-secret s3cr3t",
+            "tool --client-secret [REDACTED]",
+        );
+    }
+
+    #[test]
+    fn ordinary_flags_and_git_upstream_are_not_redacted() {
+        assert_untouched("git push -u origin main");
+        assert_untouched("tool --token");
+        assert_untouched("tool --token --verbose");
+        assert_untouched("tool --verbose hunter2");
+    }
+
+    #[test]
+    fn authorization_header_with_bearer_is_redacted_to_end_of_line() {
+        assert_redacts(
+            "Authorization: Bearer abc.def.ghi",
+            "Authorization: [REDACTED]",
+        );
+    }
+
+    // Review findings: unquoted values, marker suffixes, URL passwords, count names.
+
+    #[test]
+    fn unquoted_value_may_start_with_a_delimiter() {
+        assert_redacts("DB_PASSWORD=)hunter2", "DB_PASSWORD=[REDACTED]");
+    }
+
+    #[test]
+    fn value_after_an_existing_marker_is_redacted() {
+        assert_redacts("token=[REDACTED]hunter2", "token=[REDACTED]");
+    }
+
+    #[test]
+    fn url_password_may_contain_an_at_sign() {
+        assert_redacts(
+            "postgres://app:pa@ss@db.local/x",
+            "postgres://app:[REDACTED]@db.local/x",
+        );
+        assert_untouched("postgres://app:pa/ss@db");
+    }
+
+    #[test]
+    fn token_count_names_hide_non_numeric_values() {
+        assert_redacts("ACCESS_TOKENS=hunter2", "ACCESS_TOKENS=[REDACTED]");
+        assert_untouched("ACCESS_TOKENS=4096");
+        assert_untouched("MAX_TOKENS=4096");
+    }
+
+    // Review findings: idempotence over every new case.
+
+    #[test]
+    fn review_cases_are_idempotent() {
+        let redactor = Redactor::new();
+        let inputs = [
+            r#"password=\"hunter2\""#,
+            r#"{\"api_key\":\"hunter2\"}"#,
+            r#"DB_PASSWORD="p\"w0rd""#,
+            "ENCRYPTION_KEY=3fa9c2d81b7e4f60",
+            "PASSPHRASE=hunter2",
+            "sessionid=hunter2",
+            "SESSION_ID=abc123",
+            "x-api-key: abc123",
+            "signingKey: abc123",
+            "curl -u admin:hunter2 https://x",
+            "curl --user=admin:hunter2 https://x",
+            "tool --token hunter2 --verbose",
+            "tool --client-secret s3cr3t",
+            "Authorization: Bearer abc.def.ghi",
+            "DB_PASSWORD=)hunter2",
+            "token=[REDACTED]hunter2",
+            "postgres://app:pa@ss@db.local/x",
+            "ACCESS_TOKENS=hunter2",
+            "max_tokens=abc_password=xyz",
+        ];
+        for input in inputs {
+            let once = redactor.redact(input).into_owned();
+            let twice = redactor.redact(&once).into_owned();
+            assert_eq!(twice, once, "not idempotent for {input:?}");
+        }
+    }
 }
