@@ -7,6 +7,7 @@
 //! Host-specific code lives in `harness-cli::host`.
 
 pub mod config;
+pub mod failures;
 pub mod identity;
 pub mod models;
 pub mod security;

@@ -30,6 +30,9 @@ pub struct Config {
     pub verification: VerificationSection,
     pub telemetry: TelemetrySection,
     pub external: ExternalSection,
+    /// Project-specific tools (declarative adapters). Machine or explicit config only: a
+    /// repository config may not add tools (see `config::trust`).
+    pub tools: ToolsSection,
 }
 
 impl Default for Config {
@@ -48,6 +51,7 @@ impl Default for Config {
             verification: VerificationSection::default(),
             telemetry: TelemetrySection::default(),
             external: ExternalSection::default(),
+            tools: ToolsSection::default(),
         }
     }
 }
@@ -502,6 +506,38 @@ pub struct VerificationStep {
     /// Working directory relative to the workspace root.
     #[serde(default)]
     pub cwd: Option<PathBuf>,
+    /// What the step checks. `run_tests`, `run_linter` and `run_typechecker` pick steps by kind;
+    /// `run_verification` runs every step.
+    #[serde(default)]
+    pub kind: StepKind,
+    /// Whether `run_tests` may append test targets (files, node ids or test names) to the command.
+    #[serde(default)]
+    pub targets: bool,
+}
+
+/// What a verification step checks (§21).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StepKind {
+    /// Tests (the default: most projects declare their test command first).
+    #[default]
+    Test,
+    Lint,
+    Typecheck,
+    Build,
+    Other,
+}
+
+impl StepKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Test => "test",
+            Self::Lint => "lint",
+            Self::Typecheck => "typecheck",
+            Self::Build => "build",
+            Self::Other => "other",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -550,6 +586,37 @@ impl Default for TelemetrySection {
             max_field_bytes: 2048,
         }
     }
+}
+
+/// `[tools]`: adapters that expose a configured command as an MCP tool named `adapter_<name>`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ToolsSection {
+    /// The configured adapters, in declaration order.
+    #[serde(rename = "adapters")]
+    pub adapters: Vec<AdapterConfig>,
+}
+
+/// One adapter: a program with fixed arguments, optionally followed by caller-supplied words.
+/// The program runs without a shell, under the same policy as `run_command`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdapterConfig {
+    /// Tool name suffix: `adapter_<name>`. Lowercase letters, digits and `_`.
+    pub name: String,
+    /// What the tool does, shown to the model.
+    pub description: String,
+    /// Program name on PATH (no path separators).
+    pub program: String,
+    /// Arguments always passed, before any caller words.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Whether the caller may append plain words after the fixed arguments.
+    #[serde(default)]
+    pub accepts_args: bool,
+    /// Timeout in milliseconds (default: the verification default).
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

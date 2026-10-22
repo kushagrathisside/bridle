@@ -28,6 +28,11 @@ sysinfo = { version = "0.39.6", default-features = false, features = ["system", 
 dunce = "1.0.5"
 humantime = "2.4.0"
 tempfile = "3.27.0"
+# Code intelligence (ADR-0003). Exact pins: the grammars are versioned with tree-sitter.
+tree-sitter = "=0.27.1"
+tree-sitter-rust = "=0.24.2"
+tree-sitter-python = "=0.25.0"
+tree-sitter-cpp = "=0.23.4"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

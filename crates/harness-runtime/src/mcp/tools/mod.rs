@@ -56,6 +56,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use harness_core::config::{Config, ModelRole, Verdict, VerificationSection, VerificationStep};
+use harness_core::failures::{Failure, parse_failures};
 use harness_core::security::command_risk::ShellKind;
 use harness_core::security::redact::Redactor;
 use harness_core::security::tool_policy::{ToolKind, ToolPolicy, ToolRequest};
@@ -72,6 +73,8 @@ const DIFF_READ_MARGIN: usize = 4_096;
 const NAME_LIST_LIMIT_BYTES: usize = 4 * 1024 * 1024;
 /// Bytes of each output stream reported for a verification step (the tail).
 const OUTPUT_TAIL_BYTES: usize = 2_000;
+/// Parsed failures listed per step in the text result; all of them are in the structured result.
+const FAILURES_IN_TEXT: usize = 10;
 /// Bytes kept per output stream while a step runs; only the tail is ever reported.
 const CAPTURE_LIMIT_BYTES: usize = 64 * 1024;
 /// Entries listed per category in the `git_status` summary and structured lists, and in the
@@ -139,7 +142,23 @@ pub fn default_tools() -> Vec<Box<dyn McpTool>> {
     vec![
         Box::new(GitStatusTool),
         Box::new(GitDiffTool),
+        Box::new(history::GitHistoryTool),
+        Box::new(history::GitLogRangeTool),
         Box::new(RunVerificationTool),
+        Box::new(verify::RUN_TESTS),
+        Box::new(verify::RUN_LINTER),
+        Box::new(verify::RUN_TYPECHECKER),
+        Box::new(failures::ParseTestFailureTool),
+        Box::new(code::RepoMapTool),
+        Box::new(code::FileSummaryTool),
+        Box::new(code::SymbolSearchTool),
+        Box::new(code::FindReferencesTool),
+        Box::new(deps::DependencySearchTool),
+        Box::new(artifacts::InspectArtifactTool),
+        Box::new(artifacts::SummarizeExperimentTool),
+        Box::new(artifacts::CompareExperimentsTool),
+        Box::new(run::RunCommandTool),
+        Box::new(run::InspectConfigTool),
         Box::new(HarnessInfoTool),
     ]
 }
@@ -704,6 +723,9 @@ struct StepResult {
     output_tail: String,
     /// The last [`OUTPUT_TAIL_BYTES`] of stderr, redacted.
     stderr_tail: String,
+    /// Failures parsed from the step's captured output when it did not pass (AC-A5).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    failures: Vec<Failure>,
 }
 
 impl McpTool for RunVerificationTool {
@@ -738,45 +760,60 @@ impl McpTool for RunVerificationTool {
         let selected = select_steps(&ctx.verification.steps, requested.as_deref())?;
         let results: Vec<StepResult> = selected
             .into_iter()
-            .map(|(name, step)| run_step(ctx, name, step))
+            .map(|(name, step)| run_step(ctx, name, step, &[]))
             .collect();
-        let passing = results.iter().filter(|step| step.status == PASSED).count();
-        let passed = passing == results.len();
+        report_steps("Verification", &results)
+    }
+}
 
-        let mut text = format!(
-            "Verification {}: {passing} of {} steps passed.",
-            if passed { "passed" } else { "failed" },
-            results.len()
-        );
-        for step in &results {
-            let exit = step
-                .exit_code
-                .map(|code| format!(", exit {code}"))
-                .unwrap_or_default();
+/// The text and structured result for a set of step results, under a label such as `Tests`.
+fn report_steps(label: &str, results: &[StepResult]) -> Result<ToolOutput, String> {
+    let passing = results.iter().filter(|step| step.status == PASSED).count();
+    let passed = passing == results.len();
+
+    let mut text = format!(
+        "{label} {}: {passing} of {} steps passed.",
+        if passed { "passed" } else { "failed" },
+        results.len()
+    );
+    for step in results {
+        let exit = step
+            .exit_code
+            .map(|code| format!(", exit {code}"))
+            .unwrap_or_default();
+        text.push_str(&format!(
+            "\n- {}: {}{exit} ({} ms)",
+            step.name, step.status, step.duration_ms
+        ));
+        // Parsed failures first: they say where to look without reading the log.
+        for failure in step.failures.iter().take(FAILURES_IN_TEXT) {
+            text.push_str(&format!("\n  x {}", failures::describe(failure)));
+        }
+        if step.failures.len() > FAILURES_IN_TEXT {
             text.push_str(&format!(
-                "\n- {}: {}{exit} ({} ms)",
-                step.name, step.status, step.duration_ms
+                "\n  ... and {} more failures (see the structured result)",
+                step.failures.len() - FAILURES_IN_TEXT
             ));
-            if step.status != PASSED {
-                for line in step.output_tail.trim_end().lines() {
-                    text.push_str(&format!("\n    {line}"));
-                }
-                for line in step.stderr_tail.trim_end().lines() {
-                    text.push_str(&format!("\n    {line}"));
-                }
+        }
+        if step.status != PASSED {
+            for line in step.output_tail.trim_end().lines() {
+                text.push_str(&format!("\n    {line}"));
+            }
+            for line in step.stderr_tail.trim_end().lines() {
+                text.push_str(&format!("\n    {line}"));
             }
         }
-
-        let structured = json!({
-            "passed": passed,
-            "steps": serde_json::to_value(&results).map_err(|error| error.to_string())?,
-        });
-        Ok(ToolOutput {
-            text,
-            structured: Some(structured),
-            is_error: false,
-        })
     }
+
+    let structured = json!({
+        "passed": passed,
+        "steps": serde_json::to_value(results).map_err(|error| error.to_string())?,
+    });
+    Ok(ToolOutput {
+        text,
+        structured: Some(structured),
+        is_error: false,
+    })
 }
 
 /// The name a step is reported under: its configured name, or `step-N` (1-based).
@@ -815,9 +852,21 @@ fn select_steps<'a>(
         .collect())
 }
 
-/// Classifies one step, then runs it unless the policy refuses it.
-fn run_step(ctx: &ToolContext, name: String, step: &VerificationStep) -> StepResult {
-    let assessment = ctx.policy.assess_in(&step.command, STEP_SHELL);
+/// Classifies one step, with any `extra` arguments appended, then runs it unless the policy
+/// refuses it. Extra arguments are already checked by the caller; they are classified with the
+/// command all the same.
+fn run_step(
+    ctx: &ToolContext,
+    name: String,
+    step: &VerificationStep,
+    extra: &[String],
+) -> StepResult {
+    let command = if extra.is_empty() {
+        step.command.clone()
+    } else {
+        format!("{} {}", step.command, extra.join(" "))
+    };
+    let assessment = ctx.policy.assess_in(&command, STEP_SHELL);
     let verdict = ctx.policy.class_verdict(assessment.class);
     if !matches!(verdict, Verdict::Allow) {
         let reasons = if assessment.reasons.is_empty() {
@@ -827,7 +876,7 @@ fn run_step(ctx: &ToolContext, name: String, step: &VerificationStep) -> StepRes
         };
         return StepResult {
             name,
-            command: step.command.clone(),
+            command,
             status: BLOCKED,
             exit_code: None,
             duration_ms: 0,
@@ -836,6 +885,7 @@ fn run_step(ctx: &ToolContext, name: String, step: &VerificationStep) -> StepRes
                 .redact(&format!("not run: {reasons}"))
                 .into_owned(),
             stderr_tail: String::new(),
+            failures: Vec::new(),
         };
     }
 
@@ -847,7 +897,7 @@ fn run_step(ctx: &ToolContext, name: String, step: &VerificationStep) -> StepRes
         .timeout_ms
         .unwrap_or(ctx.verification.default_timeout_ms);
     let started = Instant::now();
-    let outcome = execute(&step.command, &cwd, Duration::from_millis(timeout_ms));
+    let outcome = execute(&command, &cwd, Duration::from_millis(timeout_ms));
     let duration_ms = elapsed_ms(started);
 
     let (status, exit_code, stdout, stderr) = match outcome {
@@ -864,15 +914,25 @@ fn run_step(ctx: &ToolContext, name: String, step: &VerificationStep) -> StepRes
         }
         Err(error) => (FAILED, None, error.into_bytes(), Vec::new()),
     };
+    // Parse the whole captured output (up to the capture limit per stream), not only the tails.
+    let failures = if status == PASSED {
+        Vec::new()
+    } else {
+        let mut both = lossy(&stdout);
+        both.push('\n');
+        both.push_str(&lossy(&stderr));
+        parse_failures(&both).failures
+    };
     // Redact each whole stream before cutting its tail, so no secret is shown in halves.
     StepResult {
         name,
-        command: step.command.clone(),
+        command,
         status,
         exit_code,
         duration_ms,
         output_tail: tail_text(&ctx.redactor.redact(&lossy(&stdout)), OUTPUT_TAIL_BYTES),
         stderr_tail: tail_text(&ctx.redactor.redact(&lossy(&stderr)), OUTPUT_TAIL_BYTES),
+        failures,
     }
 }
 
@@ -1175,6 +1235,18 @@ impl McpTool for HarnessInfoTool {
 }
 
 /// A context for tests: the given workspace, default config and policy.
+pub mod adapters;
+pub mod artifacts;
+pub mod code;
+pub mod deps;
+pub mod failures;
+pub mod history;
+pub mod run;
+pub mod verify;
+
+#[cfg(test)]
+mod test_support;
+
 #[cfg(test)]
 pub(crate) fn test_context(workspace: &Path) -> ToolContext {
     let policy = ToolPolicy::new(workspace, &harness_core::config::SecuritySection::default())
@@ -1193,6 +1265,9 @@ pub(crate) fn test_context(workspace: &Path) -> ToolContext {
 mod tests {
     use std::fs;
 
+    use harness_core::config::StepKind;
+
+    use super::test_support::{commit_files, git, git_available, init_repo};
     use super::*;
 
     const CLEAN_REPO: &[u8] = b"# branch.oid 0123456789abcdef\0# branch.head main\0# branch.upstream origin/main\0# branch.ab +0 -0\0";
@@ -1213,51 +1288,6 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
 
     fn strings(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
-    }
-
-    fn git_available() -> bool {
-        Command::new("git")
-            .arg("--version")
-            .output()
-            .is_ok_and(|output| output.status.success())
-    }
-
-    fn git(dir: &Path, args: &[&str]) {
-        let status = Command::new("git")
-            .args(args)
-            .current_dir(dir)
-            .stdin(Stdio::null())
-            .status()
-            .unwrap();
-        assert!(status.success(), "git {args:?} failed");
-    }
-
-    /// A temporary repository with one committed file, or `None` when git is unavailable.
-    fn init_repo() -> Option<tempfile::TempDir> {
-        if !git_available() {
-            eprintln!("git not found; skipping");
-            return None;
-        }
-        let dir = tempfile::tempdir().unwrap();
-        git(dir.path(), &["init", "-q"]);
-        fs::write(dir.path().join("README.md"), "hello\n").unwrap();
-        git(dir.path(), &["add", "README.md"]);
-        git(
-            dir.path(),
-            &[
-                "-c",
-                "user.name=test",
-                "-c",
-                "user.email=test@example.invalid",
-                "-c",
-                "commit.gpgsign=false",
-                "commit",
-                "-q",
-                "-m",
-                "init",
-            ],
-        );
-        Some(dir)
     }
 
     fn ctx_for(dir: &Path) -> ToolContext {
@@ -1528,6 +1558,8 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
             command: "echo ok".to_owned(),
             timeout_ms: None,
             cwd: None,
+            kind: StepKind::Test,
+            targets: false,
         });
         let error = RunVerificationTool
             .call(&json!({"steps": ["lint"]}), &ctx)
@@ -1571,6 +1603,8 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
                 command: "echo hello".to_owned(),
                 timeout_ms: Some(30_000),
                 cwd: None,
+                kind: StepKind::Test,
+                targets: false,
             },
             VerificationStep {
                 name: Some("fail".to_owned()),
@@ -1578,6 +1612,8 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
                 command: "pytest --no-such-option-xyz".to_owned(),
                 timeout_ms: Some(30_000),
                 cwd: None,
+                kind: StepKind::Test,
+                targets: false,
             },
         ];
         let output = RunVerificationTool.call(&json!({}), &ctx).unwrap();
@@ -1600,11 +1636,56 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
             command: "rm -rf x".to_owned(),
             timeout_ms: None,
             cwd: None,
+            kind: StepKind::Test,
+            targets: false,
         }];
         let output = RunVerificationTool.call(&json!({}), &ctx).unwrap();
         assert_eq!(
             output.structured.unwrap()["steps"][0]["status"],
             json!("blocked")
+        );
+    }
+
+    #[test]
+    fn a_failed_step_returns_its_parsed_failures() {
+        let has_pytest = Command::new("python")
+            .args(["-m", "pytest", "--version"])
+            .output()
+            .is_ok_and(|out| out.status.success());
+        if !has_pytest {
+            eprintln!("pytest not available; skipping");
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("test_calc.py"),
+            "def add(a, b):\n    return a - b\n\n\ndef test_add():\n    assert add(1, 2) == 3\n",
+        )
+        .unwrap();
+        let mut ctx = ctx_for(dir.path());
+        ctx.verification.steps = vec![VerificationStep {
+            name: Some("pytest".to_owned()),
+            command: "python -m pytest -q test_calc.py".to_owned(),
+            timeout_ms: None,
+            cwd: None,
+            kind: StepKind::Test,
+            targets: false,
+        }];
+        let output = RunVerificationTool.call(&json!({}), &ctx).unwrap();
+        let step = output.structured.unwrap()["steps"][0].clone();
+        assert_eq!(step["status"], json!("failed"), "{step}");
+        assert_eq!(
+            step["failures"][0]["name"],
+            json!("test_calc.py::test_add"),
+            "{step}"
+        );
+        assert_eq!(step["failures"][0]["line"], json!(6), "{step}");
+        assert!(
+            output
+                .text
+                .contains("x test_calc.py::test_add at test_calc.py:6"),
+            "{}",
+            output.text
         );
     }
 
@@ -1625,6 +1706,8 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
             command: command.to_owned(),
             timeout_ms: None,
             cwd: None,
+            kind: StepKind::Test,
+            targets: false,
         }];
         let output = RunVerificationTool.call(&json!({}), &ctx).unwrap();
         assert_eq!(
@@ -1642,6 +1725,8 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
             command: "echo ok".to_owned(),
             timeout_ms: None,
             cwd: None,
+            kind: StepKind::Test,
+            targets: false,
         });
         let output = HarnessInfoTool.call(&json!({}), &ctx).unwrap();
         let structured = output.structured.unwrap();
@@ -1658,33 +1743,28 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
         let names: Vec<&str> = default_tools().iter().map(|tool| tool.name()).collect();
         assert_eq!(
             names,
-            ["git_status", "git_diff", "run_verification", "harness_info"]
-        );
-    }
-
-    /// Commits `files` (path, content) on top of the repository's history.
-    fn commit_files(dir: &Path, files: &[(&str, &str)]) {
-        for (path, content) in files {
-            let full = dir.join(path);
-            fs::create_dir_all(full.parent().unwrap()).unwrap();
-            fs::write(&full, content).unwrap();
-            // Forced: fixtures such as `.env` may match an ignore rule on the machine running tests.
-            git(dir, &["add", "-f", path]);
-        }
-        git(
-            dir,
-            &[
-                "-c",
-                "user.name=test",
-                "-c",
-                "user.email=test@example.invalid",
-                "-c",
-                "commit.gpgsign=false",
-                "commit",
-                "-q",
-                "-m",
-                "files",
-            ],
+            [
+                "git_status",
+                "git_diff",
+                "git_history",
+                "git_log_range",
+                "run_verification",
+                "run_tests",
+                "run_linter",
+                "run_typechecker",
+                "parse_test_failure",
+                "repo_map",
+                "file_summary",
+                "symbol_search",
+                "find_references",
+                "dependency_search",
+                "inspect_artifact",
+                "summarize_experiment",
+                "compare_experiments",
+                "run_command",
+                "inspect_config",
+                "harness_info"
+            ]
         );
     }
 
@@ -1877,6 +1957,8 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
             command: format!("echo important-stdout; echo {} 1>&2", "E".repeat(5_000)),
             timeout_ms: Some(30_000),
             cwd: None,
+            kind: StepKind::Test,
+            targets: false,
         }];
         let output = RunVerificationTool.call(&json!({}), &ctx).unwrap();
         let step = &output.structured.unwrap()["steps"][0];

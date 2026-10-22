@@ -4,7 +4,7 @@ use std::process::ExitCode;
 
 use harness_core::identity;
 use harness_core::security::redact::Redactor;
-use harness_runtime::mcp::{Server, ServerInfo, ToolContext, default_tools};
+use harness_runtime::mcp::{Server, ServerInfo, ToolContext, adapter_tools, default_tools};
 
 use crate::app::App;
 
@@ -27,7 +27,9 @@ pub fn run(app: &App) -> anyhow::Result<ExitCode> {
             identity::PRODUCT_ID
         ),
     };
-    let mut server = Server::new(info, default_tools(), ctx);
+    let mut tools = default_tools();
+    tools.extend(adapter_tools(&app.config));
+    let mut server = Server::new(info, tools, ctx);
     let stdin = std::io::stdin().lock();
     let stdout = std::io::stdout().lock();
     server.serve(stdin, stdout)?;
