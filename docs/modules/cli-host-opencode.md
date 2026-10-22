@@ -7,7 +7,9 @@
 | `opencode-plugin/package.json` | Exact pins: `@opencode-ai/plugin` 1.19.3, `typescript` 5.6.3, `@types/node` 18.19.130 |
 | `crates/harness-cli/src/commands/hook.rs` | Process entry for hooks: stdin to `handle`, answer to stdout, event to the log |
 
-Pinned host: OpenCode 1.19.3 (ADR-0001, R-33.2). A new OpenCode version means a new adapter module
+Pinned host: OpenCode 1.19.3 (ADR-0001, R-33.2). On Windows it runs bash-tool commands in PowerShell
+(`powershell -NoProfile -Command`) unless `SHELL` names another shell; the policy lexes commands the same way
+([core-security.md](core-security.md)). A new OpenCode version means a new adapter module
 (`opencode_v2.rs`), not edits scattered across the code.
 
 ## Hook protocol
@@ -19,7 +21,7 @@ from stdout (20 s timeout). The command always exits 0 and always answers, even 
 |---|---|---|---|---|
 | `tool.execute.before` | `tool-before` | `tool_before` | `{action: allow\|block, message, class, verdict, rule}` | Blocked (the shim throws) |
 | `tool.execute.after` | `tool-after` | `tool_after` | `{output}` when redaction changed it | Output withheld |
-| `permission.ask` | `permission` | `permission` | `{status: allow\|deny, reason}` | `ask` (see below) |
+| `permission.ask` | `permission` | `permission` | `{status: allow\|deny, reason}` | `deny` (D3) |
 | `shell.env` | `shell-env` | `shell_env` | `{set: {NAME: ""}}` blanks secret variables | Environment unchanged; the call is still gated by `tool-before` |
 | `event` (6 lifecycle types) | `event` | `session_event` | `{}` | Ignored (telemetry only) |
 
@@ -73,13 +75,11 @@ goes through `tool_before`, which checks the arguments (so `cat .env` is denied 
 - `shell_env` returns every non-empty variable with a sensitive name, set to `""`. OpenCode merges the answer over the
   inherited environment, so the secret is removed from the shell.
 
-Open items:
-- If the hook cannot build its context, `failure_answer` returns `ask` for `permission`, and the shim also falls
-  back to `ask`. Every tool call is still blocked by `tool-before`, but `deny` would be consistent with D3.
-  Planned change.
-- If `shell-env` fails, secrets stay in the shell environment. Commands that dump the environment (`env`,
-  `printenv`, `set`, `Get-ChildItem env:`) then rely on output redaction alone.
-- The `message` returned to the model is not redacted (redaction review, minor; fix in progress).
+- The reasons in a `tool_before` answer are redacted before they reach the model or the log (a blocked command
+  can echo part of itself, such as `unrecognised program <word>`).
+
+Open item: if `shell-env` fails, secrets stay in the shell environment. Commands that dump the environment (`env`,
+`printenv`, `Get-ChildItem env:`) then rely on output redaction alone.
 
 ## opencode.json generation (`generate_opencode_config`)
 
@@ -95,7 +95,9 @@ One source of truth: the harness config produces `opencode.json` (C-11).
     `max_iterations × 10`.
   - `explore`: read-only subagent (edit denied, read-only bash list, no web).
   - `review` and `deep`: generated when a slot has that role; they analyse and propose, and never edit (§18).
-- MCP: `local-agent` runs `<agent.exe> mcp` over stdio with a 10 s timeout.
+- MCP: `local-agent` runs `<agent.exe> mcp` over stdio. OpenCode applies `timeout` to every MCP request, so it is
+  the sum of the verification step timeouts (steps run in turn), at least `git_diff`'s worst case (120 s), plus
+  30 s.
 
 ## The shim (`local-agent.ts`)
 

@@ -46,12 +46,11 @@ to `OpenAiCompatProvider`; `mock` to `MockProvider::echo` (allowed only in the `
 - Retries: connection failures and HTTP 503 are retried up to `model.retries` extra times, with
   500 ms × attempt backoff. Any other status is returned at once.
 - SSE: lines are fed to an accumulator that rebuilds content and tool-call fragments; malformed JSON gives
-  `InvalidResponse`, never a panic.
+  `InvalidResponse`, never a panic. A line longer than 1 MiB is an `InvalidResponse` and is not buffered.
 - The API key is wrapped in a type whose `Debug` prints `***`, and it goes only into the `Authorization` header.
   Tests check that the key never appears in debug output.
 
-Open findings (M1 review, minor): no per-line cap on SSE lines (memory grows until the request timeout);
-`timeout_ms` and `retries` have no upper bound in validation.
+`timeout_ms` (1 s..1 h) and `retries` (at most 10) are bounded by validation rule V23.
 
 ## llama.cpp provider (`llama_cpp.rs`)
 
@@ -81,7 +80,8 @@ External providers (M7, M8) will need their own client and endpoint policy.
 
 ## Tests
 
-- `tests/provider_http.rs`: a local TCP fake server for chat, streaming, retries on 503, error mapping.
+- `tests/provider_http.rs`: a local TCP fake server for chat, streaming, retries on 503, error mapping, and an
+  oversized SSE line.
 - `src/providers/openai_compat.rs`: request body assembly, thinking flag, key never in debug output.
 - `src/providers/llama_cpp.rs`: props parsing and health detail.
 - `src/providers/mock.rs`: each mock behaviour.

@@ -32,8 +32,10 @@ Windows. A missing binary is `LaunchError::MissingBinary(path)`.
 returns the elapsed load time (R-41). It fails fast with `LaunchError::Exited` if the server dies, and with
 `NotReady` on timeout.
 
-Open findings (M1 review): `extra_args` is appended after the loopback check and is not validated, so
-`--host 0.0.0.0` there re-binds the server (major); no process group on Unix (minor).
+`extra_args` may not contain a reserved flag (`--host`, `--port`, `-m`, `--log-file`, ...): validation rule
+V22 rejects it, and `server_args` refuses it too (`LaunchError::ReservedFlag`), so a skipped validation cannot
+re-bind the server. Deferred to release 2: starting the server in its own process group on Unix (that would stop
+Ctrl+C from reaching an attached `serve`; on Windows the server has no console).
 
 ## Health checks (`health.rs`)
 
@@ -76,16 +78,20 @@ run with a 5 s timeout.
 - `probe_wsl()`: inside WSL (from `/proc/sys/kernel/osrelease`); on Windows, `.wslconfig` limits
   (`parse_wslconfig`) and running distributions (`wsl.exe -l --running -q`, UTF-16LE decoded).
 - `free_space(path)`: free bytes on the volume holding `path` (longest mount-point prefix).
-- `command_version(bin, args)`: first non-empty line of a tool's version output.
+- `command_version(bin, args)`: first non-empty line of a tool's version output. `command_output` returns all
+  of it (used for `llama-server --version`). Both run with the 5 s timeout.
+- `process_image(pid)`: the executable name of a running process (`tasklist` on Windows, `/proc` or `ps`
+  elsewhere), used by `agent models stop` before it signals anything.
 
 ## Event log (`event_log.rs`)
 
 `EventLog::for_workspace(...)` writes to `<workspace>/.local-agent/`: `tool-events.jsonl` (hook decisions) and
 `events.jsonl` (everything else).
 
-- `append(event)` redacts the event with the configured redactor, caps every string field at
-  `telemetry.max_field_bytes` (`truncate_strings`, char-safe), and writes one line with a single `write_all` in
-  append mode. That keeps lines whole when several hook processes append at once.
+- `append(event)` redacts `data` (by key and by pattern) and the top-level text fields copied from host
+  payloads (`tool`, `status`, `actor`, `model`, `phase`; by pattern), caps every string at
+  `telemetry.max_field_bytes` (char-safe), and writes one line with a single `write_all` in append mode. That keeps
+  lines whole when several hook processes append at once. Task, session and call ids are kept for correlation.
 - Telemetry must not break the agent: I/O errors are returned for the caller to ignore or report, never panicked on.
 - With `secrets_redaction = false`, fields are written raw (config-gated; flagged by the redaction review).
 
@@ -97,6 +103,5 @@ run with a 5 s timeout.
 - `tests/health_mock.rs`: each pass, warn and fail path with `MockProvider::scripted`.
 - `src/manifest.rs`: known digest, cache hit and miss, verified flag, version parsing.
 - `src/sysprobe.rs`: every pure parser, using real `nvidia-smi` output from the target laptop.
-- `src/event_log.rs`: truncation at char boundaries. Gap: no test writes an event with a secret and checks the
-  file. Redaction on write was verified only by the Windows end-to-end run (the planted `.env` value was absent
-  from `tool-events.jsonl`). A unit test is owed.
+- `src/event_log.rs`: truncation at char boundaries; an event with secrets in `data` and in `tool` is written
+  and the file is read back with no secret in it; a disabled log writes nothing.
