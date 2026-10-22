@@ -51,8 +51,9 @@ does not exist or sits on the system drive (D-2), when a model file is missing, 
 It checks the OpenCode binary against the pinned version. Verified by hand with missing models and runtimes:
 runtimes block, models warn, no panic, exit code 1.
 
-Gap (M1 exit item 4): there is no busy-port check. A port held by another process shows only as an unreachable or
-wrong-model endpoint.
+When a launched slot does not answer, `doctor` tries to bind its port and reports a port held by another
+program (so `serve` would fail) or one the OS refuses (on Windows, usually an excluded port range; it names the
+`netsh` command to list them) (M1 exit item 4).
 
 ### init (`commands/init.rs`)
 
@@ -61,19 +62,24 @@ wrong-model endpoint.
 - Generated files are tracked by hash in `.local-agent/generated.json` (the ledger). A generated file the user has
   edited, or one the ledger does not know, is replaced only with `--force`.
 - The shim copy gets the absolute path of the `agent` binary baked in, in place of `__AGENT_BIN__`.
-- Open findings (minor): an unreadable machine config is treated as empty and overwritten without a backup; if the
-  shim write fails, the ledger is not saved, so the next run refuses `opencode.json` without `--force`.
+- `init --machine` stops with an error when an existing machine config cannot be read, rather than replacing it.
+  The ledger is saved even when a later file fails, so the next run recognises what was written.
+- Under the AI desktop app (an MSIX package), `%APPDATA%` writes from processes it starts are redirected to
+  `%LOCALAPPDATA%\Packages\AI_<id>\LocalCache\Roaming\`. A machine config written that way is invisible to
+  programs started from your own terminal. Run `agent init --machine` from your own terminal for a config every
+  program sees.
 
 ### models (`commands/models.rs`)
 
 - `serve` builds a plan (`plan_serve`: model file, binary, argv) and reports a missing file or binary before spawning.
   With `--detach` it returns once `/health` answers 200 and leaves the server running.
-- `stop` reads the PID file and signals the process (`taskkill` on Windows, `kill` elsewhere).
+- The record (`.local-agent/servers/<slot>.pid`) holds `pid=` and `bin=`. `stop` signals the PID (`taskkill /T /F`
+  on Windows, `kill` elsewhere) only if it is in `1..=i32::MAX` and the running process's executable name matches
+  the recorded binary. A stale or reused PID (after a crash or reboot) is reported and its record removed, never
+  signalled. `serve` clears a stale record instead of refusing to start.
 - `manifest` hashes the model file (cached), reads the runtime version from `<bin> --version`, and probes the host.
 - Slot names are checked so they cannot escape the state directory.
-- Open findings (major): `stop` signals the recorded PID with no identity check, so a reused PID could be signalled;
-  `read_pid` accepts 0 and values that wrap to -1. Minor: `--version` runs without a timeout; on Windows
-  `process_exists` always returns false.
+- `<bin> --version` runs with a 5 s timeout, so a hung binary cannot hang `manifest` or `doctor`.
 
 ### hook and mcp
 
@@ -87,7 +93,8 @@ stdio server.
 - `tests/hook_fixtures.rs`: 34 black-box cases that run the real `agent hook` binary with OpenCode payloads.
   They cover secret reads through every allowed bash prefix, Ask-class commands, malformed payloads and a missing
   config. They run on Linux and on native Windows.
-- Unit tests in `commands/models.rs` (serve plans, PID file, state layout), `commands/init.rs` (profiles parse,
+- Unit tests in `commands/models.rs` (serve plans, the record format and older records, refused PIDs, program
+  name matching, a reused PID that is reported and not signalled, state layout), `commands/init.rs` (profiles parse,
   shim placeholder, ledger refuses foreign files, `.gitignore` entries added once), `commands/doctor.rs` (system
   drive, pinned OpenCode version, blocking and non-blocking problems, JSON output), and `app.rs` (root workspace
   rejected, workspace canonicalised).

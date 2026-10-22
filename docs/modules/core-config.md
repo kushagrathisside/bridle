@@ -79,10 +79,15 @@ It returns `LoadedConfig { config, files }`; `files` is shown by `agent config s
 
 Errors (`ConfigError`): `NotFound` (explicit file missing), `Io`, `Parse { path, message }`.
 
-Trust (open finding, M1): the repo layer merges over the machine layer with no restriction. A cloned repository
-can therefore choose `runtimes.*.server_bin`, which `agent models serve` executes. The planned fix is that the
-repo layer may not set executables, locations outside the configured directories, credentials, non-loopback
-endpoints, or looser security. See [progress.md](../progress.md).
+Errors also include `Untrusted { path, key, reason }` for a repository layer that sets something only the
+machine config or an explicit file may set.
+
+**Trust (`config/trust.rs`).** The repository layer arrives with the repository, so it is checked before it is
+merged. It may not set `[paths]`, `host.opencode_bin`, a `server_bin` or `model_file` outside the configured
+directories (absolute, `..`, a drive, `~`, `$`, `%`), a non-loopback endpoint, `api_key_env`, a remote profile,
+external providers (other than `enabled = false`), `safe_commands` or `allowed_paths`, or anything that turns a
+protection off or makes a verdict looser than the layers below. The machine config and `--config` are trusted.
+The shipped profiles pass the check (tested). User guide: [configuration.md](../configuration.md).
 
 ## Validation (`validate.rs`)
 
@@ -106,9 +111,10 @@ paths such as `models.main.endpoint`. `ValidationEnv` carries the system drive, 
 | V18 | Warning | `models_dir` on the system drive (directive D-2) |
 | V19 | Warning | decision fallback is not `rules` |
 | V20 | Error | `mock` provider outside the `test` profile |
+| V22 | Error | `launch.extra_args` contains a reserved flag (`RESERVED_LAUNCH_FLAGS`: `--host`, `--port`, `-m`, `--alias`, `-c`, `--api-key`, `--log-file`, `--slot-save-path`, model download flags, ...) |
+| V23 | Error | `timeout_ms` outside 1 s..1 h, or `retries` above 10 |
 
-Open findings (M1): `launch.extra_args` is not checked, so it can re-bind the server to a LAN address; `timeout_ms`
-and `retries` have no upper bound.
+`reserved_launch_flag(extra_args)` in `config/mod.rs` is shared with the launcher, which refuses the same flags.
 
 ## Model registry (`models/mod.rs`)
 
@@ -125,7 +131,10 @@ context and a local-only flag) and `first_with_role(role)`. Order is determinist
 
 ## Tests
 
-- `config/load.rs`: merge semantics, discovery, precedence, environment overrides, unknown keys, missing explicit file.
+- `config/load.rs`: merge semantics, discovery, precedence, environment overrides, unknown keys, missing explicit
+  file, and a repository layer refused where an explicit file with the same content is accepted.
+- `config/trust.rs`: shipped profiles accepted; every refusal; stricter security accepted; comparison against
+  the machine layer.
 - `config/validate.rs`: a clean baseline plus at least one failing case per rule.
 - `config/mod.rs`: Windows absolute paths on Linux; path resolution.
 - Profiles in `configs/*.toml` are parsed and validated by tests, so a broken shipped profile fails the build.

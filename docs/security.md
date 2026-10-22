@@ -14,13 +14,17 @@ This is a practical model, not a formal audit. Read the residual risks section.
 
 - **D3: `Ask` is never allowed.** Under `--auto`, OpenCode approves anything not denied, so only an explicit Allow passes. Ask is denied for tool calls and for permission requests.
 - **Fail closed.** An unrecognised program is EXECUTE_RISKY, which is denied. An unparseable command is denied. A missing or broken config blocks every call.
-- **The model cannot change the policy.** Arguments are inspected, not trusted. Verification steps come only from the project config.
+- **The model cannot change the policy.** Arguments are inspected, not trusted. The agent cannot write the harness
+  and host control files (`local-agent.toml`, `opencode.json`, `.opencode/`, `.local-agent/`, `.git`), and a
+  repository's own config cannot loosen the policy (see [configuration.md](configuration.md)). Verification steps come
+  only from config, and each is classified before it runs.
 
 ## Command classes
 
 Commands are classified by the program name and its arguments (`command_risk`), in this order of severity:
 READ_ONLY, WRITE, EXECUTE_SAFE, EXECUTE_RISKY, NETWORK, DESTRUCTIVE, PRIVILEGED. A compound command gets the class of its
-most dangerous segment. Nested commands (`$(...)`, backticks, `bash -c`, `cmd /c`, `powershell -Command`) are classified too, to a depth of 4.
+most dangerous segment. Commands are lexed in the shell that will run them: PowerShell on Windows (what OpenCode
+1.19.3 uses unless `SHELL` says otherwise), `cmd` for verification steps on Windows, POSIX elsewhere. Nested commands (`$(...)`, backticks, `bash -c`, `cmd /c`, `powershell -Command`) are classified too, to a depth of 4.
 
 Default verdicts in the profile: allow READ_ONLY, WRITE and EXECUTE_SAFE; deny PRIVILEGED; deny everything else (D3).
 
@@ -52,8 +56,19 @@ Fixed since the first list (2026-10-22):
 - MCP output did not reach the after-hook (0 bytes observed in the run of 2026-10-21). The MCP server now redacts every result itself, text and structured content, commit `6fb64b0`.
 - A `read` call with no file path is denied as malformed, commit `86e619a`.
 
+Fixed on 2026-10-22, after four code reviews (details in [progress.md](progress.md) and
+[docs/modules/](modules/README.md)): classifier bypasses (substitutions in quotes, `>()`, `>&file`, `git -c`, exec
+flags, `env -S`, programs named by a path, `cmd` quoting); unresolved `~` and `$VAR` paths, `--opt=path`, brace and
+bracket globs; protected control files; a repository config that loosened the policy or chose the server binary;
+`launch.extra_args` re-binding the server; `git_diff` showing tracked secret files; unbounded MCP output and git
+calls; redaction gaps (escaped quotes, `*_KEY`, `-u user:pass`, credential files); `models stop` signalling a
+reused PID.
+
 Still open:
 1. **Recursive search over the repo.** `grep -r PATTERN .` reads secret files without naming them, so the path checks cannot see it. The values are caught by output redaction (assignments such as `API_KEY=...`, known token shapes, URL passwords, PEM blocks), tested by fixture row 32. A secret in an unrecognised format would still reach the model.
 2. **Whole-request timeout.** A very long streamed generation can be cut off by `timeout_ms`. Matters for the deep model (M5).
 3. **Heuristics.** Glob matching uses representative secret names, not the real files. A secret with an unusual file name is caught only by output redaction.
-4. **Environment secrets.** Secrets in the Windows environment are visible to every process. Keep them out of the environment where possible.
+4. **Environment secrets.** Secrets in the Windows environment are visible to every process. Keep them out of the environment where possible. If the `shell.env` hook fails, they also stay visible to the agent's shell commands, and only output redaction remains.
+5. **Not a sandbox.** Running tests runs code the model wrote, and an allowed `python script.py` can do anything your
+   user account can. The policy stops obvious harm and keeps secrets out of the model's context and the logs; it does
+   not contain a determined program. Run the agent on repositories you would run yourself, ideally in a worktree.
