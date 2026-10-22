@@ -12,7 +12,7 @@ use std::path::Path;
 use clap::ValueEnum;
 use harness_core::config::{Config, ModelConfig, Verdict};
 use harness_core::identity;
-use harness_core::security::redact::{Redactor, is_sensitive_name};
+use harness_core::security::redact::{Redactor, is_sensitive_entry};
 use harness_core::security::tool_policy::{PolicyDecision, ToolKind, ToolPolicy, ToolRequest};
 use harness_core::telemetry::{Event, EventKind};
 use serde_json::{Map, Value, json};
@@ -312,6 +312,13 @@ fn tool_before(input: &Value, ctx: &HookContext<'_>) -> (Value, Option<Event>) {
         );
     }
 
+    // A reason can echo part of the command, such as `unrecognised program <word>`, so it is
+    // redacted before it reaches the model's message or the event log.
+    for reason in &mut decision.reasons {
+        let redacted = ctx.redactor.redact(reason).into_owned();
+        *reason = redacted;
+    }
+
     // Decision D3: `Ask` is never allowed. Under `--auto` OpenCode approves anything we do not
     // deny, so only an explicit Allow gets through.
     let allow = decision.verdict == Verdict::Allow;
@@ -397,7 +404,7 @@ fn permission(input: &Value, ctx: &HookContext<'_>) -> (Value, Option<Event>) {
 /// returned values over the inherited environment, so an empty string removes the secret.
 pub fn shell_env(vars: impl Iterator<Item = (String, String)>) -> Value {
     let set: Map<String, Value> = vars
-        .filter(|(k, v)| !v.is_empty() && is_sensitive_name(k))
+        .filter(|(k, v)| !v.is_empty() && is_sensitive_entry(k, v))
         .map(|(k, _)| (k, Value::String(String::new())))
         .collect();
     json!({ "set": set })
@@ -770,6 +777,61 @@ mod tests {
         );
         assert_eq!(failure_answer(HookEvent::Permission, "x")["status"], "ask");
         assert_eq!(failure_answer(HookEvent::Event, "x"), json!({}));
+    }
+
+    #[test]
+    fn shell_env_blanks_every_secret_name_shape() {
+        let secret_names = [
+            "ENCRYPTION_KEY",
+            "PASSPHRASE",
+            "SESSION_ID",
+            "SIGNING_KEY",
+            "ACCESS_TOKENS",
+            "CLIENT_SECRET",
+            "x-api-key",
+        ];
+        let mut vars: Vec<(String, String)> = secret_names
+            .iter()
+            .map(|name| ((*name).to_owned(), "hunter2".to_owned()))
+            .collect();
+        vars.push(("MAX_TOKENS".to_owned(), "4096".to_owned()));
+        let v = shell_env(vars.into_iter());
+        let set = v["set"].as_object().expect("object");
+        for name in secret_names {
+            assert!(set.contains_key(name), "{name} should be blanked");
+        }
+        assert!(!set.contains_key("MAX_TOKENS"));
+    }
+
+    #[test]
+    fn blocked_message_and_event_do_not_echo_secrets() {
+        use harness_core::config::Config;
+        use harness_core::security::{redact::Redactor, tool_policy::ToolPolicy};
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config = Config::default();
+        let policy = ToolPolicy::with_rules(dir.path(), &config.security, false).expect("policy");
+        let redactor = Redactor::new();
+        let ctx = HookContext {
+            config: &config,
+            policy: &policy,
+            redactor: &redactor,
+        };
+        // The classifier's reason names the unrecognised program, which here is a key.
+        let input = json!({
+            "tool": "bash",
+            "args": { "command": "sk-proj-AbCdEf0123456789xyz --now" },
+            "sessionID": "s",
+            "callID": "c"
+        });
+        let (answer, event) = handle(HookEvent::ToolBefore, &input, &ctx);
+        assert_eq!(answer["action"], "block");
+        // The classifier lower-cases the program name, so compare case-insensitively.
+        let key = "sk-proj-abcdef0123456789xyz";
+        let message = answer["message"].as_str().expect("message");
+        assert!(!message.to_ascii_lowercase().contains(key), "{message}");
+        let logged = serde_json::to_string(&event).expect("event").to_ascii_lowercase();
+        assert!(!logged.contains(key), "{logged}");
     }
 
     #[test]
