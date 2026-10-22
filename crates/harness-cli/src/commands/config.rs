@@ -3,7 +3,7 @@
 use std::process::ExitCode;
 
 use clap::Subcommand;
-use harness_core::config::{Severity, machine_config_path};
+use harness_core::config::{ConfigIssue, Severity, machine_config_path};
 use harness_core::security::redact::Redactor;
 
 use crate::app::App;
@@ -33,13 +33,9 @@ pub fn run(app: &App, action: &ConfigAction) -> anyhow::Result<ExitCode> {
                 );
                 return Ok(ExitCode::SUCCESS);
             }
-            for i in &app.issues {
-                let mark = if i.severity == Severity::Error {
-                    "✗"
-                } else {
-                    "⚠"
-                };
-                println!("{mark} [{}] {}: {}", i.rule, i.path, i.message);
+            let redactor = Redactor::new();
+            for issue in &app.issues {
+                println!("{}", issue_line(&redactor, issue));
             }
             Ok(if app.has_config_errors() {
                 ExitCode::FAILURE
@@ -62,5 +58,39 @@ pub fn run(app: &App, action: &ConfigAction) -> anyhow::Result<ExitCode> {
             }
             Ok(ExitCode::SUCCESS)
         }
+    }
+}
+
+/// One printed line for a validation issue. Messages can echo a config value (an unknown
+/// `default_model`, for example), so the whole line goes through the redactor.
+fn issue_line(redactor: &Redactor, issue: &ConfigIssue) -> String {
+    let mark = if issue.severity == Severity::Error {
+        "✗"
+    } else {
+        "⚠"
+    };
+    let line = format!("{mark} [{}] {}: {}", issue.rule, issue.path, issue.message);
+    redactor.redact(&line).into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validation_lines_do_not_echo_secret_values() {
+        let issue = ConfigIssue {
+            severity: Severity::Error,
+            rule: "V2",
+            path: "agent.default_model".to_owned(),
+            message: "`api_key=hunter2` is not a key of [models]".to_owned(),
+        };
+        // Failure messages name the check but never print the line, so the value stays out of output.
+        let line = issue_line(&Redactor::new(), &issue);
+        assert!(!line.contains("hunter2"), "the secret value survived redaction");
+        assert!(
+            line.starts_with("✗ [V2] agent.default_model:"),
+            "unexpected line prefix"
+        );
     }
 }
