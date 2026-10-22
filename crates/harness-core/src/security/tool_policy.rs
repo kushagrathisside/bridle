@@ -5,7 +5,7 @@
 //! command it runs) and then ask [`ToolPolicy::evaluate`]. The policy inspects the real arguments;
 //! a model cannot talk its way past it (R-25.2, R-59).
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -82,6 +82,19 @@ impl PolicyDecision {
 
 /// Harness MCP tools that only read state.
 const READ_ONLY_HARNESS_TOOLS: &[&str] = &["git_status", "git_diff", "harness_info"];
+/// Harness and host control files, relative to the workspace root (lowercase). The harness reads
+/// its profile, and the host its config, on every call, so the agent must not change them.
+const PROTECTED_ROOT_ENTRIES: &[&str] = &[
+    "local-agent.toml",
+    "opencode.json",
+    "opencode.jsonc",
+    ".opencode",
+    ".local-agent",
+    GIT_DIR,
+];
+/// The git metadata name. `core.fsmonitor` and hooks in it run code on later git calls, so it is
+/// protected at any depth, not only at the root.
+const GIT_DIR: &str = ".git";
 /// Harness MCP tools that execute configured commands; each command is policy-checked inside the
 /// tool itself, so the call is classed EXECUTE_SAFE here.
 const EXECUTING_HARNESS_TOOLS: &[&str] = &["run_verification"];
@@ -195,6 +208,47 @@ impl ToolPolicy {
         None
     }
 
+    /// Whether a resolved path is a harness or host control file: a root-level entry from
+    /// [`PROTECTED_ROOT_ENTRIES`] inside the workspace, or any `.git` file or directory below it.
+    fn is_protected(&self, resolved: &Path) -> bool {
+        let Ok(relative) = resolved.strip_prefix(&self.workspace) else {
+            return false;
+        };
+        let fold = |name: &str| {
+            if self.guard.windows_rules() {
+                name.to_ascii_lowercase()
+            } else {
+                name.to_owned()
+            }
+        };
+        let names: Vec<String> = relative
+            .components()
+            .filter_map(|c| match c {
+                Component::Normal(name) => name.to_str().map(fold),
+                _ => None,
+            })
+            .collect();
+        let root_entry = names
+            .first()
+            .is_some_and(|first| PROTECTED_ROOT_ENTRIES.contains(&first.as_str()));
+        root_entry || names.iter().any(|name| name == GIT_DIR)
+    }
+
+    /// The first argument or redirect target of `command` that names a protected control file,
+    /// resolved against `base` the way the shell would resolve it.
+    fn shell_touches_protected(&self, command: &str, base: &Path) -> Option<String> {
+        for word in argument_words(command) {
+            for candidate in argument_candidates(&word).unwrap_or_default() {
+                if let Ok(resolved) = self.guard.check(Path::new(&candidate), base)
+                    && self.is_protected(&resolved)
+                {
+                    return Some(candidate);
+                }
+            }
+        }
+        None
+    }
+
     pub fn evaluate(&self, req: &ToolRequest) -> PolicyDecision {
         // 1. Every path must stay inside the authorised roots, whatever the tool.
         let base = match &req.workdir {
@@ -212,8 +266,15 @@ impl ToolPolicy {
             None => self.workspace.clone(),
         };
         for p in &req.paths {
-            if let Err(v) = self.guard.check(Path::new(p), &base) {
-                return guard_denial(p, &v);
+            match self.guard.check(Path::new(p), &base) {
+                Err(v) => return guard_denial(p, &v),
+                Ok(resolved) => {
+                    if matches!(req.kind, ToolKind::Edit | ToolKind::Write | ToolKind::Patch)
+                        && self.is_protected(&resolved)
+                    {
+                        return protected_denial(p);
+                    }
+                }
             }
         }
 
@@ -293,6 +354,15 @@ impl ToolPolicy {
                     return decision;
                 }
                 let a = self.assess(cmd);
+                // Reads of a control file are fine; a command that can change something is not.
+                if a.class > ToolClass::ReadOnly {
+                    if self.is_protected(&base) {
+                        return protected_denial(&base.display().to_string());
+                    }
+                    if let Some(word) = self.shell_touches_protected(cmd, &base) {
+                        return protected_denial(&word);
+                    }
+                }
                 let verdict = self.class_verdict(a.class);
                 if verdict == Verdict::Allow
                     && let Some(decision) = self.unresolved_argument(cmd)
@@ -339,6 +409,15 @@ fn guard_denial(word: &str, violation: &PathViolation) -> PolicyDecision {
         ToolClass::Privileged,
         path_rule(violation),
         format!("{word}: {violation}"),
+    )
+}
+
+fn protected_denial(word: &str) -> PolicyDecision {
+    PolicyDecision::new(
+        Verdict::Deny,
+        ToolClass::Write,
+        "protected_path",
+        format!("{word}: harness and host control files are changed by the user, not the agent"),
     )
 }
 
@@ -845,5 +924,92 @@ mod tests {
             glob_may_match_secret("*.PEM"),
             "matching is case-insensitive"
         );
+    }
+
+    fn write(kind: ToolKind, path: &str) -> ToolRequest {
+        let mut req = ToolRequest::new(kind);
+        req.paths = vec![path.to_owned()];
+        req
+    }
+
+    /// Item 17: the harness reads its profile and the host reads its config from these files on
+    /// every call, so the agent must not write them, whatever path spelling it uses.
+    #[test]
+    fn harness_and_host_control_files_cannot_be_written_by_the_agent() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        for path in [
+            "local-agent.toml",
+            "opencode.json",
+            "opencode.jsonc",
+            ".opencode/plugin.ts",
+            ".local-agent/state.db",
+            ".git/config",
+            ".git",
+            "sub/../local-agent.toml",
+            "sub/.git/hooks/pre-commit",
+        ] {
+            for kind in [ToolKind::Edit, ToolKind::Write, ToolKind::Patch] {
+                let d = p.evaluate(&write(kind, path));
+                assert_eq!(d.verdict, Verdict::Deny, "{path}");
+                assert_eq!(d.rule, "protected_path", "{path}");
+            }
+        }
+    }
+
+    /// Item 17: under Windows naming rules the protected names are matched case-insensitively.
+    #[test]
+    fn protected_control_names_match_case_insensitively_under_windows_rules() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p =
+            ToolPolicy::with_rules(dir.path(), &SecuritySection::default(), true).expect("policy");
+        for path in ["LOCAL-AGENT.TOML", ".GIT/config", "Opencode.JSON"] {
+            let d = p.evaluate(&write(ToolKind::Write, path));
+            assert_eq!(d.verdict, Verdict::Deny, "{path}");
+            assert_eq!(d.rule, "protected_path", "{path}");
+        }
+        assert_eq!(
+            p.evaluate(&write(ToolKind::Write, ".github/workflows/x.yml"))
+                .verdict,
+            Verdict::Allow
+        );
+    }
+
+    /// Item 17: protection covers writes only. Reading the files and writing other files still
+    /// works, including `.github`, which is not the `.git` directory.
+    #[test]
+    fn protected_files_stay_readable_and_other_files_stay_writable() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        assert_eq!(p.evaluate(&read("opencode.json")).verdict, Verdict::Allow);
+        for path in [".github/workflows/x.yml", "src/main.rs"] {
+            assert_eq!(
+                p.evaluate(&write(ToolKind::Write, path)).verdict,
+                Verdict::Allow,
+                "{path}"
+            );
+        }
+        assert_eq!(
+            p.evaluate(&shell("cat opencode.json")).verdict,
+            Verdict::Allow
+        );
+        assert_eq!(p.evaluate(&shell("git log")).verdict, Verdict::Allow);
+    }
+
+    /// Item 17: a shell argument or redirect target that names a control file is a deny when the
+    /// command can change something.
+    #[test]
+    fn shell_writes_to_protected_control_files_are_denied() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        for cmd in [
+            "echo x >> local-agent.toml",
+            "sed -i s/a/b/ opencode.json",
+            "cp x .git/hooks/pre-commit",
+        ] {
+            let d = p.evaluate(&shell(cmd));
+            assert_eq!(d.verdict, Verdict::Deny, "{cmd}");
+            assert_eq!(d.rule, "protected_path", "{cmd}");
+        }
     }
 }
