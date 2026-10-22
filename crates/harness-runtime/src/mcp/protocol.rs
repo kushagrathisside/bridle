@@ -46,6 +46,10 @@ const INVALID_REQUEST: i64 = -32600;
 const METHOD_NOT_FOUND: i64 = -32601;
 const INVALID_PARAMS: i64 = -32602;
 
+/// The longest request line accepted, newline included. A longer line is discarded and answered
+/// with a parse error, so one client cannot make the server buffer unbounded input.
+const MAX_LINE_BYTES: usize = 4 * 1024 * 1024;
+
 /// Static identity of the server, reported in the `initialize` result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServerInfo {
@@ -107,14 +111,20 @@ impl Server {
     ) -> std::io::Result<()> {
         let mut raw = Vec::new();
         loop {
-            raw.clear();
-            if reader.read_until(b'\n', &mut raw)? == 0 {
+            let Some(overflowed) = read_line_capped(&mut reader, &mut raw)? else {
                 return Ok(());
-            }
-            let response = match std::str::from_utf8(&raw) {
-                Ok(line) => self.handle_line(line),
-                Err(_) => {
-                    Some(error_response(&Value::Null, PARSE_ERROR, "Parse error").to_string())
+            };
+            let response = if overflowed {
+                Some(
+                    error_response(&Value::Null, PARSE_ERROR, "Parse error: line too long")
+                        .to_string(),
+                )
+            } else {
+                match std::str::from_utf8(&raw) {
+                    Ok(line) => self.handle_line(line),
+                    Err(_) => {
+                        Some(error_response(&Value::Null, PARSE_ERROR, "Parse error").to_string())
+                    }
                 }
             };
             if let Some(response) = response {
@@ -170,13 +180,15 @@ impl Server {
                 ));
             }
         };
+        // A bad envelope is answered only when the message has an id to answer to. A notification
+        // (no id) gets no reply, whatever is wrong with it.
+        let invalid = |message: &str| {
+            id.is_some()
+                .then(|| error_response(&reply_id, INVALID_REQUEST, message))
+        };
 
         if object.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
-            return Some(error_response(
-                &reply_id,
-                INVALID_REQUEST,
-                "Invalid Request: jsonrpc must be \"2.0\"",
-            ));
+            return invalid("Invalid Request: jsonrpc must be \"2.0\"");
         }
 
         let Some(method_value) = object.get("method") else {
@@ -184,18 +196,10 @@ impl Server {
             if object.contains_key("result") || object.contains_key("error") {
                 return None;
             }
-            return Some(error_response(
-                &reply_id,
-                INVALID_REQUEST,
-                "Invalid Request: missing method",
-            ));
+            return invalid("Invalid Request: missing method");
         };
         let Some(method) = method_value.as_str() else {
-            return Some(error_response(
-                &reply_id,
-                INVALID_REQUEST,
-                "Invalid Request: method must be a string",
-            ));
+            return invalid("Invalid Request: method must be a string");
         };
 
         if method == "notifications/initialized" {
@@ -262,10 +266,13 @@ impl Server {
             .and_then(Value::as_str)
             .ok_or_else(|| RpcError::new(INVALID_PARAMS, "missing tool name"))?;
         let Some(tool) = self.tools.iter().find(|tool| tool.name() == name) else {
-            return Err(RpcError::new(
-                INVALID_PARAMS,
-                format!("unknown tool: {name}"),
-            ));
+            // The name is client input and may echo a secret, so it goes out redacted.
+            let message = self
+                .ctx
+                .redactor
+                .redact(&format!("unknown tool: {name}"))
+                .into_owned();
+            return Err(RpcError::new(INVALID_PARAMS, message));
         };
         let args = params
             .and_then(|p| p.get("arguments"))
@@ -340,6 +347,42 @@ fn error_response(id: &Value, code: i64, message: &str) -> Value {
         "id": id,
         "error": {"code": code, "message": message},
     })
+}
+
+/// Reads one newline-terminated line into `line`, keeping at most [`MAX_LINE_BYTES`]. Returns
+/// `Ok(None)` at end of input, otherwise `Ok(Some(overflowed))`: when the line was longer, its
+/// content is dropped, the rest of it is consumed, and `overflowed` is true.
+fn read_line_capped(
+    reader: &mut impl BufRead,
+    line: &mut Vec<u8>,
+) -> std::io::Result<Option<bool>> {
+    line.clear();
+    let mut overflowed = false;
+    let mut read_any = false;
+    loop {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            return Ok(read_any.then_some(overflowed));
+        }
+        read_any = true;
+        let (chunk, ends_line) = match available.iter().position(|byte| *byte == b'\n') {
+            Some(index) => (&available[..=index], true),
+            None => (available, false),
+        };
+        let used = chunk.len();
+        if !overflowed {
+            if line.len() + used > MAX_LINE_BYTES {
+                overflowed = true;
+                line.clear();
+            } else {
+                line.extend_from_slice(chunk);
+            }
+        }
+        reader.consume(used);
+        if ends_line {
+            return Ok(Some(overflowed));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -681,5 +724,46 @@ mod tests {
         let structured = redacted.structured.expect("structured kept");
         assert_eq!(structured["note"], json!("ok"));
         assert!(!structured.to_string().contains("hunter2"), "{structured}");
+    }
+
+    #[test]
+    fn oversized_line_gets_a_parse_error_and_serving_continues() {
+        // A well-formed request that is simply too large: it must not be answered as a ping.
+        let padding = "a".repeat(4 * 1024 * 1024);
+        let oversized =
+            format!(r#"{{"jsonrpc":"2.0","id":0,"method":"ping","params":{{"pad":"{padding}"}}}}"#);
+        let responses = exchange(&[
+            oversized.as_str(),
+            r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#,
+        ]);
+        assert_eq!(responses.len(), 2, "{responses:?}");
+        assert_eq!(responses[0]["id"], Value::Null);
+        assert_eq!(responses[0]["error"]["code"], json!(-32700));
+        assert_eq!(
+            responses[1],
+            json!({"jsonrpc": "2.0", "id": 1, "result": {}})
+        );
+    }
+
+    #[test]
+    fn notifications_with_an_invalid_envelope_get_no_reply() {
+        let responses = exchange(&[
+            r#"{"method":"ping"}"#,
+            r#"{"jsonrpc":"1.0","method":"ping"}"#,
+            r#"{"jsonrpc":"2.0","method":5}"#,
+            r#"{"jsonrpc":"2.0"}"#,
+        ]);
+        assert!(responses.is_empty(), "got {responses:?}");
+    }
+
+    #[test]
+    fn unknown_tool_name_is_redacted_in_the_error() {
+        let response = one(
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"API_KEY=sk-test-SECRET123456789012"}}"#,
+        );
+        assert_eq!(response["error"]["code"], json!(-32602));
+        let message = response["error"]["message"].as_str().unwrap();
+        assert!(!message.contains("SECRET123456789012"), "{message}");
+        assert!(message.starts_with("unknown tool:"), "{message}");
     }
 }
