@@ -16,6 +16,9 @@
 //!      superscript variants COM¹ COM² COM³ LPT¹ LPT² LPT³) → `ReservedDeviceName(component)`.
 //!    - A `:` anywhere except as the drive-letter colon at index 1 → `AlternateDataStream`.
 //!    - A component ending in `.` or ` ` (Windows silently strips these) → `TrailingDotOrSpace`.
+//!    - Any candidate (either platform) whose meaning depends on expansion (`~`, `$VAR`, `${VAR}`,
+//!      `$(...)`, backticks, `%NAME%`) → `Unresolved`: the guard cannot know what it names, so it
+//!      must not join it under `base`. Checked after the syntax rules above.
 //! 3. Join: absolute candidates (use `config::is_absolute_any_platform` semantics on the string,
 //!    but join with std `Path` semantics) are used as-is; relative ones are joined onto `base`.
 //! 4. Lexically normalise (drop `.`, pop on `..`; popping above the root → `Traversal`).
@@ -67,6 +70,10 @@ pub enum PathViolation {
     UncOrDevicePath,
     #[error("path component ends with a dot or space")]
     TrailingDotOrSpace,
+    #[error(
+        "path uses a shell or host expansion (~, $, backtick or %NAME%) that cannot be resolved"
+    )]
+    Unresolved,
 }
 
 /// Confines file operations to a fixed set of canonical roots. The check order is documented in
@@ -127,7 +134,6 @@ impl PathGuard {
         if has_nul(candidate) || has_nul(base) {
             return Err(PathViolation::InvalidCharacter);
         }
-
         let candidate = if self.windows_rules {
             let raw = candidate.to_str().ok_or(PathViolation::InvalidCharacter)?;
             check_windows_syntax(raw)?;
@@ -136,6 +142,11 @@ impl PathGuard {
         } else {
             candidate.to_path_buf()
         };
+        // After the Windows syntax check, so that `a.txt::$DATA` still reports an alternate stream.
+        let text = candidate.to_string_lossy();
+        if is_unresolvable(&text) || has_percent_expansion(&text) {
+            return Err(PathViolation::Unresolved);
+        }
 
         // Under windows_rules a leading separator without a drive is root-relative on Windows, so
         // it must not be joined onto `base` on any host.
@@ -345,6 +356,54 @@ fn has_nul(path: &Path) -> bool {
     path.as_os_str().as_encoded_bytes().contains(&0)
 }
 
+/// Whether `word` starts with a tilde prefix (`~`, `~/x`, `~user`, `~+`, `~-`), which the shell
+/// expands to a home directory, or contains a `$` expansion or a backtick substitution. Such a word
+/// names a location only at run time. A `~` followed by other text (`~%h`) is not a tilde prefix.
+pub fn is_unresolvable(word: &str) -> bool {
+    starts_with_tilde_prefix(word) || has_dollar_expansion(word) || word.contains('`')
+}
+
+fn starts_with_tilde_prefix(word: &str) -> bool {
+    let Some(rest) = word.strip_prefix('~') else {
+        return false;
+    };
+    rest.is_empty()
+        || rest.starts_with(['/', '\\', '+', '-'])
+        || rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// A `$` followed by a character that starts a parameter, command, arithmetic or ANSI-C
+/// expansion. A `$` at the end of a word (`'a$'`, a regex anchor) is literal.
+fn has_dollar_expansion(word: &str) -> bool {
+    word.chars().zip(word.chars().skip(1)).any(|(c, next)| {
+        c == '$' && (next.is_ascii_alphanumeric() || "_{([!#?*@$-'\"".contains(next))
+    })
+}
+
+/// A Windows-style `%NAME%` variable expansion (cmd, batch files). A name is the text between two
+/// `%` signs, without whitespace or path separators. Shell words such as the `%Y%m%d` format of
+/// `date` are not paths, so callers apply this test only to path-like words.
+pub fn has_percent_expansion(word: &str) -> bool {
+    let mut rest = word;
+    while let Some(start) = rest.find('%') {
+        let after = &rest[start + 1..];
+        let Some(end) = after.find('%') else {
+            return false;
+        };
+        let name = &after[..end];
+        if !name.is_empty()
+            && !name
+                .chars()
+                .any(|c| c.is_whitespace() || "/\\%".contains(c))
+        {
+            return true;
+        }
+        // The closing `%` may open the next pair, so scanning resumes there.
+        rest = &after[end..];
+    }
+    false
+}
+
 fn display(path: &Path) -> String {
     path.display().to_string()
 }
@@ -412,6 +471,33 @@ mod tests {
             rebase(Path::new("/tmp/WS/x"), Path::new("/tmp/ws"), true),
             Some(PathBuf::from("/tmp/ws/x"))
         );
+    }
+
+    /// Item 13: the guard never joins an expansion under the base; ordinary punctuation is fine.
+    #[test]
+    fn expansions_are_unresolved_and_ordinary_punctuation_is_not() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let guard = PathGuard::new(vec![dir.path().to_path_buf()], false).expect("guard");
+        for p in [
+            "~/.bashrc",
+            "~",
+            "~user/x",
+            "$HOME/x",
+            "${HOME}/x",
+            "$(pwd)/x",
+            "`pwd`/x",
+            "%USERPROFILE%\\x",
+            "a/%TEMP%/x",
+        ] {
+            assert_eq!(
+                guard.check(Path::new(p), dir.path()),
+                Err(PathViolation::Unresolved),
+                "{p}"
+            );
+        }
+        for p in ["src/main.rs", "notes~.txt", "cost$.txt", "100%.txt"] {
+            assert!(guard.check(Path::new(p), dir.path()).is_ok(), "{p}");
+        }
     }
 
     #[test]
