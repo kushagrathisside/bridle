@@ -96,15 +96,11 @@ pub fn run(
     let agent_bin = std::env::current_exe().context("locating the agent executable")?;
     let agent_bin = dunce::canonicalize(&agent_bin).unwrap_or(agent_bin);
 
-    let mut ledger = Ledger::load(&app.state_dir());
     let oc = opencode_v1::generate_opencode_config(&app.config, &agent_bin);
     let oc_text = serde_json::to_string_pretty(&oc)? + "\n";
-    ledger.write(&ws, "opencode.json", &oc_text, args.force)?;
-
     let bin_literal = serde_json::to_string(&agent_bin.to_string_lossy())?;
     let shim = SHIM_TEMPLATE.replacen(SHIM_BIN_PLACEHOLDER, &bin_literal, 1);
-    ledger.write(&ws, ".opencode/plugins/local-agent.ts", &shim, args.force)?;
-    ledger.save(&app.state_dir())?;
+    write_host_files(&ws, &app.state_dir(), &oc_text, &shim, args.force)?;
 
     // 3. Keep harness state out of git (R-16.2).
     ensure_gitignore(&ws, &[&format!("{}/", identity::STATE_DIR), ".worktrees/"])?;
@@ -124,15 +120,44 @@ pub fn run(
     Ok(ExitCode::SUCCESS)
 }
 
+/// Writes the generated host files and records them in the ledger. The ledger is saved even when
+/// a later file fails, so the next run recognises the files that were written.
+fn write_host_files(
+    ws: &Path,
+    state_dir: &Path,
+    oc_text: &str,
+    shim: &str,
+    force: bool,
+) -> anyhow::Result<()> {
+    let mut ledger = Ledger::load(state_dir);
+    let written = ledger
+        .write(ws, "opencode.json", oc_text, force)
+        .and_then(|()| ledger.write(ws, ".opencode/plugins/local-agent.ts", shim, force));
+    ledger.save(state_dir)?;
+    written
+}
+
+/// The existing machine config, or an empty table when there is none. A file that exists but
+/// cannot be read is an error: rewriting it from scratch would lose its settings.
+fn read_machine_table(path: &Path) -> anyhow::Result<toml::Table> {
+    match fs::read_to_string(path) {
+        Ok(text) => text
+            .parse::<toml::Table>()
+            .with_context(|| format!("parsing {}", path.display())),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(toml::Table::new()),
+        Err(err) => Err(err).with_context(|| {
+            format!(
+                "reading {}; fix or remove it before running `init --machine`",
+                path.display()
+            )
+        }),
+    }
+}
+
 fn init_machine(args: &InitArgs) -> anyhow::Result<ExitCode> {
     let path = harness_core::config::machine_config_path()
         .context("cannot determine the machine config location (set LOCAL_AGENT_HOME)")?;
-    let mut table = match fs::read_to_string(&path) {
-        Ok(text) => text
-            .parse::<toml::Table>()
-            .with_context(|| format!("parsing {}", path.display()))?,
-        Err(_) => toml::Table::new(),
-    };
+    let mut table = read_machine_table(&path)?;
     let mut set = |section: &str, key: &str, value: &Option<PathBuf>| {
         if let Some(v) = value {
             let entry = table
@@ -284,6 +309,37 @@ mod tests {
         // Now ours: regenerating without --force is fine.
         assert!(
             l.write(dir.path(), "opencode.json", "{\"a\":2}", false)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn an_unreadable_machine_config_is_an_error_not_a_blank_slate() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert!(
+            read_machine_table(&dir.path().join("missing.toml"))
+                .expect("absent is fine")
+                .is_empty()
+        );
+        // A directory where the file should be cannot be read as text.
+        let blocked = dir.path().join("config.toml");
+        fs::create_dir(&blocked).expect("mkdir");
+        assert!(read_machine_table(&blocked).is_err());
+    }
+
+    #[test]
+    fn the_ledger_is_saved_when_a_later_host_file_fails() {
+        let ws = tempfile::tempdir().expect("workspace");
+        let state = ws.path().join(".local-agent");
+        // `.opencode` is a file, so the shim under `.opencode/plugins/` cannot be written.
+        fs::write(ws.path().join(".opencode"), "not a directory").expect("write");
+        assert!(write_host_files(ws.path(), &state, "{}\n", "// shim", false).is_err());
+
+        // opencode.json was written and recorded, so regenerating it needs no --force.
+        let mut ledger = Ledger::load(&state);
+        assert!(
+            ledger
+                .write(ws.path(), "opencode.json", "{\"a\":1}\n", false)
                 .is_ok()
         );
     }
