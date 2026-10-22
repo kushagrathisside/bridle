@@ -55,7 +55,7 @@ the ADR is linked.
 | R-0.4 | REQ | Support research workloads: robotics, simulation, RL, numerical computation, experiment execution and analysis | M2, M10 | open |
 | R-0.5 | REQ | Optimise for: unfamiliar-repo comprehension, multi-file implementation, research-code modification, debugging, test/execute/observe/repair loops, simulation/experiment execution, architecture reasoning, numerical correctness, context management, efficient local inference, safe autonomous execution, escalation | all (measured M10) | open |
 | R-0.6 | STRAT | Not a chat-with-files app. Build a model-agnostic, policy-driven, local-first harness that improves a small model through orchestration, deterministic tools, verification, context management, and selective escalation. | all | open |
-| R-0.7 | ASM | No permanent product name. Use a temporary internal identifier, isolated so a rename needs no architectural change. | M1 | open |
+| R-0.7 | ASM | No permanent product name. Use a temporary internal identifier, isolated so a rename needs no architectural change. | M1 | done (`harness_core::identity`: every user-visible name in one file; rename = that file, the `[[bin]]` name and the shim package) |
 
 ## §1 Strategic design decision
 
@@ -73,11 +73,11 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-2.1 | STRAT | Heterogeneous model hierarchy, not one universal model | all | open |
-| R-2.2 | STRAT | Main engineering model: Qwen3.5-9B, Q4-class GGUF (Q4_K_M preferred), llama.cpp CUDA, RTX 4060 8 GB | M1 | open |
+| R-2.2 | STRAT | Main engineering model: Qwen3.5-9B, Q4-class GGUF (Q4_K_M preferred), llama.cpp CUDA, RTX 4060 8 GB | M1 | done (Qwen3.5-9B Q4_K_M on llama.cpp b11756 CUDA, RTX 4060: P1 2026-10-21, 5.4 of 8.2 GB VRAM) |
 | R-2.3 | CLAIM | Qwen3.5-9B: 9B multimodal, 262K native context, MTP training, LiveCodeBench v6 65.6, BFCL-V4 66.1, DeepPlanning 18.0 | M0 | verified |
-| R-2.4 | REQ | Main model duties: implementation, substantial debugging, moderate architecture reasoning, test interpretation, code review, repo modification, tool calling, multi-step implementation | M1 | open |
+| R-2.4 | REQ | Main model duties: implementation, substantial debugging, moderate architecture reasoning, test interpretation, code review, repo modification, tool calling, multi-step implementation | M1 | in-progress (implementation, debugging, tests and tool calls shown on the toy repo; architecture reasoning and review are measured in M10) |
 | R-2.5 | STRAT | Optimisation target is capability × iteration speed × verification, not parameter count | all | open |
-| R-2.6 | REQ | The serving adapter exposes: OpenAI-compatible chat, model identity, streaming, tool calls, usage metadata, prompt/completion token counts, latency, health checks, and configurable context and generation parameters | M1 | open |
+| R-2.6 | REQ | The serving adapter exposes: OpenAI-compatible chat, model identity, streaming, tool calls, usage metadata, prompt/completion token counts, latency, health checks, and configurable context and generation parameters | M1 | done (`providers`: OpenAI-compatible chat, streaming, tool calls, usage, timings; `agent health` checks; docs/modules/runtime-providers.md) |
 | R-2.7 | REQ | MTP/speculative decoding is an optional capability, detected at install/health-check time and exposed via config. It is never a hard dependency. | M1 (detect), M5 (bench) | open |
 
 ## §3 Deep reasoning model: Ternary Bonsai 2 27B
@@ -114,7 +114,7 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-6.1 | STRAT | Inference runs natively on Windows. WSL is not the default runtime. | M1 | open |
+| R-6.1 | STRAT | Inference runs natively on Windows. WSL is not the default runtime. | M1 | done (release 1 runs inference natively on Windows; ADR-0002 records the WSL decision for release 2) |
 | R-6.2 | REQ | Fit the model runtime, OpenCode, compiler, Git, LSPs, tests, repo, simulation, and experiment scripts in 16 GB RAM simultaneously. Measure it. | M5, M10 | open |
 | R-6.3 | REQ | WSL is allowed as an escape hatch for repos that genuinely need Linux-only dependencies | M9 (docs) | open |
 | R-6.4 | CON | Do not move the inference stack into WSL because of Linux-tooling preference | all | open |
@@ -126,15 +126,15 @@ the ADR is linked.
 | R-7.1 | CON | Never hard-code the harness against one model server | all | open |
 | R-7.2 | REQ | `ModelProvider` with adapters: OpenAICompatible, LlamaCpp, PrismBonsai, LiteLLM, JevDecision, Mock | M1 (OpenAICompatible, LlamaCpp, Mock), M5, M7, M8 | in-progress (OpenAI-compatible and llama.cpp done; PrismBonsai, LiteLLM, Jev, Mock pending) |
 | R-7.3 | REQ | Primary LLM calls flow ModelRegistry → ModelRouter → ModelProvider | M1, M4 | open |
-| R-7.4 | REQ | Declarative model-registry config. The format is negotiable; the separation is not. | M1 | open (format: TOML, ADR-0001) |
-| R-7.5 | REQ | Per-model config: name, endpoint, API-key *source*, context, temperature, max output, reasoning budget, MTP, KV-cache mode, timeout, retries, role, capabilities, hardware profile | M1 | open |
+| R-7.4 | REQ | Declarative model-registry config. The format is negotiable; the separation is not. | M1 | done (TOML, ADR-0001; layered machine/repo/explicit config with repository trust rules; docs/configuration.md) |
+| R-7.5 | REQ | Per-model config: name, endpoint, API-key *source*, context, temperature, max output, reasoning budget, MTP, KV-cache mode, timeout, retries, role, capabilities, hardware profile | M1 | done (`ModelConfig`: endpoint, `api_key_env`, context, sampling, max output, reasoning budget, MTP, KV cache, timeout, retries, role, capabilities, hardware; V1-V23) |
 
 ## §8 LiteLLM is optional
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-8.1 | CON | LiteLLM is optional infrastructure and is not embedded in the agent loop | all | open |
-| R-8.2 | REQ | Minimal mode: OpenCode → direct local model endpoints | M1 | done (OpenCode to Qwen directly, end-to-end run 2026-10-21) |
+| R-8.2 | REQ | Minimal mode: OpenCode → direct local model endpoints | M1 | done (OpenCode to Qwen directly; end-to-end runs 2026-10-21 and 2026-10-22) |
 | R-8.3 | REQ | Advanced mode: OpenCode → LiteLLM → local/cloud/decision providers | M8 | open |
 | R-8.4 | CLAIM | LiteLLM supports OpenCode as a harness, model groups, and TypeSafe/Jev (`/v1/decisions`, `/v1/systemone`, Jev routing, Jev compaction) | M0 | verified (decision routes need LiteLLM ≥ v1.104.2 / ≥ v1.105.0-rc.3) |
 
@@ -162,11 +162,11 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-11.1 | REQ | Initial agents: `build`, `explore`, `review`, `deep` | M1, M4, M5 | open |
-| R-11.2 | REQ | `build`: Qwen3.5-9B. read=allow, edit=allow, bash=ask/policy-mediated. Covers implementation, debugging, tests, Git, controlled autonomous loops. | M1 | open |
+| R-11.2 | REQ | `build`: Qwen3.5-9B. read=allow, edit=allow, bash=ask/policy-mediated. Covers implementation, debugging, tests, Git, controlled autonomous loops. | M1 | done (generated `build` agent: edit allow, read rules with secrets denied, bash `ask` plus allow list, every call through the `tool-before` policy) |
 | R-11.3 | REQ | `explore`: LFM2.5-1.2B. read=allow, edit=deny, bash=restricted. Covers repo mapping, dependency tracing, symbol discovery, targeted inspection, concise evidence. | M1 (on Qwen, see audit C-2), M4 (LFM A/B) | open |
 | R-11.4 | REQ | `review`: LFM2.5-1.2B or optional Qwen 2B/4B. Covers inspecting diffs, classifying failures, finding regressions and missing tests, challenging the implementation. | M4 | open |
 | R-11.5 | REQ | `deep`: Bonsai 2 27B. Covers hard architecture, persistent failure, research reasoning, escalation, senior review. | M5 | open |
-| R-11.6 | CON | Build on OpenCode's allow/ask/deny permission system. Do not invent a parallel one. | M1 | open |
+| R-11.6 | CON | Build on OpenCode's allow/ask/deny permission system. Do not invent a parallel one. | M1 | done (permissions are generated into `opencode.json`; the plugin hooks only answer allow or deny inside OpenCode's own flow) |
 
 ## §12 No multi-agent swarm
 
@@ -297,7 +297,7 @@ the ADR is linked.
 | R-27.1 | REQ | Path protection: confine operations to the authorised workspace. Block `../` traversal, absolute-path escape, symlink escape, and junction/reparse-point escape. | M1 (baseline), M9 | done (path guard and shell argument checks; tests in harness-core) |
 | R-27.2 | REQ | Never inject API keys, SSH private keys, `.env` secrets, cloud credentials, browser cookies, or Windows credential stores into model context | M1, M9 | in-progress (redactor tests pass; hook and event log redact; secret read denied end to end) |
 | R-27.3 | REQ | Redact API_KEY, TOKEN, PASSWORD, SECRET, AUTHORIZATION, and PRIVATE KEY patterns from telemetry | M1, M9 | open |
-| R-27.4 | REQ | Local-first mode never sends repo content to the network unexpectedly. External providers require explicit configuration. | M1 | open |
+| R-27.4 | REQ | Local-first mode never sends repo content to the network unexpectedly. External providers require explicit configuration. | M1 | done (endpoints must be loopback, V4; a repository config cannot add remote endpoints; webfetch and websearch follow `security.network`, denied in release 1). OpenCode's own catalog fetch: R-36.2 |
 | R-27.5 | ASM | Optional external/cloud models are supported. The default install is local-only and transmits no repo content. | M1, M8 | open |
 
 ## §28 Observability
@@ -306,7 +306,7 @@ the ADR is linked.
 |---|---|---|---|---|
 | R-28.1 | REQ | One structured event per agent action (timestamp, task_id, phase, actor, model, tool, duration_ms, status, failure_fingerprint, tokens_in/out) | M1 (basic), M3 | open |
 | R-28.2 | REQ | Track task success, time to completion, turns, model used, escalations, subagent use, tool errors, test failures, same-failure loops, human interventions, prompt/completion tokens, latency, GPU VRAM, RAM, CPU | M3, M10 | open |
-| R-28.3 | CON | Telemetry is local by default. No analytics endpoint by default. | M1 | open |
+| R-28.3 | CON | Telemetry is local by default. No analytics endpoint by default. | M1 | done (telemetry has one destination, `local`: JSONL under `.local-agent/`) |
 
 ## §29 Model selection policy
 
@@ -337,7 +337,7 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-32.1 | CLAIM | The V2 plugin API is beta and may change | M0 | verified |
-| R-32.2 | REQ | Stable config and custom tools are the baseline. V2-only hooks sit behind a small adapter. Pin and test against a supported OpenCode release, degrade gracefully, document the supported version range, and never depend on undocumented internals. | M1 | open |
+| R-32.2 | REQ | Stable config and custom tools are the baseline. V2-only hooks sit behind a small adapter. Pin and test against a supported OpenCode release, degrade gracefully, document the supported version range, and never depend on undocumented internals. | M1 | done for OpenCode 1.19.3 (adapter `opencode_v1.rs` pinned; `doctor` checks the version; 34 hook fixtures; shell selection read from the 1.19.3 binary) |
 | R-32.3 | REQ | If request interception needs a V2 hook, document the requirement clearly | M1, M6 | open |
 
 ## §33 Request interception
@@ -359,7 +359,7 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-35.1 | REQ | One top-level project config with sections: agent, models, routing, decisions, context, security, verification, telemetry, external | M1 | done (config schema, validation V1-V21, profiles) |
-| R-35.2 | CON | No API secrets in the config file. Reference env vars or key sources instead. | M1 | open |
+| R-35.2 | CON | No API secrets in the config file. Reference env vars or key sources instead. | M1 | done (`api_key_env` must be a variable name, V8; a repository config may not set it; keys never logged) |
 
 ## §36 Environment profiles
 
@@ -380,7 +380,7 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-38.1 | REQ | Distinguish model identity, version, quantization, runtime version, runtime build, hardware, configuration | M1 | open |
+| R-38.1 | REQ | Distinguish model identity, version, quantization, runtime version, runtime build, hardware, configuration | M1 | done (`agent models manifest`: model id, revision, quantisation, sha256, runtime kind/build/commit, GPU, driver, CUDA, OS) |
 | R-38.2 | REQ | Persist a model manifest `{model, quantization, source, revision, sha256, runtime, runtime_revision, cuda, driver}` for Qwen, LFM, and Bonsai | M1, M4, M5 | in-progress (manifest code and tests exist; not run end to end) |
 
 ## §39 System benchmark
@@ -420,16 +420,16 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-43.1 | REQ | `agent doctor` reports OS, CPU, RAM, GPU, VRAM, NVIDIA driver, CUDA compatibility, OpenCode version, llama.cpp version, model endpoints, model health, configured context, tool support, MTP support, Bonsai runtime support, with ✓/⚠ output | M1 | open |
+| R-43.1 | REQ | `agent doctor` reports OS, CPU, RAM, GPU, VRAM, NVIDIA driver, CUDA compatibility, OpenCode version, llama.cpp version, model endpoints, model health, configured context, tool support, MTP support, Bonsai runtime support, with ✓/⚠ output | M1 | done (`agent doctor`: OS, CPU, RAM, GPU, VRAM, driver, CUDA, OpenCode version, llama.cpp builds, model files, endpoint quick health, busy or reserved ports, config issues; tool, context and MTP support via `agent health`) |
 | R-43.2 | REQ | The system still functions when optional components are unavailable | all | open |
 
 ## §44 Health checks
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-44.1 | REQ | Each provider has `GET /health` or equivalent, plus functional tests: simple completion, tool capability, streaming, context, structured output, latency | M1 | open |
+| R-44.1 | REQ | Each provider has `GET /health` or equivalent, plus functional tests: simple completion, tool capability, streaming, context, structured output, latency | M1 | done (`agent health`: health, models, completion, streaming, tool call, structured output, context, MTP; all pass for Qwen on Windows) |
 | R-44.2 | REQ | Model-specific checks: Qwen tool call. LFM classification and structured JSON. Bonsai reasoning and tool call. | M1, M4, M5 | open |
-| R-44.3 | CON | HTTP 200 does not imply compatibility | M1 | open |
+| R-44.3 | CON | HTTP 200 does not imply compatibility | M1 | done (health runs functional checks; HTTP 200 alone never passes) |
 
 ## §45 Model unloading and memory
 
@@ -512,7 +512,7 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-55.1 | REQ | Components are specified by capabilities (tools, vision, reasoning, structured_output, streaming, long_context, local, gpu, context). Routing operates on capabilities. | M1 | open |
+| R-55.1 | REQ | Components are specified by capabilities (tools, vision, reasoning, structured_output, streaming, long_context, local, gpu, context). Routing operates on capabilities. | M1 | done for the registry (`Capabilities` per model, `ModelRegistry::find`); routing on capabilities arrives with the decision engine (M3/M4) |
 | R-55.2 | REQ | Replacing Qwen with a better 7B/9B needs no architectural change | all | open |
 
 ## §56 Future learned orchestrator
@@ -560,13 +560,13 @@ the ADR is linked.
 
 | ID | Area | Criterion | Milestone | Status |
 |---|---|---|---|---|
-| AC-B1 | Basic | OpenCode loads the extension | M1 | open |
-| AC-B2 | Basic | Qwen works locally | M1 | open |
+| AC-B1 | Basic | OpenCode loads the extension | M1 | done (OpenCode 1.19.3 loads the shim and the MCP server; every tool call is logged by the hooks; Windows run 2026-10-22) |
+| AC-B2 | Basic | Qwen works locally | M1 | done (Qwen3.5-9B serves locally on the RTX 4060; `agent health` passes; Windows runs 2026-10-21 and 2026-10-22) |
 | AC-B3 | Basic | LFM works locally | M4 | open |
 | AC-B4 | Basic | Bonsai works locally | M5 | open |
 | AC-B5 | Basic | Models are independently testable | M1, M4, M5 | open |
-| AC-B6 | Basic | Configuration is declarative | M1 | open |
-| AC-A1 | Agent | Main coding loop works | M1 | open |
+| AC-B6 | Basic | Configuration is declarative | M1 | done (TOML config with validation V1-V23 and `agent config validate`) |
+| AC-A1 | Agent | Main coding loop works | M1 | done (toy repo: read, edit, test, verify through OpenCode with the policy on every call; Windows run 2026-10-22) |
 | AC-A2 | Agent | Subagent invocation works | M1, M4 | open |
 | AC-A3 | Agent | Subagent results can be summarised | M4 | open |
 | AC-A4 | Agent | Tests are automatically executed where configured | M2, M3 | open |
