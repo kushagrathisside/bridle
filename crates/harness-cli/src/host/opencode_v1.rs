@@ -830,7 +830,9 @@ mod tests {
         let key = "sk-proj-abcdef0123456789xyz";
         let message = answer["message"].as_str().expect("message");
         assert!(!message.to_ascii_lowercase().contains(key), "{message}");
-        let logged = serde_json::to_string(&event).expect("event").to_ascii_lowercase();
+        let logged = serde_json::to_string(&event)
+            .expect("event")
+            .to_ascii_lowercase();
         assert!(!logged.contains(key), "{logged}");
     }
 

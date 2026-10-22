@@ -8,15 +8,17 @@
 //!    PRIVATE KEY-----` (multi-line, dot-matches-newline) → `[REDACTED]` (whole block).
 //! 2. `Authorization:` / `Proxy-Authorization:` headers (any case) → keep header name, redact the
 //!    rest of the line (`Authorization: [REDACTED]`). Also bare `Bearer <token>` → `Bearer [REDACTED]`.
-//! 3. Key/value assignments where the key contains (case-insensitive) one of: `API_KEY`, `APIKEY`,
-//!    `API-KEY`, `TOKEN`, `PASSWORD`, `PASSWD`, `PWD`, `SECRET`, `PRIVATE_KEY`, `ACCESS_KEY`,
-//!    `CREDENTIAL`, `AUTH` (as a whole word or `_AUTH`/`AUTH_`), `SESSION_KEY`, `COOKIE`, followed
-//!    by `=`, `:` or `=>` (optional surrounding spaces, optional quotes `"`/`'` around key and/or
-//!    value). Redact the value up to the closing quote, or to whitespace/`,`/`;`/`&`/end of line
-//!    when unquoted. Covers `export X=...`, `.env` lines, JSON `"api_key": "..."`, YAML, URL query
-//!    strings (`?token=abc&x=1` → `?token=[REDACTED]&x=1`), and `$env:X = "..."`. Values that are
-//!    empty or already `[REDACTED]` are left alone.
-//! 4. Credentials in URLs: `scheme://user:password@host` → `scheme://user:[REDACTED]@host`.
+//! 3. Key/value assignments whose key is sensitive (see [`is_sensitive_entry`]: the fragments of
+//!    `SECRET_FRAGMENTS`, or a name ending in `KEY`), followed by `=`, `:` or `=>` (optional
+//!    surrounding spaces, optional quotes `"`/`'` around key and/or value). Redact the value up to
+//!    the closing quote, or to whitespace/`,`/`;`/`&`/end of line when unquoted. Covers
+//!    `export X=...`, `.env` lines, JSON `"api_key": "..."`, YAML, URL query strings
+//!    (`?token=abc&x=1` → `?token=[REDACTED]&x=1`), `$env:X = "..."`, and values inside a JSON
+//!    string, where quotes are escaped (`password=\"hunter2\"`). Values that are empty or already
+//!    `[REDACTED]` are left alone. Command-line flags with a separate value (`--token abc`) and
+//!    `-u`/`--user user:password` are redacted the same way.
+//! 4. Credentials in URLs: `scheme://user:password@host` → `scheme://user:[REDACTED]@host`. The
+//!    password runs to the last `@` before the authority ends.
 //! 5. Well-known token shapes anywhere in text, replaced entirely:
 //!    `sk-[A-Za-z0-9_-]{16,}` (OpenAI/Anthropic style incl. `sk-ant-`, `sk-proj-`),
 //!    `sk_live_` / `sk_test_` followed by 16+ alphanumerics (Stripe style),
@@ -29,13 +31,15 @@
 //! as "the token budget is 4096" or "password reset flow" (no assignment operator follows).
 //!
 //! `redact_json` walks a `serde_json::Value` in place: object entries whose *key* is sensitive
-//! (`is_sensitive_name`) get their value replaced by the string `[REDACTED]` regardless of type;
-//! every other string is passed through `redact`.
+//! (`is_sensitive_name`; `is_sensitive_entry` for string values) get their value replaced by the
+//! string `[REDACTED]` regardless of type; every other string is passed through `redact`.
 //!
 //! `is_sensitive_name(name)`: case-insensitive; true when the name contains any key fragment of
-//! rule 3 (used for env scrubbing: `OPENAI_API_KEY`, `GITHUB_TOKEN`, `AWS_SECRET_ACCESS_KEY`,
-//! `HF_TOKEN`, `DB_PASSWORD`, `TYPESAFE_API_KEY` → true; `PATH`, `HOME`, `TOKENIZERS_PARALLELISM`
-//! → false — special-case `TOKENIZERS_` and `MAX_TOKENS` / `*_TOKENS` count suffixes as not secret).
+//! rule 3 or ends in `KEY` (used for env scrubbing: `OPENAI_API_KEY`, `GITHUB_TOKEN`,
+//! `AWS_SECRET_ACCESS_KEY`, `HF_TOKEN`, `DB_PASSWORD`, `ENCRYPTION_KEY` → true; `PATH`, `HOME`,
+//! `TOKENIZERS_PARALLELISM` → false — `TOKENIZERS_` and `MAX_TOKENS` / `*_TOKENS` count suffixes are
+//! not secret by name). `is_sensitive_entry(name, value)` adds the value: a count name with a
+//! non-numeric value (`ACCESS_TOKENS=hunter2`) is secret. Both the redactor and `shell_env` use it.
 //!
 //! `is_secret_file(path)`: true for file names (case-insensitive) `.env`, `.env.*` (but NOT
 //! `.env.example`/`.env.sample`/`.env.template`), `.netrc`, `_netrc`, `.npmrc`, `.pypirc`,
@@ -60,6 +64,10 @@
 //!   are not partly redacted.
 //! - Assignments are scanned by hand rather than with `replace_all`: a non-sensitive key such as
 //!   `max_tokens` must not hide a secret assignment that follows it in the same value.
+//! - Short flags are not credentials: `-p hunter2` and `mysql -phunter2` are left alone, as `-p`
+//!   is also a port, path or profile in most tools.
+//! - Any name ending in `KEY` is secret, which also hides some non-secret values such as
+//!   `SORT_KEY`. Hiding an extra value is the accepted trade-off.
 //! - If the patterns ever fail to compile, `redact` fails closed and returns [`REDACTED`] instead
 //!   of the input. A unit test asserts that they compile.
 
@@ -202,7 +210,9 @@ impl Patterns {
         let text = step(text, |s| replace_matches(&self.bearer, s, "${1}[REDACTED]"));
         let text = step(text, |s| redact_assignments(&self.assignment, s));
         let text = step(text, |s| redact_assignments(&self.cli_flag, s));
-        let text = step(text, |s| replace_matches(&self.cli_user, s, "${1}[REDACTED]"));
+        let text = step(text, |s| {
+            replace_matches(&self.cli_user, s, "${1}[REDACTED]")
+        });
         let text = step(text, |s| {
             replace_matches(&self.url_credentials, s, "${1}[REDACTED]${2}")
         });
@@ -1021,10 +1031,7 @@ mod tests {
             "curl -u admin:hunter2 https://x",
             "curl -u admin:[REDACTED] https://x",
         );
-        assert_redacts(
-            "curl --user admin:hunter2",
-            "curl --user admin:[REDACTED]",
-        );
+        assert_redacts("curl --user admin:hunter2", "curl --user admin:[REDACTED]");
         assert_redacts(
             "curl --user=admin:hunter2 https://x",
             "curl --user=admin:[REDACTED] https://x",
@@ -1033,7 +1040,10 @@ mod tests {
 
     #[test]
     fn credential_flags_with_a_separate_value_are_redacted() {
-        assert_redacts("tool --token hunter2 --verbose", "tool --token [REDACTED] --verbose");
+        assert_redacts(
+            "tool --token hunter2 --verbose",
+            "tool --token [REDACTED] --verbose",
+        );
         assert_redacts("tool --password hunter2", "tool --password [REDACTED]");
         assert_redacts("tool --passwd hunter2", "tool --passwd [REDACTED]");
         assert_redacts("tool --api-key hunter2", "tool --api-key [REDACTED]");

@@ -85,9 +85,12 @@ mod tests {
             path: "agent.default_model".to_owned(),
             message: "`api_key=hunter2` is not a key of [models]".to_owned(),
         };
-        // Failure messages name the check but never print the line, so the value stays out of output.
+        // Failure messages do not print the line, so the value never reaches test output.
         let line = issue_line(&Redactor::new(), &issue);
-        assert!(!line.contains("hunter2"), "the secret value survived redaction");
+        assert!(
+            !line.contains("hunter2"),
+            "the secret value survived redaction"
+        );
         assert!(
             line.starts_with("✗ [V2] agent.default_model:"),
             "unexpected line prefix"
