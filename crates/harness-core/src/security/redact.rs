@@ -8,15 +8,17 @@
 //!    PRIVATE KEY-----` (multi-line, dot-matches-newline) → `[REDACTED]` (whole block).
 //! 2. `Authorization:` / `Proxy-Authorization:` headers (any case) → keep header name, redact the
 //!    rest of the line (`Authorization: [REDACTED]`). Also bare `Bearer <token>` → `Bearer [REDACTED]`.
-//! 3. Key/value assignments where the key contains (case-insensitive) one of: `API_KEY`, `APIKEY`,
-//!    `API-KEY`, `TOKEN`, `PASSWORD`, `PASSWD`, `PWD`, `SECRET`, `PRIVATE_KEY`, `ACCESS_KEY`,
-//!    `CREDENTIAL`, `AUTH` (as a whole word or `_AUTH`/`AUTH_`), `SESSION_KEY`, `COOKIE`, followed
-//!    by `=`, `:` or `=>` (optional surrounding spaces, optional quotes `"`/`'` around key and/or
-//!    value). Redact the value up to the closing quote, or to whitespace/`,`/`;`/`&`/end of line
-//!    when unquoted. Covers `export X=...`, `.env` lines, JSON `"api_key": "..."`, YAML, URL query
-//!    strings (`?token=abc&x=1` → `?token=[REDACTED]&x=1`), and `$env:X = "..."`. Values that are
-//!    empty or already `[REDACTED]` are left alone.
-//! 4. Credentials in URLs: `scheme://user:password@host` → `scheme://user:[REDACTED]@host`.
+//! 3. Key/value assignments whose key is sensitive (see [`is_sensitive_entry`]: the fragments of
+//!    `SECRET_FRAGMENTS`, or a name ending in `KEY`), followed by `=`, `:` or `=>` (optional
+//!    surrounding spaces, optional quotes `"`/`'` around key and/or value). Redact the value up to
+//!    the closing quote, or to whitespace/`,`/`;`/`&`/end of line when unquoted. Covers
+//!    `export X=...`, `.env` lines, JSON `"api_key": "..."`, YAML, URL query strings
+//!    (`?token=abc&x=1` → `?token=[REDACTED]&x=1`), `$env:X = "..."`, and values inside a JSON
+//!    string, where quotes are escaped (`password=\"hunter2\"`). Values that are empty or already
+//!    `[REDACTED]` are left alone. Command-line flags with a separate value (`--token abc`) and
+//!    `-u`/`--user user:password` are redacted the same way.
+//! 4. Credentials in URLs: `scheme://user:password@host` → `scheme://user:[REDACTED]@host`. The
+//!    password runs to the last `@` before the authority ends.
 //! 5. Well-known token shapes anywhere in text, replaced entirely:
 //!    `sk-[A-Za-z0-9_-]{16,}` (OpenAI/Anthropic style incl. `sk-ant-`, `sk-proj-`),
 //!    `sk_live_` / `sk_test_` followed by 16+ alphanumerics (Stripe style),
@@ -29,20 +31,25 @@
 //! as "the token budget is 4096" or "password reset flow" (no assignment operator follows).
 //!
 //! `redact_json` walks a `serde_json::Value` in place: object entries whose *key* is sensitive
-//! (`is_sensitive_name`) get their value replaced by the string `[REDACTED]` regardless of type;
-//! every other string is passed through `redact`.
+//! (`is_sensitive_name`; `is_sensitive_entry` for string values) get their value replaced by the
+//! string `[REDACTED]` regardless of type; every other string is passed through `redact`.
 //!
 //! `is_sensitive_name(name)`: case-insensitive; true when the name contains any key fragment of
-//! rule 3 (used for env scrubbing: `OPENAI_API_KEY`, `GITHUB_TOKEN`, `AWS_SECRET_ACCESS_KEY`,
-//! `HF_TOKEN`, `DB_PASSWORD`, `TYPESAFE_API_KEY` → true; `PATH`, `HOME`, `TOKENIZERS_PARALLELISM`
-//! → false — special-case `TOKENIZERS_` and `MAX_TOKENS` / `*_TOKENS` count suffixes as not secret).
+//! rule 3 or ends in `KEY` (used for env scrubbing: `OPENAI_API_KEY`, `GITHUB_TOKEN`,
+//! `AWS_SECRET_ACCESS_KEY`, `HF_TOKEN`, `DB_PASSWORD`, `ENCRYPTION_KEY` → true; `PATH`, `HOME`,
+//! `TOKENIZERS_PARALLELISM` → false — `TOKENIZERS_` and `MAX_TOKENS` / `*_TOKENS` count suffixes are
+//! not secret by name). `is_sensitive_entry(name, value)` adds the value: a count name with a
+//! non-numeric value (`ACCESS_TOKENS=hunter2`) is secret. Both the redactor and `shell_env` use it.
 //!
 //! `is_secret_file(path)`: true for file names (case-insensitive) `.env`, `.env.*` (but NOT
 //! `.env.example`/`.env.sample`/`.env.template`), `.netrc`, `_netrc`, `.npmrc`, `.pypirc`,
 //! `.git-credentials`, `id_rsa`, `id_dsa`, `id_ecdsa`, `id_ed25519` (not the `.pub`), `*.pem`,
-//! `*.key`, `*.p12`, `*.pfx`, `*.kdbx`, `credentials` inside a `.aws` dir, `Cookies` / `Login Data`
-//! (browser stores), and any path component `.ssh` containing a non-`.pub`, non-`known_hosts`,
-//! non-`config` file.
+//! `*.key`, `*.p12`, `*.pfx`, `*.kdbx`, `*.jks`, `*.keystore`, `*.tfvars`, `credentials` inside a
+//! `.aws` dir, `Cookies` / `Login Data` (browser stores), `.pgpass`, `.my.cnf`, `.htpasswd`,
+//! `.vault-token`, `credentials.json`, `terraform.tfvars`, `application_default_credentials.json`,
+//! `client_secret*.json`, `config.json` in `.docker`, `config` in `.kube`, anything under `.gnupg`,
+//! `.azure` or `.config/gcloud`, and any path component `.ssh` containing a non-`.pub`,
+//! non-`known_hosts`, non-`config` file.
 //!
 //! Unit tests in this file: every rule (positive and negative), idempotence (`redact(redact(x)) ==
 //! redact(x)`), JSON walking, env-name and secret-file classification.
@@ -60,6 +67,10 @@
 //!   are not partly redacted.
 //! - Assignments are scanned by hand rather than with `replace_all`: a non-sensitive key such as
 //!   `max_tokens` must not hide a secret assignment that follows it in the same value.
+//! - Short flags are not credentials: `-p hunter2` and `mysql -phunter2` are left alone, as `-p`
+//!   is also a port, path or profile in most tools.
+//! - Any name ending in `KEY` is secret, which also hides some non-secret values such as
+//!   `SORT_KEY`. Hiding an extra value is the accepted trade-off.
 //! - If the patterns ever fail to compile, `redact` fails closed and returns [`REDACTED`] instead
 //!   of the input. A unit test asserts that they compile.
 
@@ -73,7 +84,8 @@ pub const REDACTED: &str = "[REDACTED]";
 
 /// Name fragments that make a key, variable or header name secret when they occur in it,
 /// case-insensitively. `TOKEN` and `AUTH` are only candidates here: [`is_sensitive_name`] applies
-/// the token-count and whole-word exemptions before treating such a name as secret.
+/// the token-count and whole-word exemptions before treating such a name as secret. Names ending
+/// in `KEY` (`ENCRYPTION_KEY`, `signingKey`, `x-key`) are handled by a suffix rule instead.
 const SECRET_FRAGMENTS: &[&str] = &[
     "API_KEY",
     "APIKEY",
@@ -81,6 +93,7 @@ const SECRET_FRAGMENTS: &[&str] = &[
     "TOKEN",
     "PASSWORD",
     "PASSWD",
+    "PASSPHRASE",
     "PWD",
     "SECRET",
     "PRIVATE_KEY",
@@ -89,6 +102,9 @@ const SECRET_FRAGMENTS: &[&str] = &[
     "AUTH",
     "AUTHORIZATION",
     "SESSION_KEY",
+    "SESSIONID",
+    "SESSION_ID",
+    "SESSION-ID",
     "COOKIE",
 ];
 
@@ -108,8 +124,12 @@ struct Patterns {
     header: Regex,
     /// Rule 2: bare `Bearer <token>`.
     bearer: Regex,
-    /// Rule 3: `<sensitive key> <separator> <value>`. Only the value is replaced.
+    /// Rule 3: `<key> <separator> <value>`. Only the value of a sensitive key is replaced.
     assignment: Regex,
+    /// Rule 3: `--<flag> <value>` on a command line, for sensitive flag names such as `--token`.
+    cli_flag: Regex,
+    /// Rule 3: `-u`, `--user` and `--proxy-user` with `user:password`. Only the password is replaced.
+    cli_user: Regex,
     /// Rule 4: the password in `scheme://user:password@host`.
     url_credentials: Regex,
     /// Rule 5: well-known token shapes. The leading group keeps the character before the token.
@@ -119,19 +139,25 @@ struct Patterns {
 impl Patterns {
     /// Compiles every rule. `None` means a pattern is malformed, which is a bug in this file.
     fn compile() -> Option<Self> {
-        let fragments = SECRET_FRAGMENTS
-            .iter()
-            .copied()
-            .map(regex::escape)
-            .collect::<Vec<_>>()
-            .join("|");
-        let key = format!("[A-Za-z0-9_.-]*(?:{fragments})[A-Za-z0-9_.-]*");
-        // `key`, `kq` (optional quote around the key), `op` (separator) and one value alternative:
-        // double-quoted, single-quoted, or unquoted. Each quote style decides where the value ends.
-        // The unquoted alternative matches the marker whole first, so an existing `[REDACTED]` is
-        // seen as already redacted instead of as `[REDACTED` followed by a stray `]`.
-        let assignment = format!(
-            r#"(?i)(?P<key>{key})(?P<kq>["']?)(?P<op>[ \t]*(?:=>|=|:)[ \t]*)(?:"(?P<dq>[^"\r\n]*)"?|'(?P<sq>[^'\r\n]*)'?|(?P<uq>\[REDACTED\]|[^\s,;&"'}}\])]+))"#
+        // The key is any identifier-like word. [`is_sensitive_entry`] decides whether it is secret,
+        // so the regex never has to know the name rules.
+        //
+        // The value alternatives are, in order:
+        // - `\"...\"`: a quote escaped for embedding in a JSON string. It ends at the next `\"`.
+        // - `"..."`: a double-quoted value. Backslash escapes keep an inner `\"` from ending it.
+        // - `'...'`: a single-quoted value, with no escapes.
+        // - unquoted: a value may start with any character except whitespace and separators. An
+        //   existing marker is taken whole, so `[REDACTED]` is not read as `[REDACTED` plus a
+        //   stray `]`, and text after the marker is part of the value.
+        //
+        // `kq` is an optional quote around the key, possibly escaped as `\"` inside a JSON string.
+        let assignment = concat!(
+            r#"(?i)(?P<key>[A-Za-z0-9_.-]+)(?P<kq>\\"|["']?)"#,
+            r#"(?P<op>[ \t]*(?:=>|=|:)[ \t]*)"#,
+            r#"(?:\\"(?P<eq>[^\r\n]*?)(?:\\"|[\r\n]|\z)"#,
+            r#"|"(?P<dq>(?:\\[^\r\n]?|[^"\\\r\n])*)"?"#,
+            r#"|'(?P<sq>[^'\r\n]*)'?"#,
+            r#"|(?P<uq>\[REDACTED\][^\s,;&"'}\])]*|[^\s,;&"'][^\s,;&"'}\])]*))"#,
         );
         Some(Self {
             pem: Regex::new(
@@ -143,8 +169,21 @@ impl Patterns {
             )
             .ok()?,
             bearer: Regex::new(r"(?i)(\bbearer[ \t]+)[A-Za-z0-9._~+/=-]{8,}").ok()?,
-            assignment: Regex::new(&assignment).ok()?,
-            url_credentials: Regex::new(r"([A-Za-z][A-Za-z0-9+.-]*://[^\s/:@]*:)[^\s/@]+(@)")
+            assignment: Regex::new(assignment).ok()?,
+            // `--flag value`: the value must not start with `-`, so `--token --verbose` is skipped.
+            cli_flag: Regex::new(
+                r#"(?P<key>--[A-Za-z0-9_.-]+)[ \t]+(?P<uq>[^\s"'&;,=-][^\s"'&;,]*)"#,
+            )
+            .ok()?,
+            // The user is kept and the password after the first `:` is replaced. Without a `:` the
+            // user is not a secret (curl prompts for the password instead).
+            cli_user: Regex::new(
+                r#"(?i)((?:^|[\s"'])(?:--proxy-user|--user|-u)(?:=|[ \t]+)[^\s:"'/@]*:)[^\s"'&;]+"#,
+            )
+            .ok()?,
+            // The password runs up to the last `@` before the authority ends (`/`, `?`, `#` or
+            // whitespace), so `pa@ss@host` keeps `host` and hides `pa@ss`.
+            url_credentials: Regex::new(r"([A-Za-z][A-Za-z0-9+.-]*://[^\s/?#@]*:)[^\s/?#]+(@)")
                 .ok()?,
             token_shapes: Regex::new(concat!(
                 r"(^|[^A-Za-z0-9])(?:",
@@ -173,6 +212,10 @@ impl Patterns {
         let text = step(text, |s| replace_matches(&self.header, s, "${1}[REDACTED]"));
         let text = step(text, |s| replace_matches(&self.bearer, s, "${1}[REDACTED]"));
         let text = step(text, |s| redact_assignments(&self.assignment, s));
+        let text = step(text, |s| redact_assignments(&self.cli_flag, s));
+        let text = step(text, |s| {
+            replace_matches(&self.cli_user, s, "${1}[REDACTED]")
+        });
         let text = step(text, |s| {
             replace_matches(&self.url_credentials, s, "${1}[REDACTED]${2}")
         });
@@ -216,14 +259,15 @@ fn redact_assignments(regex: &Regex, text: &str) -> Option<String> {
             break;
         };
         let value = caps
-            .name("dq")
+            .name("eq")
+            .or_else(|| caps.name("dq"))
             .or_else(|| caps.name("sq"))
             .or_else(|| caps.name("uq"));
         match value {
             Some(value)
                 if !value.is_empty()
                     && value.as_str() != REDACTED
-                    && is_sensitive_name(key.as_str()) =>
+                    && is_sensitive_entry(key.as_str(), value.as_str()) =>
             {
                 out.push_str(&text[copied..value.start()]);
                 out.push_str(REDACTED);
@@ -286,7 +330,13 @@ impl Redactor {
             }
             serde_json::Value::Object(map) => {
                 for (key, entry) in map.iter_mut() {
-                    if is_sensitive_name(key) {
+                    // A string value can be judged with its content (`max_tokens` is kept for a
+                    // number, hidden for `"abc"`). Other types are judged by the key alone.
+                    let secret = match entry {
+                        serde_json::Value::String(text) => is_sensitive_entry(key, text),
+                        _ => is_sensitive_name(key),
+                    };
+                    if secret {
                         *entry = serde_json::Value::String(REDACTED.to_owned());
                     } else {
                         self.redact_json(entry);
@@ -301,15 +351,21 @@ impl Redactor {
 /// Reports whether a key, variable or header name denotes a secret, so its value must be hidden.
 ///
 /// Matching is case-insensitive and applies to any name that *contains* a secret fragment, so
-/// `OPENAI_API_KEY`, `GITHUB_TOKEN`, `AWS_SECRET_ACCESS_KEY` and `DB_PASSWORD` are secret.
+/// `OPENAI_API_KEY`, `GITHUB_TOKEN`, `AWS_SECRET_ACCESS_KEY` and `DB_PASSWORD` are secret. Any name
+/// ending in `KEY` is secret too (`ENCRYPTION_KEY`, `signingKey`, `x-key`), at the cost of a few
+/// non-secret names such as `SORT_KEY`.
 /// Exemptions: token counts (`MAX_TOKENS`, `INPUT_TOKENS`, `TOKENS_PER_MINUTE`) and the
-/// tokenizer library (`TOKENIZERS_PARALLELISM`) are not secret; `AUTH` counts only as a whole
-/// word (`auth`, `X_AUTH`, `AUTH_HEADER`, but not `author`); `PWD` and `OLDPWD` are the shell's
-/// working directory and are not secret.
+/// tokenizer library (`TOKENIZERS_PARALLELISM`) are not secret by name alone (see
+/// [`is_sensitive_entry`] for their values); `AUTH` counts only as a whole word (`auth`, `X_AUTH`,
+/// `AUTH_HEADER`, but not `author`); `PWD` and `OLDPWD` are the shell's working directory and are
+/// not secret.
 pub fn is_sensitive_name(name: &str) -> bool {
     let upper = name.to_ascii_uppercase();
     if matches!(upper.as_str(), "PWD" | "OLDPWD") {
         return false;
+    }
+    if upper.ends_with("KEY") {
+        return true;
     }
     SECRET_FRAGMENTS.iter().any(|fragment| match *fragment {
         "TOKEN" => has_secret_token(&upper),
@@ -318,16 +374,43 @@ pub fn is_sensitive_name(name: &str) -> bool {
     })
 }
 
+/// Reports whether a key and its value together denote a secret. This is [`is_sensitive_name`],
+/// plus one value-dependent case: a token count such as `ACCESS_TOKENS` is hidden when its value
+/// is not a plain number, so `ACCESS_TOKENS=hunter2` is redacted while `MAX_TOKENS=4096` is kept.
+pub fn is_sensitive_entry(name: &str, value: &str) -> bool {
+    is_sensitive_name(name)
+        || (has_token_count(&name.to_ascii_uppercase()) && !is_plain_number(value))
+}
+
+/// Whether a value is a non-empty run of ASCII digits, such as a token count.
+fn is_plain_number(value: &str) -> bool {
+    !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
+}
+
 /// Whether an upper-cased name contains a `TOKEN` that is neither a count (`TOKENS`) nor part of
 /// the tokenizer library (`TOKENIZER...`).
 fn has_secret_token(upper: &str) -> bool {
-    upper.match_indices("TOKEN").any(|(index, token)| {
-        let rest = &upper[index + token.len()..];
-        let tokenizer = rest.starts_with("IZER");
-        let count =
-            rest.starts_with('S') && !rest[1..].starts_with(|c: char| c.is_ascii_alphabetic());
-        !(tokenizer || count)
-    })
+    upper
+        .match_indices("TOKEN")
+        .any(|(index, _)| !is_token_count_or_tokenizer(&upper[index..]))
+}
+
+/// Whether an upper-cased name contains a token count, such as `TOKENS` in `MAX_TOKENS`.
+fn has_token_count(upper: &str) -> bool {
+    upper
+        .match_indices("TOKEN")
+        .any(|(index, _)| is_count_suffix(&upper[index + "TOKEN".len()..]))
+}
+
+/// Whether the text at a `TOKEN` occurrence is a count or the tokenizer library.
+fn is_token_count_or_tokenizer(from_token: &str) -> bool {
+    let rest = &from_token["TOKEN".len()..];
+    rest.starts_with("IZER") || is_count_suffix(rest)
+}
+
+/// Whether the text after `TOKEN` is a plural `S` that is not glued to more letters.
+fn is_count_suffix(rest: &str) -> bool {
+    rest.starts_with('S') && !rest[1..].starts_with(|c: char| c.is_ascii_alphabetic())
 }
 
 /// Whether an upper-cased name contains `AUTH` as a whole word, not glued to letters on either
@@ -360,6 +443,19 @@ pub fn is_secret_file(path: &Path) -> bool {
     if *name == "credentials" && dirs.contains(&".aws") {
         return true;
     }
+    // Whole directories that hold credentials, and single files in tool config directories.
+    if dirs.contains(&".gnupg") || dirs.contains(&".azure") {
+        return true;
+    }
+    if dirs.windows(2).any(|pair| *pair == [".config", "gcloud"]) {
+        return true;
+    }
+    if *name == "config.json" && dirs.contains(&".docker") {
+        return true;
+    }
+    if *name == "config" && dirs.contains(&".kube") {
+        return true;
+    }
     dirs.contains(&".ssh") && !(name.ends_with(".pub") || matches!(*name, "known_hosts" | "config"))
 }
 
@@ -377,11 +473,31 @@ fn is_secret_file_name(name: &str) -> bool {
         "id_ed25519",
         "cookies",
         "login data",
+        ".pgpass",
+        ".my.cnf",
+        ".htpasswd",
+        ".vault-token",
+        "credentials.json",
+        "terraform.tfvars",
+        "application_default_credentials.json",
     ];
-    const SUFFIXES: &[&str] = &[".pem", ".key", ".p12", ".pfx", ".kdbx"];
+    const SUFFIXES: &[&str] = &[
+        ".pem",
+        ".key",
+        ".p12",
+        ".pfx",
+        ".kdbx",
+        ".jks",
+        ".keystore",
+        ".tfvars",
+    ];
     const ENV_TEMPLATES: &[&str] = &[".env.example", ".env.sample", ".env.template"];
 
     if EXACT.contains(&name) || SUFFIXES.iter().any(|suffix| name.ends_with(suffix)) {
+        return true;
+    }
+    // OAuth client secrets downloaded from a cloud console: `client_secret*.json`.
+    if name.starts_with("client_secret") && name.ends_with(".json") {
         return true;
     }
     name == ".env" || (name.starts_with(".env.") && !ENV_TEMPLATES.contains(&name))
@@ -604,10 +720,8 @@ mod tests {
             "max_tokens=4096&token=abc",
             "max_tokens=4096&token=[REDACTED]",
         );
-        assert_redacts(
-            "max_tokens=abc_password=xyz",
-            "max_tokens=abc_password=[REDACTED]",
-        );
+        // A count name with a non-numeric value is hidden as a whole, which also hides `xyz`.
+        assert_redacts("max_tokens=abc_password=xyz", "max_tokens=[REDACTED]");
     }
 
     #[test]
@@ -893,6 +1007,230 @@ mod tests {
                 !is_secret_file(Path::new(path)),
                 "{path} should not be secret"
             );
+        }
+    }
+
+    #[test]
+    fn credential_files_by_name_and_suffix_are_detected() {
+        for path in [
+            "deploy/credentials.json",
+            "/home/u/.pgpass",
+            "/home/u/.my.cnf",
+            "site/.htpasswd",
+            "/home/u/.vault-token",
+            "infra/terraform.tfvars",
+            "infra/prod.auto.tfvars",
+            "/home/u/.config/gcloud/application_default_credentials.json",
+            "secrets/client_secret_123.json",
+            "secrets/Client_Secret.json",
+            "android/upload.jks",
+            "android/app.keystore",
+            r"C:\proj\CREDENTIALS.JSON",
+        ] {
+            assert!(is_secret_file(Path::new(path)), "{path} should be secret");
+        }
+    }
+
+    #[test]
+    fn credential_files_by_directory_are_detected() {
+        for path in [
+            "/home/u/.docker/config.json",
+            "/home/u/.kube/config",
+            "/home/u/.gnupg/pubring.kbx",
+            "/home/u/.gnupg/private-keys-v1.d/key.key",
+            "/home/u/.azure/accessTokens.json",
+            "/home/u/.azure/msal_token_cache.json",
+            "/home/u/.config/gcloud/credentials.db",
+            r"C:\Users\me\.config\gcloud\legacy_credentials\a@b.com\adc.json",
+            r"C:\Users\me\.docker\config.json",
+        ] {
+            assert!(is_secret_file(Path::new(path)), "{path} should be secret");
+        }
+    }
+
+    #[test]
+    fn templates_and_same_named_files_elsewhere_are_not_secret() {
+        for path in [
+            "deploy/credentials.json.example",
+            "deploy/credentials.json.bak.md",
+            "infra/terraform.tfvars.example",
+            "infra/variables.tf",
+            "secrets/client_secret.md",
+            "secrets/client_secret_notes.txt",
+            "/home/u/.pgpass.example",
+            "/home/u/.docker/config.toml",
+            "/home/u/project/config.json",
+            "/home/u/project/config",
+            "/home/u/.kube-notes/config",
+            "/home/u/.config/other/config.json",
+            "/home/u/.gcloud/config",
+            "/home/u/.kube/cache/discovery.json",
+            "/home/u/.gnupg-notes.md",
+            "/home/u/.ssh/config",
+            "/home/u/.ssh/known_hosts",
+            "/home/u/.ssh/id_ed25519.pub",
+        ] {
+            assert!(
+                !is_secret_file(Path::new(path)),
+                "{path} should not be secret"
+            );
+        }
+    }
+
+    // Review findings: escaped quotes (JSON embedded in a string).
+
+    #[test]
+    fn escaped_quotes_around_assignment_values_are_redacted() {
+        assert_redacts(r#"password=\"hunter2\""#, r#"password=\"[REDACTED]\""#);
+        assert_redacts(
+            r#"{\"api_key\":\"hunter2\"}"#,
+            r#"{\"api_key\":\"[REDACTED]\"}"#,
+        );
+    }
+
+    #[test]
+    fn escaped_quote_inside_a_quoted_value_does_not_end_it() {
+        assert_redacts(r#"DB_PASSWORD="p\"w0rd""#, r#"DB_PASSWORD="[REDACTED]""#);
+    }
+
+    // Review findings: more sensitive names.
+
+    #[test]
+    fn passphrase_session_id_and_key_suffixed_names_are_redacted() {
+        assert_redacts(
+            "ENCRYPTION_KEY=3fa9c2d81b7e4f60",
+            "ENCRYPTION_KEY=[REDACTED]",
+        );
+        assert_redacts("PASSPHRASE=hunter2", "PASSPHRASE=[REDACTED]");
+        assert_redacts("sessionid=hunter2", "sessionid=[REDACTED]");
+        assert_redacts("SESSION_ID=abc123", "SESSION_ID=[REDACTED]");
+        assert_redacts("SIGNING_KEY=abc123", "SIGNING_KEY=[REDACTED]");
+        assert_redacts("x-api-key: abc123", "x-api-key: [REDACTED]");
+        assert_redacts("signingKey: abc123", "signingKey: [REDACTED]");
+    }
+
+    #[test]
+    fn secret_suffix_names_are_sensitive_for_env_scrubbing() {
+        for name in [
+            "ENCRYPTION_KEY",
+            "PASSPHRASE",
+            "SESSIONID",
+            "SESSION_ID",
+            "SIGNING_KEY",
+            "CLIENT_SECRET",
+            "PRIVATE_KEY",
+            "signingKey",
+            "x-api-key",
+        ] {
+            assert!(is_sensitive_name(name), "{name} should be sensitive");
+        }
+    }
+
+    // Review findings: command-line credentials.
+
+    #[test]
+    fn curl_user_option_redacts_only_the_password() {
+        assert_redacts(
+            "curl -u admin:hunter2 https://x",
+            "curl -u admin:[REDACTED] https://x",
+        );
+        assert_redacts("curl --user admin:hunter2", "curl --user admin:[REDACTED]");
+        assert_redacts(
+            "curl --user=admin:hunter2 https://x",
+            "curl --user=admin:[REDACTED] https://x",
+        );
+    }
+
+    #[test]
+    fn credential_flags_with_a_separate_value_are_redacted() {
+        assert_redacts(
+            "tool --token hunter2 --verbose",
+            "tool --token [REDACTED] --verbose",
+        );
+        assert_redacts("tool --password hunter2", "tool --password [REDACTED]");
+        assert_redacts("tool --passwd hunter2", "tool --passwd [REDACTED]");
+        assert_redacts("tool --api-key hunter2", "tool --api-key [REDACTED]");
+        assert_redacts("tool --secret s3cr3t", "tool --secret [REDACTED]");
+        assert_redacts(
+            "tool --client-secret s3cr3t",
+            "tool --client-secret [REDACTED]",
+        );
+    }
+
+    #[test]
+    fn ordinary_flags_and_git_upstream_are_not_redacted() {
+        assert_untouched("git push -u origin main");
+        assert_untouched("tool --token");
+        assert_untouched("tool --token --verbose");
+        assert_untouched("tool --verbose hunter2");
+    }
+
+    #[test]
+    fn authorization_header_with_bearer_is_redacted_to_end_of_line() {
+        assert_redacts(
+            "Authorization: Bearer abc.def.ghi",
+            "Authorization: [REDACTED]",
+        );
+    }
+
+    // Review findings: unquoted values, marker suffixes, URL passwords, count names.
+
+    #[test]
+    fn unquoted_value_may_start_with_a_delimiter() {
+        assert_redacts("DB_PASSWORD=)hunter2", "DB_PASSWORD=[REDACTED]");
+    }
+
+    #[test]
+    fn value_after_an_existing_marker_is_redacted() {
+        assert_redacts("token=[REDACTED]hunter2", "token=[REDACTED]");
+    }
+
+    #[test]
+    fn url_password_may_contain_an_at_sign() {
+        assert_redacts(
+            "postgres://app:pa@ss@db.local/x",
+            "postgres://app:[REDACTED]@db.local/x",
+        );
+        assert_untouched("postgres://app:pa/ss@db");
+    }
+
+    #[test]
+    fn token_count_names_hide_non_numeric_values() {
+        assert_redacts("ACCESS_TOKENS=hunter2", "ACCESS_TOKENS=[REDACTED]");
+        assert_untouched("ACCESS_TOKENS=4096");
+        assert_untouched("MAX_TOKENS=4096");
+    }
+
+    // Review findings: idempotence over every new case.
+
+    #[test]
+    fn review_cases_are_idempotent() {
+        let redactor = Redactor::new();
+        let inputs = [
+            r#"password=\"hunter2\""#,
+            r#"{\"api_key\":\"hunter2\"}"#,
+            r#"DB_PASSWORD="p\"w0rd""#,
+            "ENCRYPTION_KEY=3fa9c2d81b7e4f60",
+            "PASSPHRASE=hunter2",
+            "sessionid=hunter2",
+            "SESSION_ID=abc123",
+            "x-api-key: abc123",
+            "signingKey: abc123",
+            "curl -u admin:hunter2 https://x",
+            "curl --user=admin:hunter2 https://x",
+            "tool --token hunter2 --verbose",
+            "tool --client-secret s3cr3t",
+            "Authorization: Bearer abc.def.ghi",
+            "DB_PASSWORD=)hunter2",
+            "token=[REDACTED]hunter2",
+            "postgres://app:pa@ss@db.local/x",
+            "ACCESS_TOKENS=hunter2",
+            "max_tokens=abc_password=xyz",
+        ];
+        for input in inputs {
+            let once = redactor.redact(input).into_owned();
+            let twice = redactor.redact(&once).into_owned();
+            assert_eq!(twice, once, "not idempotent for {input:?}");
         }
     }
 }
