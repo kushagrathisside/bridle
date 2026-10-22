@@ -44,6 +44,25 @@ command = "python -m unittest -q"
 timeout_ms = 120000
 ```
 
+Each step has a `kind`: `test` (the default), `lint`, `typecheck`, `build` or `other`. `run_tests`, `run_linter` and
+`run_typechecker` run the steps of their kind; `run_verification` runs them all. A test step with `targets = true`
+lets `run_tests` append test files, node ids or test names, so the model can rerun one failing test:
+
+```toml
+[[verification.steps]]
+name = "pytest"
+command = "python -m pytest -q"
+targets = true            # run_tests may append e.g. tests/test_calc.py::test_add
+
+[[verification.steps]]
+name = "ruff"
+command = "ruff check ."
+kind = "lint"
+```
+
+Targets are checked before use: letters, digits and `_ . / \ : - = , @ +` only, no leading `-`, no `..`, no absolute
+or drive path, and the file part must pass the read policy (inside the workspace, not a secret file).
+
 For a runner that is not built in (for example `make test`), add its prefix to `security.safe_commands` in the
 **machine config**, or in a file you pass with `--config`. A project config may not set it, because a cloned
 repository could then mark its own scripts as safe. A safe prefix only upgrades a command that would otherwise be
@@ -74,4 +93,4 @@ over HTTPS), V12 (no external services under `local-only`), V16 (relative model 
 machine config), V18 (models directory on the system drive warns), V20 (mock provider only under `test`),
 V21 (context limit against the default model), V22 (`launch.extra_args` may not contain flags the launcher sets or
 that rebind, fetch, serve or write files, such as `--host`, `--port`, `-m`, `--log-file`), V23 (`timeout_ms` within
-1 s to 1 h, `retries` at most 10).
+1 s to 1 h, `retries` at most 10), V24 (warning: `targets` on a step whose kind is not `test`).

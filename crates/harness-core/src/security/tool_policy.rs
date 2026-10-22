@@ -103,7 +103,12 @@ const PROTECTED_ROOT_ENTRIES: &[&str] = &[
 const GIT_DIR: &str = ".git";
 /// Harness MCP tools that execute configured commands; each command is policy-checked inside the
 /// tool itself, so the call is classed EXECUTE_SAFE here.
-const EXECUTING_HARNESS_TOOLS: &[&str] = &["run_verification"];
+const EXECUTING_HARNESS_TOOLS: &[&str] = &[
+    "run_verification",
+    "run_tests",
+    "run_linter",
+    "run_typechecker",
+];
 
 #[derive(Debug, Clone)]
 pub struct ToolPolicy {
