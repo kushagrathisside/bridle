@@ -478,6 +478,9 @@ mod tests {
     fn expansions_are_unresolved_and_ordinary_punctuation_is_not() {
         let dir = tempfile::tempdir().expect("tempdir");
         let guard = PathGuard::new(vec![dir.path().to_path_buf()], false).expect("guard");
+        // The base must be spelled like the canonical root: Windows temp paths can use 8.3 short
+        // names (`KUSHAG~1`), which lexical containment rightly refuses.
+        let base = guard.roots()[0].clone();
         for p in [
             "~/.bashrc",
             "~",
@@ -490,13 +493,13 @@ mod tests {
             "a/%TEMP%/x",
         ] {
             assert_eq!(
-                guard.check(Path::new(p), dir.path()),
+                guard.check(Path::new(p), &base),
                 Err(PathViolation::Unresolved),
                 "{p}"
             );
         }
         for p in ["src/main.rs", "notes~.txt", "cost$.txt", "100%.txt"] {
-            assert!(guard.check(Path::new(p), dir.path()).is_ok(), "{p}");
+            assert!(guard.check(Path::new(p), &base).is_ok(), "{p}");
         }
     }
 
