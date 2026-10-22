@@ -146,7 +146,8 @@ impl ToolPolicy {
     /// or a path outside the authorised roots. Returns `None` when every argument passes.
     fn shell_argument_violation(&self, command: &str, base: &Path) -> Option<PolicyDecision> {
         for word in argument_words(command) {
-            for candidate in argument_candidates(&word) {
+            // A word too large to expand is left to `unresolved_argument`.
+            for candidate in argument_candidates(&word).unwrap_or_default() {
                 if let Some(decision) = self.argument_violation(&candidate, base) {
                     return Some(decision);
                 }
@@ -180,18 +181,18 @@ impl ToolPolicy {
     /// a backtick, `%NAME%` in a path). Such a word is checked only when the command would
     /// otherwise run: a command already classed Ask or Deny keeps its own rule.
     fn unresolved_argument(&self, command: &str) -> Option<PolicyDecision> {
-        argument_words(command)
-            .iter()
-            .flat_map(|word| argument_candidates(word))
-            .find(|word| !is_null_device(word) && is_unresolved_argument(word))
-            .map(|word| {
-                PolicyDecision::new(
-                    Verdict::Deny,
-                    ToolClass::Privileged,
-                    "unresolved_path",
-                    format!("`{word}` cannot be resolved statically; shell access to it is denied"),
-                )
-            })
+        for word in argument_words(command) {
+            let Some(candidates) = argument_candidates(&word) else {
+                return Some(unresolved_denial(&word));
+            };
+            if let Some(candidate) = candidates
+                .iter()
+                .find(|c| !is_null_device(c) && is_unresolved_argument(c))
+            {
+                return Some(unresolved_denial(candidate));
+            }
+        }
+        None
     }
 
     pub fn evaluate(&self, req: &ToolRequest) -> PolicyDecision {
@@ -364,17 +365,84 @@ fn is_null_device(word: &str) -> bool {
     )
 }
 
-/// The texts an argument can stand for: the word itself, and for a `--opt=value` option the value
-/// after the first `=`, which is a path when the option names one (`--git-dir=/x/.git`).
-fn argument_candidates(word: &str) -> Vec<String> {
-    let mut out = vec![word.to_owned()];
+fn unresolved_denial(word: &str) -> PolicyDecision {
+    PolicyDecision::new(
+        Verdict::Deny,
+        ToolClass::Privileged,
+        "unresolved_path",
+        format!("`{word}` cannot be resolved statically; shell access to it is denied"),
+    )
+}
+
+/// The texts an argument can stand for. The word is brace-expanded (`.{env,netrc}`), and a
+/// `--opt=value` option also contributes its value after the first `=`, which is a path when the
+/// option names one (`--git-dir=/x/.git`). `None` when the expansion is too large to check.
+fn argument_candidates(word: &str) -> Option<Vec<String>> {
+    let mut texts = vec![word.to_owned()];
     if word.starts_with('-')
         && let Some((_, value)) = word.split_once('=')
         && !value.is_empty()
     {
-        out.push(value.to_owned());
+        texts.push(value.to_owned());
     }
-    out
+    let mut out = Vec::new();
+    for text in texts {
+        out.extend(expand_braces(&text)?);
+    }
+    Some(out)
+}
+
+/// Expands bash brace alternatives into every word they name: `.{env,netrc}` gives `.env` and
+/// `.netrc`. A group without a top-level comma is literal, as in the shell. `None` when the result
+/// would be too large to check, which the caller treats as unresolvable.
+fn expand_braces(word: &str) -> Option<Vec<String>> {
+    const MAX_EXPANSIONS: usize = 256;
+    let chars: Vec<char> = word.chars().collect();
+    for open in (0..chars.len()).filter(|&i| chars[i] == '{') {
+        let Some((close, commas)) = brace_group(&chars, open) else {
+            continue;
+        };
+        if commas.is_empty() {
+            continue;
+        }
+        let prefix: String = chars[..open].iter().collect();
+        let suffix: String = chars[close + 1..].iter().collect();
+        let mut out = Vec::new();
+        let mut start = open + 1;
+        for end in commas.iter().copied().chain(std::iter::once(close)) {
+            let alternative: String = chars[start..end].iter().collect();
+            // Expanding the result again handles later groups, including those in `suffix`.
+            for expanded in expand_braces(&format!("{prefix}{alternative}{suffix}"))? {
+                out.push(expanded);
+                if out.len() > MAX_EXPANSIONS {
+                    return None;
+                }
+            }
+            start = end + 1;
+        }
+        return Some(out);
+    }
+    Some(vec![word.to_owned()])
+}
+
+/// The `}` closing the `{` at `open`, and the commas that separate its top-level alternatives.
+fn brace_group(chars: &[char], open: usize) -> Option<(usize, Vec<usize>)> {
+    let mut depth = 0usize;
+    let mut commas = Vec::new();
+    for (k, &c) in chars.iter().enumerate().skip(open) {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some((k, commas));
+                }
+            }
+            ',' if depth == 1 => commas.push(k),
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Heuristic: an argument that could name a file system location.
@@ -415,38 +483,116 @@ const SECRET_SAMPLES: &[&str] = &[
     "secrets.json",
 ];
 
+/// Whether a word with wildcards could expand to one of the secret names. A word without `*`, `?`
+/// or `[` is a literal, and `is_secret_file` judges it instead.
 fn glob_may_match_secret(word: &str) -> bool {
-    if !word.contains(['*', '?']) {
+    if !word.contains(['*', '?', '[']) {
         return false;
     }
+    let pattern = parse_glob(word);
     SECRET_SAMPLES
         .iter()
-        .any(|sample| wildcard_matches(word, sample))
+        .any(|sample| glob_matches(&pattern, sample))
 }
 
-/// Shell-style `*` and `?` matching over whole strings.
-fn wildcard_matches(pattern: &str, text: &str) -> bool {
-    let p: Vec<char> = pattern.chars().collect();
-    let t: Vec<char> = text.chars().collect();
-    let (mut pi, mut ti) = (0usize, 0usize);
-    let (mut star, mut mark) = (None::<usize>, 0usize);
-    while ti < t.len() {
-        if pi < p.len() && (p[pi] == '?' || p[pi] == t[ti]) {
-            pi += 1;
-            ti += 1;
-        } else if pi < p.len() && p[pi] == '*' {
-            star = Some(pi);
-            mark = ti;
-            pi += 1;
-        } else if let Some(s) = star {
-            pi = s + 1;
-            mark += 1;
-            ti = mark;
-        } else {
-            return false;
+/// One token of a shell glob.
+#[derive(Debug, PartialEq, Eq)]
+enum GlobToken {
+    /// A literal character.
+    Literal(char),
+    /// `?`: any one character.
+    AnyChar,
+    /// `*`: any run of characters, including none.
+    AnyRun,
+    /// `[...]` or `[!...]`: one character from the inclusive ranges, or outside them if negated.
+    Class {
+        negated: bool,
+        ranges: Vec<(char, char)>,
+    },
+}
+
+impl GlobToken {
+    /// Whether this single-character token matches `c`, ignoring ASCII case like the secret rules.
+    /// `AnyRun` spans several characters, so [`glob_matches`] handles it instead.
+    fn matches(&self, c: char) -> bool {
+        match self {
+            Self::Literal(literal) => literal.eq_ignore_ascii_case(&c),
+            Self::AnyChar => true,
+            Self::AnyRun => false,
+            Self::Class { negated, ranges } => {
+                let hit = [c, c.to_ascii_lowercase(), c.to_ascii_uppercase()]
+                    .into_iter()
+                    .any(|x| ranges.iter().any(|&(lo, hi)| lo <= x && x <= hi));
+                hit != *negated
+            }
         }
     }
-    p[pi..].iter().all(|&c| c == '*')
+}
+
+fn parse_glob(pattern: &str) -> Vec<GlobToken> {
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut tokens = Vec::with_capacity(chars.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let (token, next) = match chars[i] {
+            '*' => (GlobToken::AnyRun, i + 1),
+            '?' => (GlobToken::AnyChar, i + 1),
+            '[' => parse_class(&chars, i).unwrap_or((GlobToken::Literal('['), i + 1)),
+            c => (GlobToken::Literal(c), i + 1),
+        };
+        tokens.push(token);
+        i = next;
+    }
+    tokens
+}
+
+/// Parses the bracket expression opening at `open`. Returns it with the index after its `]`, or
+/// `None` when it is never closed, in which case the `[` is an ordinary character as in the shell.
+fn parse_class(chars: &[char], open: usize) -> Option<(GlobToken, usize)> {
+    let mut k = open + 1;
+    let negated = matches!(chars.get(k), Some('!' | '^'));
+    if negated {
+        k += 1;
+    }
+    let mut ranges = Vec::new();
+    let mut first = true;
+    loop {
+        let c = *chars.get(k)?;
+        // A `]` straight after the opening bracket (or its `!`) is a member, not the end.
+        if c == ']' && !first {
+            return Some((GlobToken::Class { negated, ranges }, k + 1));
+        }
+        first = false;
+        match (chars.get(k + 1), chars.get(k + 2)) {
+            (Some('-'), Some(&hi)) if hi != ']' => {
+                ranges.push((c, hi));
+                k += 3;
+            }
+            _ => {
+                ranges.push((c, c));
+                k += 1;
+            }
+        }
+    }
+}
+
+/// Matches a parsed glob against `text` over whole strings. Dynamic programming over (token,
+/// character) pairs keeps this linear in the pattern times the text, however many `*` appear.
+fn glob_matches(pattern: &[GlobToken], text: &str) -> bool {
+    let text: Vec<char> = text.chars().collect();
+    let (n, m) = (pattern.len(), text.len());
+    // `reach[i][j]`: pattern token `i` onwards matches the text from character `j` onwards.
+    let mut reach = vec![vec![false; m + 1]; n + 1];
+    reach[n][m] = true;
+    for i in (0..n).rev() {
+        for j in (0..=m).rev() {
+            reach[i][j] = match pattern[i] {
+                GlobToken::AnyRun => reach[i + 1][j] || (j < m && reach[i][j + 1]),
+                _ => j < m && pattern[i].matches(text[j]) && reach[i + 1][j + 1],
+            };
+        }
+    }
+    reach[0][0]
 }
 
 #[cfg(test)]
@@ -611,5 +757,40 @@ mod tests {
             p.evaluate(&shell("git log --format=%h")).verdict,
             Verdict::Allow
         );
+    }
+
+    /// Item 15: bracket classes and brace alternatives name files too, so they are checked the
+    /// same way `*` and `?` are.
+    #[test]
+    fn bracket_and_brace_patterns_are_checked_as_secret_names() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        for cmd in ["cat .[e]nv", "cat .{env,netrc}", "cat .{x,env}"] {
+            let d = p.evaluate(&shell(cmd));
+            assert_eq!(d.verdict, Verdict::Deny, "{cmd}");
+            assert_eq!(d.rule, "secret_file", "{cmd}");
+        }
+        assert_eq!(
+            p.evaluate(&shell("cat .{README,notes}")).verdict,
+            Verdict::Allow
+        );
+    }
+
+    #[test]
+    fn brace_and_bracket_expansion_edge_cases() {
+        let words = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            expand_braces("a{b,c}d{e,f}"),
+            Some(words(&["abde", "abdf", "acde", "acdf"]))
+        );
+        // Without a top-level comma the braces are literal, as in the shell.
+        assert_eq!(expand_braces("{x}"), Some(words(&["{x}"])));
+        assert_eq!(expand_braces("{a,b}"), Some(words(&["a", "b"])));
+        // Too many alternatives to check: the caller treats the word as unresolvable.
+        assert_eq!(expand_braces(&"{a,b}".repeat(9)), None);
+        // `]` first in a class is a member; an unclosed `[` is an ordinary character.
+        assert!(glob_matches(&parse_glob("[]x]"), "]"));
+        assert!(!glob_may_match_secret("[.env"));
+        assert!(glob_may_match_secret("[!x]env"));
     }
 }
