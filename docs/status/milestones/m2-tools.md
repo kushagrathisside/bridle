@@ -1,7 +1,12 @@
-# M2: deterministic tools
+# M2: Deterministic tools
 
-Status: done (branch `m2-tools`, 2026-10-22). Steps 0 to 9 complete; end-to-end verified with Qwen3.5-9B through OpenCode. Release 1 targets Windows, so every step is built
-and tested on Windows (`D:\cargo-target\wgate.bat`).
+M2 gives the harness a set of deterministic MCP tools, so the `main` model can locate code, run checks and read
+their failures without guessing. Every tool passes the path guard and returns bounded, redacted, structured
+output. This page holds the plan, the tool list, the steps in the order they were built, and the end-to-end result.
+
+> **Status:** Done (branch `m2-tools`, 2026-10-22; merged as `8d74d07`, tag `m2`). Steps 0 to 9 complete, verified
+> end to end on Windows with Qwen3.5-9B through OpenCode 1.19.3. Release 1 targets Windows, so every step was built
+> and tested on Windows (`D:\cargo-target\wgate.bat`).
 
 ## Goal
 
@@ -43,34 +48,42 @@ path guard on every tool, so Qwen can locate code, run checks and read their fai
 | `run_command` | one program with arguments, no shell, after the full policy check | checked inside |
 | `adapter_<name>` | a configured research or project tool | checked inside |
 
+The `dependency_search` row lists CMake, but CMake is not supported yet (see [Limits](#limits)).
+
 ## Rules every tool follows
 
 - Every path argument and every file a tool reads passes the read policy (workspace containment, secret files).
 - Output is bounded (counts, bytes, time) and redacted by the server before it leaves.
-- Commands run without a shell where possible; when a shell is needed, the command is classified in that shell's
+- Commands run without a shell where possible. When a shell is needed, the command is classified in that shell's
   grammar.
 - No persistent index in M2: files are read on demand from `git ls-files`, with a text prefilter before parsing.
   A cached symbol index belongs to M3 (state).
 
-## Steps (each a reviewable commit, Windows gate green)
+## Steps
 
-0. Split `mcp/tools.rs` into modules; shared path and process helpers.
-1. `git_history`, `git_log_range`.
-2. Verification kinds; `run_tests`, `run_linter`, `run_typechecker`.
-3. `parse_test_failure`; failed steps return parsed failures.
-4. `run_command`, `inspect_config`.
-5. Tree-sitter (ADR-0003): `file_summary`, `symbol_search`, `find_references`, `repo_map`.
-6. `dependency_search`.
-7. `inspect_artifact`, `summarize_experiment`, `compare_experiments`.
-8. Adapters; per-tool enable and disable (each tool's schema costs prompt tokens on a 16K-context model).
-9. Hook and policy updates, docs, traceability, end-to-end with Qwen, tag `m2`.
+Each step is a reviewable commit, with the Windows gate green after it. Details and dates are in
+[progress.md](../progress.md).
+
+| Step | Work | Commit |
+|---|---|---|
+| 0 | Split `mcp/tools.rs` into modules; shared path and process helpers. | `bcb39d2` (with step 1) |
+| 1 | `git_history`, `git_log_range`. | `bcb39d2` |
+| 2 | Verification kinds; `run_tests`, `run_linter`, `run_typechecker`. | `6354204` |
+| 3 | `parse_test_failure`; failed steps return parsed failures. | `c18021e` |
+| 4 | `run_command`, `inspect_config`. | `7803916` |
+| 5 | Tree-sitter ([ADR-0003](../../decisions/0003-tree-sitter-for-code-intelligence.md)): `file_summary`, `symbol_search`, `find_references`, `repo_map`. | `e4cbbdf` |
+| 6 | `dependency_search`. | `7a9dadc` |
+| 7 | `inspect_artifact`, `summarize_experiment`, `compare_experiments`. | `8377451` |
+| 8 | Adapters; per-tool enable and disable (each tool's schema costs prompt tokens on a 16K-context model). | `0730ff7` |
+| 9 | Hook and policy updates, docs, traceability, end-to-end with Qwen, tag `m2`. | `bd905f6`, merge `8d74d07` |
 
 ## Result (2026-10-22)
 
 End-to-end on Windows, Qwen3.5-9B through OpenCode 1.19.3, toy repo with a planted bug (`add` subtracts):
+
 - Run 1: the model called `symbol_search` (found `add` at line 2) and `find_references`, read `calc.py`, edited
   it, and ran `run_tests`. Its first `run_tests` call named a step that does not exist, and a second one asked for
-  targets on a step that did not allow them (my config mistake: `targets = false`). Both errors were clear and the
+  targets on a step that did not allow them (a config mistake: `targets = false`). Both errors were clear and the
   model recovered without help.
 - Run 2 (`targets = true` in the toy config): the model ran `run_tests` with `targets: ["test_calc.py"]`, which the
   policy allowed. The fix is in place, and the event log contains no secret values.
@@ -80,5 +93,21 @@ Tools delivered: `git_status`, `git_diff`, `git_history`, `git_log_range`, `repo
 `run_typechecker`, `parse_test_failure`, `run_command`, `inspect_config`, `inspect_artifact`,
 `summarize_experiment`, `compare_experiments`, `harness_info`, and configured `adapter_<name>` tools.
 
-Deliberately not done in M2: a cached symbol index (M3, state), LSP-grade references (out of scope for release 1),
-CMake and Go/Gradle manifests, and a Haiku-run check of `tsc` (no Node on the Windows host).
+## Limits
+
+Deliberately not done in M2:
+
+- A cached symbol index (M3, state).
+- LSP-grade references (out of scope for release 1). The code tools are syntactic only.
+- CMake (`find_package`) and Go/Gradle manifests in `dependency_search`.
+- A re-run of the `tsc` check (no Node on the Windows host).
+
+## Related
+
+- [Progress](../progress.md): dated record of every verified step
+- [ADR-0003: tree-sitter for code intelligence](../../decisions/0003-tree-sitter-for-code-intelligence.md)
+- [MCP runtime module](../../reference/modules/runtime-mcp.md)
+- [Configuration](../../guide/configuration.md): steps, kinds, targets and `[[tools.adapters]]`
+- [Security](../../concepts/security.md)
+- [Requirements traceability](../../reference/requirements-traceability.md)
+- [Master development plan](../../spec/master-development-plan.md)

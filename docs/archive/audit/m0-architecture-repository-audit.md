@@ -1,10 +1,17 @@
 # M0: Architecture & Repository Audit
 
+This is the record of the M0 audit, written on 2026-10-21 before any substantive code. It covers the 12 items
+that §66 of the brief requires, the contradictions and challenges in the brief, a check of its upstream
+claims, and the open questions for the project lead. The findings are a snapshot from M0 and are not kept
+current.
+
+> **Status:** Archived snapshot (M0). Current status is in docs/status/progress.md.
+
 | | |
 |---|---|
 | **Milestone** | M0 (audit). No substantive code is written in this milestone. |
 | **Date** | 2026-10-21 |
-| **Inputs** | [Master plan](../spec/master-development-plan.md) (verbatim brief), [traceability matrix](../spec/requirements-traceability.md) including PM directives D-1 to D-5, host inspection, upstream sources (§S) |
+| **Inputs** | [Master plan](../../spec/master-development-plan.md) (verbatim brief), [traceability matrix](../../reference/requirements-traceability.md) including PM directives D-1 to D-5, host inspection, upstream sources (§S) |
 | **Supersedes** | The docs-only M0 at `D:\aiagentforself` (2026-10-09, TypeScript-based). Its upstream research was re-checked and reused here. |
 
 This audit covers the 12 items required by §66. It then lists contradictions and challenges (§C), checks the
@@ -348,3 +355,8 @@ system-wide, and the OpenCode zip is portable.
 - PrismML llama.cpp releases: https://github.com/PrismML-Eng/llama.cpp/releases (prism-b10787-73bfe6c)
 - HF API: `unsloth/Qwen3.5-9B-GGUF`, `LiquidAI/LFM2.5-1.2B-Thinking-GGUF`, `prism-ml/Ternary-Bonsai-2-27B-gguf`
 - Earlier audit sources (Qwen card, Prism docs, Liquid card, LiteLLM decisions/TypeSafe docs): `D:\aiagentforself\docs\audit\m0-architecture-repository-audit.md` §S
+
+## Related
+
+- [Progress log](../../status/progress.md): current status.
+- [Architecture](../../concepts/architecture.md): the current architecture.

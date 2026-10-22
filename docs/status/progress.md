@@ -1,4 +1,31 @@
-# Progress log
+# Progress
+
+This page is the running record of what has been verified in Bridle, with commit hashes and evidence. Entries are
+dated and ordered newest first. Every "verified" line names the evidence. It is the source for milestone status;
+other pages must agree with it.
+
+> **Status:** M2 (deterministic tools) is done and tagged `m2` on 2026-10-22; M1 is tagged `m1`. On 2026-10-23 the
+> history was rewritten and every hash in this log was updated. M3 (state) is next. Release 1 is native Windows,
+> verified on one machine.
+
+## Milestones
+
+| Milestone | Scope | Status | Entry |
+|---|---|---|---|
+| M0 | Audit and architecture | Done | [2026-10-21: baseline](#2026-10-21-baseline) |
+| M1 | Basic OpenCode integration on Windows: policy, hook, runtime | Done | [2026-10-21: Wave 0 and the POC](#2026-10-21-wave-0-and-the-poc) |
+| M2 | Deterministic tools: MCP tools, failure parsing, tree-sitter | Done | [2026-10-22 (night): M2 started, steps 0 to 3 done](#2026-10-22-night-m2-started-steps-0-to-3-done) |
+| M3 | State and loop detection; event log in a state directory | Next | None yet |
+| M4 | `micro` model as classifier or summariser (LFM) | Planned | None yet |
+| M5 | `deep` model on demand (Bonsai); one GPU model at a time | Planned | None yet |
+| M6 | Context management | Planned | None yet |
+| M7 | Jev integration: TLS and endpoint policy | Planned | None yet |
+| M8 | LiteLLM for external providers, behind the policy | Planned | None yet |
+| M9 | Security threat-model tests and egress audit | Planned | None yet |
+| M10 | Evaluation on a Rust coding benchmark | Planned | None yet |
+| M11 | Open-source release: licence, README, CI | Planned | None yet |
+
+M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
 ## 2026-10-23: history rewritten; commit hashes changed
 
@@ -257,9 +284,6 @@ Queued for the next free slot: config trust and launcher/models/init/doctor fixe
 Restarts: session restarts kill background agents and long foreground commands. Run long commands detached
 (`nohup ... &`) with a log file, and commit after each verified step.
 
-
-A running record. Newest entries first. Every "verified" line names the evidence.
-
 ## 2026-10-21 (latest): fixtures, read fix, gates
 
 - Windows gate on the head with the fixture suite failed on one row: `curl https://example.com` was read as a drive or alternate-data-stream path, so the path guard blocked it with the wrong rule (WSL passed). Fixed in `59f1d2f`: URL words are not paths; the network rule decides. Lesson: run the Windows gate after every fixture change; the two platforms take different code paths in the path check.
@@ -334,3 +358,14 @@ Known gaps:
 ## 2026-10-21: baseline
 
 - Brief saved verbatim (`docs/spec/master-development-plan.md`). Requirements matrix with directives D-1 to D-5 (`docs/spec/requirements-traceability.md`). M0 audit (`docs/audit/`). ADR-0001 (Rust core, thin shim). Git repo initialised on branch `m1-basic-integration`.
+
+## Related
+
+- [M2: Deterministic tools](milestones/m2-tools.md)
+- [Architecture](../concepts/architecture.md)
+- [Security](../concepts/security.md)
+- [Requirements traceability](../reference/requirements-traceability.md)
+- [Module reference](../reference/modules/README.md)
+- [Decisions (ADRs)](../decisions/0001-rust-core-thin-host-adapter.md)
+- [M0 audit](../archive/audit/m0-architecture-repository-audit.md)
+- [Master development plan](../spec/master-development-plan.md)

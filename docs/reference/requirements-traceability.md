@@ -1,10 +1,15 @@
 # Requirements Traceability Matrix
 
-This file lists every point in the [Master Technical Development Plan](master-development-plan.md),
-one row per point. Each point has a stable ID, a type, the milestone that delivers it, and a status.
+This register maps each requirement in the [Master Technical Development Plan](../spec/master-development-plan.md)
+(the brief) to the milestone that delivers it and to its current status. Each row has a stable ID, a type, a
+milestone and a status; read the status column against the status table in the legend below, where a
+superseded row links the decision record that replaced it. The page carries no single last-updated date;
+rows record the dates of their own evidence.
+
+> **Status:** Living register. Updated in the same change that delivers or verifies a requirement.
 
 - **Do not delete rows.** If a requirement changes, mark it `superseded`. Then link the ADR in
-  `docs/adr/` that changed it.
+  [`docs/decisions/`](../decisions/) that changed it.
 - **Update the status in the same PR that delivers or verifies the requirement.**
 - `§n` refers to section *n* of the master plan.
 
@@ -37,11 +42,11 @@ the ADR is linked.
 
 | ID | Date | Type | Directive | Effect | Status |
 |---|---|---|---|---|---|
-| D-1 | 2026-10-21 | STRAT | **Rust is the primary implementation language.** | [ADR-0001](../adr/0001-rust-core-thin-host-adapter.md): Rust workspace (`harness-core`, `harness-runtime`, `harness-cli` → binary `agent`), tools over MCP, and a thin TS shim only where OpenCode requires JS. Supersedes R-50.2. Narrows R-31.1 and R-50.3. | active |
+| D-1 | 2026-10-21 | STRAT | **Rust is the primary implementation language.** | [ADR-0001](../decisions/0001-rust-core-thin-host-adapter.md): Rust workspace (`harness-core`, `harness-runtime`, `harness-cli` → binary `agent`), tools over MCP, and a thin TS shim only where OpenCode requires JS. Supersedes R-50.2. Narrows R-31.1 and R-50.3. | active |
 | D-2 | 2026-10-21 | CON | **Download models to the D: drive only.** C: has about 60 GB free, and WSL's virtual disk also lives on C:. | Weights go to `D:\models\<model>\` (existing convention on this machine). llama.cpp runtimes go to `D:\runtimes\`. `paths.models_dir` in config defaults to `D:\models` on this host, and `agent doctor` warns when the models dir is on the system drive. Weights are never written under the repo or the WSL filesystem. | active |
 | D-3 | 2026-10-21 | process | **Use Haiku 5.5 subagents to implement low-level coding tasks.** | Opus designs interfaces, writes the specs and acceptance tests, reviews and integrates. Haiku subagents implement well-specified modules against those specs. Every subagent change is reviewed and must pass `fmt`, `clippy` and tests before it is committed. | active |
 | D-4 | 2026-10-21 | process | Keep working until the current usage quota is exhausted. **Do not restart automatically** after the quota ends, even if an automatic or system prompt arrives. | Session-level operating rule for the implementing agent. | active |
-| D-5 | 2026-10-21 | process | Save the brief verbatim and track every point in a markdown list. | [`master-development-plan.md`](master-development-plan.md) (verbatim) and this matrix. | done |
+| D-5 | 2026-10-21 | process | Save the brief verbatim and track every point in a markdown list. | [`master-development-plan.md`](../spec/master-development-plan.md) (verbatim) and this matrix. | done |
 
 ---
 
@@ -473,7 +478,7 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-50.1 | REQ | Typed, modular, documented, linted, tested, CI-validated, cross-platform where practical | all | open |
-| R-50.2 | REQ | TypeScript strict mode, ESLint, Prettier, Vitest (or equivalent modern tooling) | M1 | **superseded** by D-1 / [ADR-0001](../adr/0001-rust-core-thin-host-adapter.md): rustfmt, clippy `-D warnings`, `cargo test`, cargo-deny (M11). The TS shim is checked with `tsc --strict --noEmit`. |
+| R-50.2 | REQ | TypeScript strict mode, ESLint, Prettier, Vitest (or equivalent modern tooling) | M1 | **superseded** by D-1 / [ADR-0001](../decisions/0001-rust-core-thin-host-adapter.md): rustfmt, clippy `-D warnings`, `cargo test`, cargo-deny (M11). The TS shim is checked with `tsc --strict --noEmit`. |
 | R-50.3 | CON | No second language runtime without clear value. Isolate Python research adapters behind a subprocess/API boundary. | all | open. Under D-1, TypeScript is the second language. It is confined to the OpenCode shim, because OpenCode only loads JS plugins. |
 
 ## §51 Repository layout
@@ -641,8 +646,17 @@ the ADR is linked.
 | R-65.3 | STRAT | Principle 3: deterministic systems own truth | all | active |
 | R-65.4 | STRAT | Principle 4: cheap intelligence handles cheap decisions | all | active |
 | R-65.5 | STRAT | Principle 5: expensive intelligence is reserved for high-value reasoning | all | active |
-| R-66.1 | REQ | First deliverable is the Architecture & Repository Audit (12 items) | M0 | **done**: [M0 audit](../audit/m0-architecture-repository-audit.md) (2026-10-21) |
+| R-66.1 | REQ | First deliverable is the Architecture & Repository Audit (12 items) | M0 | **done**: [M0 audit](../archive/audit/m0-architecture-repository-audit.md) (2026-10-21) |
 | R-66.2 | REQ | Implement incrementally in milestones M0–M11. No giant commit. | all | active |
 | R-66.3 | REQ | Every milestone leaves the project runnable, has tests, updates docs, justifies every external dependency, and documents every strategic assumption | all | active |
 | R-66.4 | REQ | A real open-source project, not a pile of scripts | all | active |
 | R-66.5 | STRAT | Core abstraction: TASK → STATE + EVIDENCE → DECISION ENGINE → {TOOL, MODEL, ESCALATE} → VERIFY → {DONE, REPAIR → DECISION ENGINE}. The design survives replacement of Qwen, Bonsai, LFM, Jev, OpenCode, or LiteLLM. | all | open |
+
+## Related
+
+- [Master Technical Development Plan](../spec/master-development-plan.md): the brief, kept verbatim.
+- [Decision records](../decisions/): [ADR-0001](../decisions/0001-rust-core-thin-host-adapter.md),
+  [ADR-0002](../decisions/0002-runtime-os-repo-location-and-deviation.md),
+  [ADR-0003](../decisions/0003-tree-sitter-for-code-intelligence.md).
+- [Progress log](../status/progress.md): verified results by date.
+- [M0 audit](../archive/audit/m0-architecture-repository-audit.md): archived snapshot.
