@@ -724,7 +724,14 @@ struct Execution {
 
 /// Runs `command` through the platform shell in `cwd`, killing it once `timeout` expires.
 fn execute(command: &str, cwd: &Path, timeout: Duration) -> Result<Execution, String> {
-    let mut child = shell_command(command)
+    let mut shell = shell_command(command);
+    // Own process group, so a timeout can kill the step's children too (see `kill_tree`).
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        shell.process_group(0);
+    }
+    let mut child = shell
         .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -755,6 +762,7 @@ fn execute(command: &str, cwd: &Path, timeout: Duration) -> Result<Execution, St
                 thread::sleep(POLL_INTERVAL);
             }
             Ok(None) => {
+                kill_tree(child.id());
                 let _ = child.kill();
                 break (child.wait().ok(), true);
             }
@@ -776,6 +784,28 @@ fn execute(command: &str, cwd: &Path, timeout: Duration) -> Result<Execution, St
         timed_out,
         output,
     })
+}
+
+/// Kills a step's whole process tree, not just the shell: a shell's children (for example
+/// `npm test` under `cmd /C`) would otherwise keep running after the timeout. Windows uses
+/// `taskkill /T`; Unix kills the process group the step was started in.
+fn kill_tree(pid: u32) {
+    #[cfg(windows)]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    #[cfg(unix)]
+    {
+        let _ = Command::new("kill")
+            .args(["-KILL", &format!("-{pid}")])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
 }
 
 /// Copies what a capture buffer holds so far.
