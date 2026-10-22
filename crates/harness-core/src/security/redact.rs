@@ -73,7 +73,8 @@ pub const REDACTED: &str = "[REDACTED]";
 
 /// Name fragments that make a key, variable or header name secret when they occur in it,
 /// case-insensitively. `TOKEN` and `AUTH` are only candidates here: [`is_sensitive_name`] applies
-/// the token-count and whole-word exemptions before treating such a name as secret.
+/// the token-count and whole-word exemptions before treating such a name as secret. Names ending
+/// in `KEY` (`ENCRYPTION_KEY`, `signingKey`, `x-key`) are handled by a suffix rule instead.
 const SECRET_FRAGMENTS: &[&str] = &[
     "API_KEY",
     "APIKEY",
@@ -81,6 +82,7 @@ const SECRET_FRAGMENTS: &[&str] = &[
     "TOKEN",
     "PASSWORD",
     "PASSWD",
+    "PASSPHRASE",
     "PWD",
     "SECRET",
     "PRIVATE_KEY",
@@ -89,6 +91,9 @@ const SECRET_FRAGMENTS: &[&str] = &[
     "AUTH",
     "AUTHORIZATION",
     "SESSION_KEY",
+    "SESSIONID",
+    "SESSION_ID",
+    "SESSION-ID",
     "COOKIE",
 ];
 
@@ -108,8 +113,12 @@ struct Patterns {
     header: Regex,
     /// Rule 2: bare `Bearer <token>`.
     bearer: Regex,
-    /// Rule 3: `<sensitive key> <separator> <value>`. Only the value is replaced.
+    /// Rule 3: `<key> <separator> <value>`. Only the value of a sensitive key is replaced.
     assignment: Regex,
+    /// Rule 3: `--<flag> <value>` on a command line, for sensitive flag names such as `--token`.
+    cli_flag: Regex,
+    /// Rule 3: `-u`, `--user` and `--proxy-user` with `user:password`. Only the password is replaced.
+    cli_user: Regex,
     /// Rule 4: the password in `scheme://user:password@host`.
     url_credentials: Regex,
     /// Rule 5: well-known token shapes. The leading group keeps the character before the token.
@@ -119,19 +128,25 @@ struct Patterns {
 impl Patterns {
     /// Compiles every rule. `None` means a pattern is malformed, which is a bug in this file.
     fn compile() -> Option<Self> {
-        let fragments = SECRET_FRAGMENTS
-            .iter()
-            .copied()
-            .map(regex::escape)
-            .collect::<Vec<_>>()
-            .join("|");
-        let key = format!("[A-Za-z0-9_.-]*(?:{fragments})[A-Za-z0-9_.-]*");
-        // `key`, `kq` (optional quote around the key), `op` (separator) and one value alternative:
-        // double-quoted, single-quoted, or unquoted. Each quote style decides where the value ends.
-        // The unquoted alternative matches the marker whole first, so an existing `[REDACTED]` is
-        // seen as already redacted instead of as `[REDACTED` followed by a stray `]`.
-        let assignment = format!(
-            r#"(?i)(?P<key>{key})(?P<kq>["']?)(?P<op>[ \t]*(?:=>|=|:)[ \t]*)(?:"(?P<dq>[^"\r\n]*)"?|'(?P<sq>[^'\r\n]*)'?|(?P<uq>\[REDACTED\]|[^\s,;&"'}}\])]+))"#
+        // The key is any identifier-like word. [`is_sensitive_entry`] decides whether it is secret,
+        // so the regex never has to know the name rules.
+        //
+        // The value alternatives are, in order:
+        // - `\"...\"`: a quote escaped for embedding in a JSON string. It ends at the next `\"`.
+        // - `"..."`: a double-quoted value. Backslash escapes keep an inner `\"` from ending it.
+        // - `'...'`: a single-quoted value, with no escapes.
+        // - unquoted: a value may start with any character except whitespace and separators. An
+        //   existing marker is taken whole, so `[REDACTED]` is not read as `[REDACTED` plus a
+        //   stray `]`, and text after the marker is part of the value.
+        //
+        // `kq` is an optional quote around the key, possibly escaped as `\"` inside a JSON string.
+        let assignment = concat!(
+            r#"(?i)(?P<key>[A-Za-z0-9_.-]+)(?P<kq>\\"|["']?)"#,
+            r#"(?P<op>[ \t]*(?:=>|=|:)[ \t]*)"#,
+            r#"(?:\\"(?P<eq>[^\r\n]*?)(?:\\"|[\r\n]|\z)"#,
+            r#"|"(?P<dq>(?:\\[^\r\n]?|[^"\\\r\n])*)"?"#,
+            r#"|'(?P<sq>[^'\r\n]*)'?"#,
+            r#"|(?P<uq>\[REDACTED\][^\s,;&"'}\])]*|[^\s,;&"'][^\s,;&"'}\])]*))"#,
         );
         Some(Self {
             pem: Regex::new(
@@ -143,8 +158,21 @@ impl Patterns {
             )
             .ok()?,
             bearer: Regex::new(r"(?i)(\bbearer[ \t]+)[A-Za-z0-9._~+/=-]{8,}").ok()?,
-            assignment: Regex::new(&assignment).ok()?,
-            url_credentials: Regex::new(r"([A-Za-z][A-Za-z0-9+.-]*://[^\s/:@]*:)[^\s/@]+(@)")
+            assignment: Regex::new(assignment).ok()?,
+            // `--flag value`: the value must not start with `-`, so `--token --verbose` is skipped.
+            cli_flag: Regex::new(
+                r#"(?P<key>--[A-Za-z0-9_.-]+)[ \t]+(?P<uq>[^\s"'&;,=-][^\s"'&;,]*)"#,
+            )
+            .ok()?,
+            // The user is kept and the password after the first `:` is replaced. Without a `:` the
+            // user is not a secret (curl prompts for the password instead).
+            cli_user: Regex::new(
+                r#"(?i)((?:^|[\s"'])(?:--proxy-user|--user|-u)(?:=|[ \t]+)[^\s:"'/@]*:)[^\s"'&;]+"#,
+            )
+            .ok()?,
+            // The password runs up to the last `@` before the authority ends (`/`, `?`, `#` or
+            // whitespace), so `pa@ss@host` keeps `host` and hides `pa@ss`.
+            url_credentials: Regex::new(r"([A-Za-z][A-Za-z0-9+.-]*://[^\s/?#@]*:)[^\s/?#]+(@)")
                 .ok()?,
             token_shapes: Regex::new(concat!(
                 r"(^|[^A-Za-z0-9])(?:",
@@ -173,6 +201,8 @@ impl Patterns {
         let text = step(text, |s| replace_matches(&self.header, s, "${1}[REDACTED]"));
         let text = step(text, |s| replace_matches(&self.bearer, s, "${1}[REDACTED]"));
         let text = step(text, |s| redact_assignments(&self.assignment, s));
+        let text = step(text, |s| redact_assignments(&self.cli_flag, s));
+        let text = step(text, |s| replace_matches(&self.cli_user, s, "${1}[REDACTED]"));
         let text = step(text, |s| {
             replace_matches(&self.url_credentials, s, "${1}[REDACTED]${2}")
         });
@@ -216,14 +246,15 @@ fn redact_assignments(regex: &Regex, text: &str) -> Option<String> {
             break;
         };
         let value = caps
-            .name("dq")
+            .name("eq")
+            .or_else(|| caps.name("dq"))
             .or_else(|| caps.name("sq"))
             .or_else(|| caps.name("uq"));
         match value {
             Some(value)
                 if !value.is_empty()
                     && value.as_str() != REDACTED
-                    && is_sensitive_name(key.as_str()) =>
+                    && is_sensitive_entry(key.as_str(), value.as_str()) =>
             {
                 out.push_str(&text[copied..value.start()]);
                 out.push_str(REDACTED);
@@ -286,7 +317,13 @@ impl Redactor {
             }
             serde_json::Value::Object(map) => {
                 for (key, entry) in map.iter_mut() {
-                    if is_sensitive_name(key) {
+                    // A string value can be judged with its content (`max_tokens` is kept for a
+                    // number, hidden for `"abc"`). Other types are judged by the key alone.
+                    let secret = match entry {
+                        serde_json::Value::String(text) => is_sensitive_entry(key, text),
+                        _ => is_sensitive_name(key),
+                    };
+                    if secret {
                         *entry = serde_json::Value::String(REDACTED.to_owned());
                     } else {
                         self.redact_json(entry);
@@ -301,15 +338,21 @@ impl Redactor {
 /// Reports whether a key, variable or header name denotes a secret, so its value must be hidden.
 ///
 /// Matching is case-insensitive and applies to any name that *contains* a secret fragment, so
-/// `OPENAI_API_KEY`, `GITHUB_TOKEN`, `AWS_SECRET_ACCESS_KEY` and `DB_PASSWORD` are secret.
+/// `OPENAI_API_KEY`, `GITHUB_TOKEN`, `AWS_SECRET_ACCESS_KEY` and `DB_PASSWORD` are secret. Any name
+/// ending in `KEY` is secret too (`ENCRYPTION_KEY`, `signingKey`, `x-key`), at the cost of a few
+/// non-secret names such as `SORT_KEY`.
 /// Exemptions: token counts (`MAX_TOKENS`, `INPUT_TOKENS`, `TOKENS_PER_MINUTE`) and the
-/// tokenizer library (`TOKENIZERS_PARALLELISM`) are not secret; `AUTH` counts only as a whole
-/// word (`auth`, `X_AUTH`, `AUTH_HEADER`, but not `author`); `PWD` and `OLDPWD` are the shell's
-/// working directory and are not secret.
+/// tokenizer library (`TOKENIZERS_PARALLELISM`) are not secret by name alone (see
+/// [`is_sensitive_entry`] for their values); `AUTH` counts only as a whole word (`auth`, `X_AUTH`,
+/// `AUTH_HEADER`, but not `author`); `PWD` and `OLDPWD` are the shell's working directory and are
+/// not secret.
 pub fn is_sensitive_name(name: &str) -> bool {
     let upper = name.to_ascii_uppercase();
     if matches!(upper.as_str(), "PWD" | "OLDPWD") {
         return false;
+    }
+    if upper.ends_with("KEY") {
+        return true;
     }
     SECRET_FRAGMENTS.iter().any(|fragment| match *fragment {
         "TOKEN" => has_secret_token(&upper),
@@ -318,16 +361,43 @@ pub fn is_sensitive_name(name: &str) -> bool {
     })
 }
 
+/// Reports whether a key and its value together denote a secret. This is [`is_sensitive_name`],
+/// plus one value-dependent case: a token count such as `ACCESS_TOKENS` is hidden when its value
+/// is not a plain number, so `ACCESS_TOKENS=hunter2` is redacted while `MAX_TOKENS=4096` is kept.
+pub fn is_sensitive_entry(name: &str, value: &str) -> bool {
+    is_sensitive_name(name)
+        || (has_token_count(&name.to_ascii_uppercase()) && !is_plain_number(value))
+}
+
+/// Whether a value is a non-empty run of ASCII digits, such as a token count.
+fn is_plain_number(value: &str) -> bool {
+    !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
+}
+
 /// Whether an upper-cased name contains a `TOKEN` that is neither a count (`TOKENS`) nor part of
 /// the tokenizer library (`TOKENIZER...`).
 fn has_secret_token(upper: &str) -> bool {
-    upper.match_indices("TOKEN").any(|(index, token)| {
-        let rest = &upper[index + token.len()..];
-        let tokenizer = rest.starts_with("IZER");
-        let count =
-            rest.starts_with('S') && !rest[1..].starts_with(|c: char| c.is_ascii_alphabetic());
-        !(tokenizer || count)
-    })
+    upper
+        .match_indices("TOKEN")
+        .any(|(index, _)| !is_token_count_or_tokenizer(&upper[index..]))
+}
+
+/// Whether an upper-cased name contains a token count, such as `TOKENS` in `MAX_TOKENS`.
+fn has_token_count(upper: &str) -> bool {
+    upper
+        .match_indices("TOKEN")
+        .any(|(index, _)| is_count_suffix(&upper[index + "TOKEN".len()..]))
+}
+
+/// Whether the text at a `TOKEN` occurrence is a count or the tokenizer library.
+fn is_token_count_or_tokenizer(from_token: &str) -> bool {
+    let rest = &from_token["TOKEN".len()..];
+    rest.starts_with("IZER") || is_count_suffix(rest)
+}
+
+/// Whether the text after `TOKEN` is a plural `S` that is not glued to more letters.
+fn is_count_suffix(rest: &str) -> bool {
+    rest.starts_with('S') && !rest[1..].starts_with(|c: char| c.is_ascii_alphabetic())
 }
 
 /// Whether an upper-cased name contains `AUTH` as a whole word, not glued to letters on either
@@ -604,10 +674,8 @@ mod tests {
             "max_tokens=4096&token=abc",
             "max_tokens=4096&token=[REDACTED]",
         );
-        assert_redacts(
-            "max_tokens=abc_password=xyz",
-            "max_tokens=abc_password=[REDACTED]",
-        );
+        // A count name with a non-numeric value is hidden as a whole, which also hides `xyz`.
+        assert_redacts("max_tokens=abc_password=xyz", "max_tokens=[REDACTED]");
     }
 
     #[test]
