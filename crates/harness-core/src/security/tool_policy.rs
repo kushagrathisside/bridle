@@ -146,22 +146,32 @@ impl ToolPolicy {
     /// or a path outside the authorised roots. Returns `None` when every argument passes.
     fn shell_argument_violation(&self, command: &str, base: &Path) -> Option<PolicyDecision> {
         for word in argument_words(command) {
-            if is_null_device(&word) {
-                continue;
+            for candidate in argument_candidates(&word) {
+                if let Some(decision) = self.argument_violation(&candidate, base) {
+                    return Some(decision);
+                }
             }
-            if is_secret_file(Path::new(&word)) || glob_may_match_secret(&word) {
-                return Some(PolicyDecision::new(
-                    Verdict::Deny,
-                    ToolClass::ReadOnly,
-                    "secret_file",
-                    format!("`{word}` may name credentials; shell access to it is denied"),
-                ));
-            }
-            if looks_like_path(&word)
-                && let Err(v) = self.guard.check(Path::new(&word), base)
-            {
-                return Some(guard_denial(&word, &v));
-            }
+        }
+        None
+    }
+
+    /// The secret and path checks for one argument text (see [`argument_candidates`]).
+    fn argument_violation(&self, word: &str, base: &Path) -> Option<PolicyDecision> {
+        if is_null_device(word) {
+            return None;
+        }
+        if is_secret_file(Path::new(word)) || glob_may_match_secret(word) {
+            return Some(PolicyDecision::new(
+                Verdict::Deny,
+                ToolClass::ReadOnly,
+                "secret_file",
+                format!("`{word}` may name credentials; shell access to it is denied"),
+            ));
+        }
+        if looks_like_path(word)
+            && let Err(v) = self.guard.check(Path::new(word), base)
+        {
+            return Some(guard_denial(word, &v));
         }
         None
     }
@@ -171,8 +181,9 @@ impl ToolPolicy {
     /// otherwise run: a command already classed Ask or Deny keeps its own rule.
     fn unresolved_argument(&self, command: &str) -> Option<PolicyDecision> {
         argument_words(command)
-            .into_iter()
-            .find(|word| is_unresolved_argument(word))
+            .iter()
+            .flat_map(|word| argument_candidates(word))
+            .find(|word| !is_null_device(word) && is_unresolved_argument(word))
             .map(|word| {
                 PolicyDecision::new(
                     Verdict::Deny,
@@ -351,6 +362,19 @@ fn is_null_device(word: &str) -> bool {
         word,
         "/dev/null" | "NUL" | "nul" | "$null" | "$Null" | "$NULL"
     )
+}
+
+/// The texts an argument can stand for: the word itself, and for a `--opt=value` option the value
+/// after the first `=`, which is a path when the option names one (`--git-dir=/x/.git`).
+fn argument_candidates(word: &str) -> Vec<String> {
+    let mut out = vec![word.to_owned()];
+    if word.starts_with('-')
+        && let Some((_, value)) = word.split_once('=')
+        && !value.is_empty()
+    {
+        out.push(value.to_owned());
+    }
+    out
 }
 
 /// Heuristic: an argument that could name a file system location.
@@ -561,5 +585,31 @@ mod tests {
         let d = p.evaluate(&shell("cd /tmp && cat x"));
         assert_eq!(d.verdict, Verdict::Deny);
         assert_eq!(d.rule, "path_guard");
+    }
+
+    /// Item 14: `--opt=value` carries a path after the `=`, so the value is checked too.
+    #[test]
+    fn dash_options_with_an_equals_value_are_path_checked() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        for (cmd, rule) in [
+            ("git --git-dir=/home/user/x/.git log", "path_guard"),
+            ("git diff --output=/home/user/.bashrc", "path_guard"),
+            ("python -c x --log-file=../../outside", "path_guard"),
+            ("cat --file=.env", "secret_file"),
+        ] {
+            let d = p.evaluate(&shell(cmd));
+            assert_eq!(d.verdict, Verdict::Deny, "{cmd}");
+            assert_eq!(d.rule, rule, "{cmd}");
+        }
+        assert_ne!(
+            p.evaluate(&shell("git --git-dir=.git log")).rule,
+            "path_guard",
+            "a workspace-relative value stays allowed"
+        );
+        assert_eq!(
+            p.evaluate(&shell("git log --format=%h")).verdict,
+            Verdict::Allow
+        );
     }
 }
