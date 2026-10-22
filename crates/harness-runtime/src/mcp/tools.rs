@@ -16,10 +16,13 @@
 //!   human summary; `structured` = the JSON of `GitStatus`. Not a git repo → `Err`.
 //! - `git_diff` args `{ "staged": bool = false, "paths": [string] = [], "stat_only": bool = false,
 //!   "max_bytes": int = 60000 }` (clamped to `MAX_DIFF_BYTES`): every path must pass the read
-//!   policy (`check_read_path`; Deny → `Err`). The changed names are listed first
-//!   (`git diff [--cached] --name-only -z --no-renames -- <scope>`), each name is checked with the
-//!   same read policy, and the shortstat, stat and patch are built only from the allowed names.
-//!   Excluded names are reported in the text (`N file(s) excluded by policy`) and as `excluded`.
+//!   policy (`check_read_path`; Deny → `Err`). The scope is `paths`, or `.` when none are given.
+//!   The changed names in that scope are listed first (`git diff [--cached] --name-only -z
+//!   --relative -- <scope>`, at most `NAME_LIST_LIMIT_BYTES`, else `Err`) and each is checked with
+//!   the same read policy. The shortstat, stat and patch then run on the scope plus one
+//!   `:(exclude,literal)` pathspec per excluded name. Every diff is `--relative`, so paths are
+//!   limited to and printed relative to the workspace, which may be a subdirectory of the
+//!   repository. Excluded names are reported in the text (`N file(s) excluded by policy`) and as `excluded`.
 //!   The stat lists at most `LIST_LIMIT` files. The patch is redacted, then cut to `max_bytes` on
 //!   a character boundary with a marker. `structured` = `{ files_changed, insertions, deletions,
 //!   truncated, excluded }`; the totals come from the shortstat line (pure helper
@@ -64,6 +67,8 @@ const DEFAULT_DIFF_MAX_BYTES: u64 = 60_000;
 const MAX_DIFF_BYTES: u64 = 1_000_000;
 /// Bytes read past the patch limit, so a secret that straddles the cut is redacted whole.
 const DIFF_READ_MARGIN: usize = 4_096;
+/// The most bytes of changed-file names `git_diff` will read; a longer listing is refused.
+const NAME_LIST_LIMIT_BYTES: usize = 4 * 1024 * 1024;
 /// Bytes of each output stream reported for a verification step (the tail).
 const OUTPUT_TAIL_BYTES: usize = 2_000;
 /// Bytes kept per output stream while a step runs; only the tail is ever reported.
@@ -458,38 +463,53 @@ impl McpTool for GitDiffTool {
         for path in &paths {
             check_read_path(ctx, path)?;
         }
-        let scope: Vec<&str> = paths.iter().map(String::as_str).collect();
+        // The requested scope: the user's paths, or the whole workspace when none were given.
+        let scope: Vec<&str> = if paths.is_empty() {
+            vec!["."]
+        } else {
+            paths.iter().map(String::as_str).collect()
+        };
 
-        // The policy decides per changed file, so a denied file never reaches the stat or patch.
+        // The policy decides per changed file. The listing is read whole up to a fixed bound: a
+        // partial listing would leave files unchecked, so an overlong one is an error instead.
         let names_raw = run_git(
             ctx,
             &diff_args(&["--name-only", "-z"], staged, &scope),
-            usize::MAX,
+            NAME_LIST_LIMIT_BYTES,
         )?;
+        if names_raw.len() >= NAME_LIST_LIMIT_BYTES {
+            return Err(
+                "too many changed files to check; pass paths to narrow the diff".to_owned(),
+            );
+        }
         let (allowed, excluded) = split_by_policy(ctx, &names_raw);
 
         let mut sections: Vec<String> = Vec::new();
         let mut stat = DiffStat::default();
         let mut truncated = false;
-        // With no allowed names there is nothing to diff: an unscoped `git diff` would show it all.
+        // Nothing allowed means nothing to show, so no diff runs at all.
         if !allowed.is_empty() {
-            // Literal pathspecs anchored at the repository root, the form `--name-only` reports.
-            let pathspecs: Vec<String> = allowed
+            // The scope minus each excluded file, as exclude pathspecs. Few names are excluded
+            // (secret files), so the command line stays short.
+            // A file that changes between the listing and this diff is not checked; that race is
+            // accepted, since such a file is only shown if it is in the requested scope.
+            let excludes: Vec<String> = excluded
                 .iter()
-                .map(|name| format!(":(top,literal){name}"))
+                .map(|name| format!(":(exclude,literal){name}"))
                 .collect();
-            let pathspec_refs: Vec<&str> = pathspecs.iter().map(String::as_str).collect();
+            let mut scoped = scope.clone();
+            scoped.extend(excludes.iter().map(String::as_str));
 
             let shortstat = lossy(&run_git(
                 ctx,
-                &diff_args(&["--shortstat"], staged, &pathspec_refs),
+                &diff_args(&["--shortstat"], staged, &scoped),
                 usize::MAX,
             )?);
             stat = parse_shortstat(&shortstat);
             let stat_limit = usize::try_from(MAX_DIFF_BYTES).unwrap_or(usize::MAX);
             let stat_raw = lossy(&run_git(
                 ctx,
-                &diff_args(&["--stat"], staged, &pathspec_refs),
+                &diff_args(&["--stat"], staged, &scoped),
                 stat_limit.saturating_add(DIFF_READ_MARGIN),
             )?);
             sections.push(render_stat(&stat_raw, &shortstat, stat.files_changed));
@@ -497,7 +517,7 @@ impl McpTool for GitDiffTool {
             if !stat_only {
                 // The read stops just past the limit; `capped` marks a patch cut short by it.
                 let limit = max_bytes.saturating_add(DIFF_READ_MARGIN);
-                let patch_bytes = run_git(ctx, &diff_args(&[], staged, &pathspec_refs), limit)?;
+                let patch_bytes = run_git(ctx, &diff_args(&[], staged, &scoped), limit)?;
                 let capped = patch_bytes.len() >= limit;
                 // Redact before truncating so a secret cannot survive by being cut in half.
                 let patch_text = lossy(&patch_bytes);
@@ -530,7 +550,8 @@ impl McpTool for GitDiffTool {
 }
 
 /// Arguments for one `git diff` call: the flags every diff of this tool shares (no external or
-/// textconv drivers, no rename pairing), then `--cached` when `staged`, then `--` and `scope`.
+/// textconv drivers, no rename pairing, paths relative to and limited to the workspace), then
+/// `--cached` when `staged`, then `--` and `scope`.
 fn diff_args<'a>(extra: &[&'a str], staged: bool, scope: &[&'a str]) -> Vec<&'a str> {
     let mut args = vec!["diff"];
     args.extend_from_slice(extra);
@@ -539,6 +560,7 @@ fn diff_args<'a>(extra: &[&'a str], staged: bool, scope: &[&'a str]) -> Vec<&'a 
         "--no-ext-diff",
         "--no-textconv",
         "--no-renames",
+        "--relative",
     ]);
     if staged {
         args.push("--cached");
@@ -1692,6 +1714,31 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
         assert!(!output.text.contains("sentinel-"), "{}", output.text);
         let structured = output.structured.unwrap();
         assert_eq!(structured["files_changed"], json!(0));
+        assert_eq!(structured["excluded"], json!(1));
+    }
+
+    #[test]
+    fn git_diff_is_limited_to_a_workspace_inside_the_repository() {
+        let Some(dir) = init_repo() else { return };
+        commit_files(
+            dir.path(),
+            &[
+                ("outside.txt", "one\n"),
+                ("sub/inside.txt", "one\n"),
+                ("sub/.env", "TOKEN=old\n"),
+            ],
+        );
+        fs::write(dir.path().join("outside.txt"), "sentinel-outside\n").unwrap();
+        fs::write(dir.path().join("sub/inside.txt"), "two\n").unwrap();
+        fs::write(dir.path().join("sub/.env"), "sentinel-env-sub\n").unwrap();
+        let workspace = dir.path().join("sub");
+
+        let output = GitDiffTool.call(&json!({}), &ctx_for(&workspace)).unwrap();
+        assert!(output.text.contains("inside.txt"), "{}", output.text);
+        assert!(!output.text.contains("outside"), "{}", output.text);
+        assert!(!output.text.contains("sentinel-"), "{}", output.text);
+        let structured = output.structured.unwrap();
+        assert_eq!(structured["files_changed"], json!(1));
         assert_eq!(structured["excluded"], json!(1));
     }
 
