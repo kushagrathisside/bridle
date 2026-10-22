@@ -1,5 +1,14 @@
 # Progress log
 
+## 2026-10-22 (end of day): M2 steps 7 and 8 done
+
+- Step 7: `inspect_artifact` (JSON shape, JSONL and CSV statistics, text tail), `summarize_experiment` (files,
+  redacted config, final metrics), `compare_experiments` (metric deltas, config keys that differ).
+- Step 8: declarative adapters. `[[tools.adapters]]` (machine or `--config` only: a repository may not add tools,
+  enforced in `config::trust`) become `adapter_<name>` tools. They run through the same `execute_plain` path as
+  `run_command`, so they get the same classification, secret and path checks. Validation V25 checks names,
+  bare program names, plain arguments and descriptions.
+
 ## 2026-10-22 (later still): M2 step 6 done (dependency_search)
 
 - `dependency_search`: declared dependencies from Cargo.toml (all sections and the workspace table),

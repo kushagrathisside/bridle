@@ -29,7 +29,7 @@ const MAX_TIMEOUT_MS: u64 = 600_000;
 
 /// Characters a word may use. No quotes, spaces, `$`, `%`, `*`, `?`, `;`, `&`, `|`, `<`, `>`,
 /// `` ` `` or brackets, so no shell can read the word any other way than written.
-fn plain_word(word: &str) -> bool {
+pub(super) fn plain_word(word: &str) -> bool {
     !word.is_empty()
         && word.len() <= MAX_WORD_LEN
         && word
@@ -95,103 +95,115 @@ impl McpTool for RunCommandTool {
         let timeout_ms = u64_arg(args, "timeout_ms", ctx.verification.default_timeout_ms)?
             .clamp(1_000, MAX_TIMEOUT_MS);
 
-        let mut line = program.to_owned();
-        for word in &words {
-            line.push(' ');
-            line.push_str(word);
-        }
-
-        // The full policy: secret and path checks on every word, then the command class.
-        let mut request = ToolRequest::new(ToolKind::Shell);
-        request.command = Some(line.clone());
-        request.workdir = cwd.clone();
-        let decision = ctx.policy.evaluate(&request);
-        let assessment = ctx.policy.assess_in(&line, STEP_SHELL);
-        let allowed = decision.verdict == Verdict::Allow
-            && ctx.policy.class_verdict(assessment.class) == Verdict::Allow;
-        if !allowed {
-            let reasons = if decision.reasons.is_empty() {
-                format!("command class {}", assessment.class.as_str())
-            } else {
-                decision.reasons.join("; ")
-            };
-            let text = ctx
-                .redactor
-                .redact(&format!("blocked by policy ({}): {reasons}", decision.rule))
-                .into_owned();
-            return Ok(ToolOutput {
-                text: text.clone(),
-                structured: Some(json!({
-                    "status": "blocked",
-                    "command": ctx.redactor.redact(&line).into_owned(),
-                    "rule": decision.rule,
-                    "reason": text,
-                })),
-                is_error: false,
-            });
-        }
-
-        let dir = match &cwd {
-            Some(relative) => ctx.workspace.join(relative),
-            None => ctx.workspace.clone(),
-        };
-        let mut command = Command::new(program);
-        command.args(&words).current_dir(&dir);
-        let started = std::time::Instant::now();
-        let run = run_child(
-            command,
-            Duration::from_millis(timeout_ms),
-            Keep::Tail(64 * 1024),
-        );
-        let duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
-        let run = match run {
-            Ok(run) => run,
-            Err(error) => {
-                return Ok(redacted_output(
-                    ctx,
-                    &format!("failed to start `{program}`: {error}"),
-                    Some(json!({"status": "failed", "command": line})),
-                ));
-            }
-        };
-
-        let (status, exit_code) = if run.timed_out {
-            ("timeout", None)
-        } else {
-            let success = run.exit.as_ref().is_some_and(ExitStatus::success);
-            (
-                if success { "passed" } else { "failed" },
-                run.exit.as_ref().and_then(ExitStatus::code),
-            )
-        };
-        let stdout = ctx.redactor.redact(&lossy(&run.stdout)).into_owned();
-        let stderr = ctx.redactor.redact(&lossy(&run.stderr)).into_owned();
-        let output_tail = tail_text(&stdout, OUTPUT_TAIL_BYTES);
-        let stderr_tail = tail_text(&stderr, OUTPUT_TAIL_BYTES);
-
-        let mut text = format!("`{line}`: {status}");
-        if let Some(code) = exit_code {
-            text.push_str(&format!(", exit {code}"));
-        }
-        text.push_str(&format!(" ({duration_ms} ms)"));
-        for part in [&output_tail, &stderr_tail] {
-            for out_line in part.trim_end().lines() {
-                text.push_str(&format!("\n    {out_line}"));
-            }
-        }
-        Ok(redacted_output(
-            ctx,
-            &text,
-            Some(json!({
-                "status": status,
-                "command": line,
-                "exit_code": exit_code,
-                "duration_ms": duration_ms,
-                "output_tail": output_tail,
-                "stderr_tail": stderr_tail,
-            })),
-        ))
+        execute_plain(ctx, program, &words, cwd, timeout_ms)
     }
+}
+
+/// Runs one program with plain words under the full policy (see the module docs). Shared by
+/// `run_command` and the configured adapters, so both get the same checks.
+pub(super) fn execute_plain(
+    ctx: &ToolContext,
+    program: &str,
+    words: &[String],
+    cwd: Option<String>,
+    timeout_ms: u64,
+) -> Result<ToolOutput, String> {
+    let mut line = program.to_owned();
+    for word in words {
+        line.push(' ');
+        line.push_str(word);
+    }
+
+    // The full policy: secret and path checks on every word, then the command class.
+    let mut request = ToolRequest::new(ToolKind::Shell);
+    request.command = Some(line.clone());
+    request.workdir = cwd.clone();
+    let decision = ctx.policy.evaluate(&request);
+    let assessment = ctx.policy.assess_in(&line, STEP_SHELL);
+    let allowed = decision.verdict == Verdict::Allow
+        && ctx.policy.class_verdict(assessment.class) == Verdict::Allow;
+    if !allowed {
+        let reasons = if decision.reasons.is_empty() {
+            format!("command class {}", assessment.class.as_str())
+        } else {
+            decision.reasons.join("; ")
+        };
+        let text = ctx
+            .redactor
+            .redact(&format!("blocked by policy ({}): {reasons}", decision.rule))
+            .into_owned();
+        return Ok(ToolOutput {
+            text: text.clone(),
+            structured: Some(json!({
+                "status": "blocked",
+                "command": ctx.redactor.redact(&line).into_owned(),
+                "rule": decision.rule,
+                "reason": text,
+            })),
+            is_error: false,
+        });
+    }
+
+    let dir = match &cwd {
+        Some(relative) => ctx.workspace.join(relative),
+        None => ctx.workspace.clone(),
+    };
+    let mut command = Command::new(program);
+    command.args(words).current_dir(&dir);
+    let started = std::time::Instant::now();
+    let run = run_child(
+        command,
+        Duration::from_millis(timeout_ms),
+        Keep::Tail(64 * 1024),
+    );
+    let duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+    let run = match run {
+        Ok(run) => run,
+        Err(error) => {
+            return Ok(redacted_output(
+                ctx,
+                &format!("failed to start `{program}`: {error}"),
+                Some(json!({"status": "failed", "command": line})),
+            ));
+        }
+    };
+
+    let (status, exit_code) = if run.timed_out {
+        ("timeout", None)
+    } else {
+        let success = run.exit.as_ref().is_some_and(ExitStatus::success);
+        (
+            if success { "passed" } else { "failed" },
+            run.exit.as_ref().and_then(ExitStatus::code),
+        )
+    };
+    let stdout = ctx.redactor.redact(&lossy(&run.stdout)).into_owned();
+    let stderr = ctx.redactor.redact(&lossy(&run.stderr)).into_owned();
+    let output_tail = tail_text(&stdout, OUTPUT_TAIL_BYTES);
+    let stderr_tail = tail_text(&stderr, OUTPUT_TAIL_BYTES);
+
+    let mut text = format!("`{line}`: {status}");
+    if let Some(code) = exit_code {
+        text.push_str(&format!(", exit {code}"));
+    }
+    text.push_str(&format!(" ({duration_ms} ms)"));
+    for part in [&output_tail, &stderr_tail] {
+        for out_line in part.trim_end().lines() {
+            text.push_str(&format!("\n    {out_line}"));
+        }
+    }
+    Ok(redacted_output(
+        ctx,
+        &text,
+        Some(json!({
+            "status": status,
+            "command": line,
+            "exit_code": exit_code,
+            "duration_ms": duration_ms,
+            "output_tail": output_tail,
+            "stderr_tail": stderr_tail,
+        })),
+    ))
 }
 
 /// `inspect_config`: the effective configuration, redacted, and its validation findings.

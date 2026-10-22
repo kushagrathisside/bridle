@@ -28,6 +28,7 @@
 //! | V21 | Error | `context.hard_limit > models[agent.default_model].context` (skipped when the default model is missing) |
 //! | V22 | Error | `launch.extra_args` contains a reserved flag ([`super::RESERVED_LAUNCH_FLAGS`]: listener, model, alias, context, key, served or written paths), as `--flag` or `--flag=value` |
 //! | V23 | Error | `timeout_ms` outside `1_000..=3_600_000`, or `retries > 10` |
+//! | V25 | Error | an adapter (`[[tools.adapters]]`) has a bad or duplicate name, a non-bare program, non-plain arguments, or no description |
 //! | V24 | Warning | a verification step sets `targets = true` but its `kind` is not `test` |
 //!
 //! Unit tests: one passing baseline config (no issues) and at least one failing case per rule.
@@ -95,7 +96,7 @@ pub fn validate(cfg: &Config) -> Vec<ConfigIssue> {
     validate_with(cfg, &ValidationEnv::from_process())
 }
 
-/// Runs every rule (V1 to V24) and returns all issues found, in rule order.
+/// Runs every rule (V1 to V25) and returns all issues found, in rule order.
 pub fn validate_with(cfg: &Config, env: &ValidationEnv) -> Vec<ConfigIssue> {
     let mut report = Report::default();
 
@@ -112,6 +113,7 @@ pub fn validate_with(cfg: &Config, env: &ValidationEnv) -> Vec<ConfigIssue> {
     check_context(cfg, &mut report);
     check_hard_limit_against_default_model(cfg, &mut report);
     check_verification(cfg, &mut report);
+    check_adapters(cfg, &mut report);
     check_paths(cfg, env, &mut report);
 
     report.0
@@ -568,6 +570,60 @@ fn check_verification(cfg: &Config, report: &mut Report) {
                     "targets are only passed by run_tests, but this step's kind is `{}`",
                     step.kind.as_str()
                 ),
+            );
+        }
+    }
+}
+
+/// V25: adapters have a valid, unique name, a bare program name, plain fixed arguments and a
+/// description, so each one can be exposed as a tool and run under the command policy.
+fn check_adapters(cfg: &Config, report: &mut Report) {
+    let mut seen: Vec<&str> = Vec::new();
+    for (index, adapter) in cfg.tools.adapters.iter().enumerate() {
+        let path = |field: &str| format!("tools.adapters[{index}].{field}");
+        let name_ok = !adapter.name.is_empty()
+            && adapter.name.len() <= 40
+            && adapter.name.starts_with(|c: char| c.is_ascii_lowercase())
+            && adapter
+                .name
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+        if !name_ok {
+            report.error("V25", path("name"), "adapter names are lowercase letters, digits and _, starting with a letter, at most 40 characters");
+        } else if seen.contains(&adapter.name.as_str()) {
+            report.error(
+                "V25",
+                path("name"),
+                format!("adapter name `{}` is used twice", adapter.name),
+            );
+        }
+        seen.push(&adapter.name);
+        if adapter.description.trim().is_empty() {
+            report.error(
+                "V25",
+                path("description"),
+                "an adapter needs a description for the model",
+            );
+        }
+        let program = adapter.program.as_str();
+        if program.is_empty() || program.contains(['/', '\\', ':']) {
+            report.error(
+                "V25",
+                path("program"),
+                "the program must be a bare name found on PATH",
+            );
+        }
+        let plain = |word: &str| {
+            !word.is_empty()
+                && word
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "_./-=:,@+".contains(c))
+        };
+        if let Some(bad) = adapter.args.iter().find(|word| !plain(word)) {
+            report.error(
+                "V25",
+                path("args"),
+                format!("argument `{bad}` uses characters adapters do not pass"),
             );
         }
     }

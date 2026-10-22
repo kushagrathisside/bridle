@@ -421,6 +421,13 @@ impl ToolPolicy {
                     "runs configured verification commands (each command is policy-checked)",
                 )
             }
+            // Configured adapters run their command through the same checks as run_command.
+            ToolKind::Harness(name) if name.starts_with("adapter_") => PolicyDecision::new(
+                self.class_verdict(ToolClass::ExecuteSafe),
+                ToolClass::ExecuteSafe,
+                "harness_tool",
+                "configured adapter (its command is policy-checked inside the tool)",
+            ),
             ToolKind::Harness(name) | ToolKind::Other(name) => PolicyDecision::new(
                 self.class_verdict(ToolClass::ExecuteRisky),
                 ToolClass::ExecuteRisky,

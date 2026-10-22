@@ -30,6 +30,9 @@ pub struct Config {
     pub verification: VerificationSection,
     pub telemetry: TelemetrySection,
     pub external: ExternalSection,
+    /// Project-specific tools (declarative adapters). Machine or explicit config only: a
+    /// repository config may not add tools (see `config::trust`).
+    pub tools: ToolsSection,
 }
 
 impl Default for Config {
@@ -48,6 +51,7 @@ impl Default for Config {
             verification: VerificationSection::default(),
             telemetry: TelemetrySection::default(),
             external: ExternalSection::default(),
+            tools: ToolsSection::default(),
         }
     }
 }
@@ -582,6 +586,37 @@ impl Default for TelemetrySection {
             max_field_bytes: 2048,
         }
     }
+}
+
+/// `[tools]`: adapters that expose a configured command as an MCP tool named `adapter_<name>`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ToolsSection {
+    /// The configured adapters, in declaration order.
+    #[serde(rename = "adapters")]
+    pub adapters: Vec<AdapterConfig>,
+}
+
+/// One adapter: a program with fixed arguments, optionally followed by caller-supplied words.
+/// The program runs without a shell, under the same policy as `run_command`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdapterConfig {
+    /// Tool name suffix: `adapter_<name>`. Lowercase letters, digits and `_`.
+    pub name: String,
+    /// What the tool does, shown to the model.
+    pub description: String,
+    /// Program name on PATH (no path separators).
+    pub program: String,
+    /// Arguments always passed, before any caller words.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Whether the caller may append plain words after the fixed arguments.
+    #[serde(default)]
+    pub accepts_args: bool,
+    /// Timeout in milliseconds (default: the verification default).
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
