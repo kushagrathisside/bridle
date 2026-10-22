@@ -193,6 +193,14 @@ fn disk_entry(config: &Config, issues: &[ConfigIssue]) -> DiskEntry {
             detail: "paths.models_dir is not set; weights have no configured location".to_owned(),
         };
     };
+    if !dir.is_dir() {
+        return DiskEntry {
+            path: Some(dir.display().to_string()),
+            free_bytes: None,
+            level: Level::Warn,
+            detail: format!("{}: directory does not exist", dir.display()),
+        };
+    }
     let free = sysprobe::free_space(&dir);
     let (level, detail) = classify_disk(free, on_system_drive);
     DiskEntry {
