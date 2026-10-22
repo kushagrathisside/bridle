@@ -349,6 +349,7 @@ dependencies = [
  "sysinfo",
  "tempfile",
  "thiserror",
+ "toml",
  "tree-sitter",
  "tree-sitter-cpp",
  "tree-sitter-python",

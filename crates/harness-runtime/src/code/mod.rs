@@ -4,6 +4,8 @@
 //! Results are syntactic. `identifier_lines` finds identifiers with a given spelling outside
 //! comments and strings; it does not resolve scopes, overloads or imports.
 
+pub mod deps;
+
 use serde::Serialize;
 use tree_sitter::{Node, Parser, Tree};
 
