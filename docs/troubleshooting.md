@@ -42,8 +42,9 @@ command, add it to `security.safe_commands` (see [configuration.md](configuratio
 
 ## A Windows path is blocked as "alternate data stream" or "path outside workspace"
 
-Cause: earlier builds lexed `D:\dir` with POSIX rules, which broke the path. Fixed: Windows commands use the `cmd`
-lexer. Rebuild if you see it.
+Cause: earlier builds lexed `D:\dir` with POSIX rules, which broke the path. Fixed: commands are lexed in the shell
+OpenCode runs them in. That is PowerShell on Windows unless `SHELL` names another shell (for example Git Bash, which
+uses POSIX rules, so write paths as `D:/dir` there). Rebuild if you see it.
 
 ## `cargo` cannot download crates on Windows
 

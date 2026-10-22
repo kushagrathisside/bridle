@@ -1,6 +1,38 @@
 # Progress log
 
-## M1 closing checklist (2026-10-22, current)
+## 2026-10-22 (afternoon): work moved to Windows; review fixes merged
+
+Where the work happens now (user decision: postpone WSL use; no subagents):
+- The working repository is `D:\src\harnessforkush`, cloned from the WSL repo with Windows git. Every branch
+  came across, including the subagents' saved work. Builds and tests run on Windows only:
+  `D:\cargo-target\wgate.bat` (fmt, clippy `-D warnings`, tests), `wcargo.bat <args>`, `wgit.bat <args>`,
+  4 build jobs, vendored crates, target dir `D:\cargo-target\harness`. The WSL repo is behind; fetch from
+  `D:` before using it again.
+- Why: three AI session restarts while four or five agents were building in WSL. WSL kept about 8 GB as
+  file cache, and Windows (15.7 GB) fell to 0.6 GB free. WSL logged no out-of-memory kills and its VM did not
+  reboot. `.wslconfig` now sets `memory=8GB` and `autoMemoryReclaim=dropCache` (backup `.wslconfig.bak-2026-10-22`).
+  It applies after `wsl --shutdown`.
+
+Merged and verified on Windows (fmt, clippy and all 11 test suites pass, `fbbce01`):
+- Redaction fixes (`9bb3eb0`), path policy fixes including protected control files (`457f099`), MCP fixes
+  including the review follow-ups (`25bd530`), classifier fixes (`12bc114`).
+- Windows found three problems that Linux tests missed. Lesson: run the Windows gate before merging.
+  - A test used an 8.3 short temp path (`KUSHAG~1`) as its base; the guard correctly refuses it (test fixed).
+  - **The classifier lexed Windows commands as `cmd`, but OpenCode 1.19.3 runs them in PowerShell.** Its
+    `Shell.preferred` uses `SHELL`, or else the first of pwsh, powershell, Git Bash, cmd (read from the
+    binary), as `powershell -NoProfile -Command <cmd>`. The same text differs between the grammars: a
+    single-quoted `&` is literal in PowerShell and splits commands in cmd. `ShellKind::host_default` now
+    follows the host's rule. Verification steps run under `cmd /C`, so they are classified as cmd (`assess_in`).
+  - A `$(printf '\056env')` substitution is denied by the path guard first on Windows (rooted `\056env`); still denied.
+- `git config` writes were already EXECUTE_RISKY on the classifier branch (only `--get`, `--get-all` and
+  `--list` are read-only), so the extra item needs no code; read forms such as `--get-regexp` stay blocked.
+
+Still open for M1: config trust and launcher items (repo layer limits, `extra_args`, bounds, process group,
+SSE cap), `models stop` PID safety, `doctor` busy port, init minors, event-log secret test, MCP timeout in the
+generated config, `permission` failure answer `deny`, module docs for security and MCP, then the gates, the
+Windows end-to-end reruns, the traceability matrix, and the `m1` tag.
+
+## M1 closing checklist (2026-10-22, morning)
 
 Done today: process-tree kill on verification timeout (`4f52dc4`); server-side MCP redaction (`6fb64b0`);
 safe prefixes only upgrade risky commands (`dc61a5a`); doctor warns on a missing models directory (`e4242df`);

@@ -39,7 +39,7 @@ OpenCode  ──stdio MCP──▶  agent mcp
 - No panics in non-test code. Errors are values; telemetry I/O errors never stop the agent.
 - Pure functions for anything testable: argv building, parsers, classification, config merging. I/O sits at the edges.
 - The environment is injected (`env: &dyn Fn(&str) -> Option<String>`), so tests never mutate the process environment.
-- Windows rules are a parameter, not only `cfg(windows)`, so Linux CI exercises them (path guard, `cmd` lexer).
+- Windows rules are a parameter, not only `cfg(windows)`, so Linux CI exercises them (path guard, PowerShell and `cmd` lexers).
 - Every user-visible name comes from `harness_core::identity`.
 
 ## Keeping these pages current
