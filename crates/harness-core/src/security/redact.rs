@@ -44,9 +44,12 @@
 //! `is_secret_file(path)`: true for file names (case-insensitive) `.env`, `.env.*` (but NOT
 //! `.env.example`/`.env.sample`/`.env.template`), `.netrc`, `_netrc`, `.npmrc`, `.pypirc`,
 //! `.git-credentials`, `id_rsa`, `id_dsa`, `id_ecdsa`, `id_ed25519` (not the `.pub`), `*.pem`,
-//! `*.key`, `*.p12`, `*.pfx`, `*.kdbx`, `credentials` inside a `.aws` dir, `Cookies` / `Login Data`
-//! (browser stores), and any path component `.ssh` containing a non-`.pub`, non-`known_hosts`,
-//! non-`config` file.
+//! `*.key`, `*.p12`, `*.pfx`, `*.kdbx`, `*.jks`, `*.keystore`, `*.tfvars`, `credentials` inside a
+//! `.aws` dir, `Cookies` / `Login Data` (browser stores), `.pgpass`, `.my.cnf`, `.htpasswd`,
+//! `.vault-token`, `credentials.json`, `terraform.tfvars`, `application_default_credentials.json`,
+//! `client_secret*.json`, `config.json` in `.docker`, `config` in `.kube`, anything under `.gnupg`,
+//! `.azure` or `.config/gcloud`, and any path component `.ssh` containing a non-`.pub`,
+//! non-`known_hosts`, non-`config` file.
 //!
 //! Unit tests in this file: every rule (positive and negative), idempotence (`redact(redact(x)) ==
 //! redact(x)`), JSON walking, env-name and secret-file classification.
@@ -440,6 +443,19 @@ pub fn is_secret_file(path: &Path) -> bool {
     if *name == "credentials" && dirs.contains(&".aws") {
         return true;
     }
+    // Whole directories that hold credentials, and single files in tool config directories.
+    if dirs.contains(&".gnupg") || dirs.contains(&".azure") {
+        return true;
+    }
+    if dirs.windows(2).any(|pair| *pair == [".config", "gcloud"]) {
+        return true;
+    }
+    if *name == "config.json" && dirs.contains(&".docker") {
+        return true;
+    }
+    if *name == "config" && dirs.contains(&".kube") {
+        return true;
+    }
     dirs.contains(&".ssh") && !(name.ends_with(".pub") || matches!(*name, "known_hosts" | "config"))
 }
 
@@ -457,11 +473,31 @@ fn is_secret_file_name(name: &str) -> bool {
         "id_ed25519",
         "cookies",
         "login data",
+        ".pgpass",
+        ".my.cnf",
+        ".htpasswd",
+        ".vault-token",
+        "credentials.json",
+        "terraform.tfvars",
+        "application_default_credentials.json",
     ];
-    const SUFFIXES: &[&str] = &[".pem", ".key", ".p12", ".pfx", ".kdbx"];
+    const SUFFIXES: &[&str] = &[
+        ".pem",
+        ".key",
+        ".p12",
+        ".pfx",
+        ".kdbx",
+        ".jks",
+        ".keystore",
+        ".tfvars",
+    ];
     const ENV_TEMPLATES: &[&str] = &[".env.example", ".env.sample", ".env.template"];
 
     if EXACT.contains(&name) || SUFFIXES.iter().any(|suffix| name.ends_with(suffix)) {
+        return true;
+    }
+    // OAuth client secrets downloaded from a cloud console: `client_secret*.json`.
+    if name.starts_with("client_secret") && name.ends_with(".json") {
         return true;
     }
     name == ".env" || (name.starts_with(".env.") && !ENV_TEMPLATES.contains(&name))
@@ -966,6 +1002,73 @@ mod tests {
             "README.md",
             "environment.txt",
             "docs/password-reset.md",
+        ] {
+            assert!(
+                !is_secret_file(Path::new(path)),
+                "{path} should not be secret"
+            );
+        }
+    }
+
+    #[test]
+    fn credential_files_by_name_and_suffix_are_detected() {
+        for path in [
+            "deploy/credentials.json",
+            "/home/u/.pgpass",
+            "/home/u/.my.cnf",
+            "site/.htpasswd",
+            "/home/u/.vault-token",
+            "infra/terraform.tfvars",
+            "infra/prod.auto.tfvars",
+            "/home/u/.config/gcloud/application_default_credentials.json",
+            "secrets/client_secret_123.json",
+            "secrets/Client_Secret.json",
+            "android/upload.jks",
+            "android/app.keystore",
+            r"C:\proj\CREDENTIALS.JSON",
+        ] {
+            assert!(is_secret_file(Path::new(path)), "{path} should be secret");
+        }
+    }
+
+    #[test]
+    fn credential_files_by_directory_are_detected() {
+        for path in [
+            "/home/u/.docker/config.json",
+            "/home/u/.kube/config",
+            "/home/u/.gnupg/pubring.kbx",
+            "/home/u/.gnupg/private-keys-v1.d/key.key",
+            "/home/u/.azure/accessTokens.json",
+            "/home/u/.azure/msal_token_cache.json",
+            "/home/u/.config/gcloud/credentials.db",
+            r"C:\Users\me\.config\gcloud\legacy_credentials\a@b.com\adc.json",
+            r"C:\Users\me\.docker\config.json",
+        ] {
+            assert!(is_secret_file(Path::new(path)), "{path} should be secret");
+        }
+    }
+
+    #[test]
+    fn templates_and_same_named_files_elsewhere_are_not_secret() {
+        for path in [
+            "deploy/credentials.json.example",
+            "deploy/credentials.json.bak.md",
+            "infra/terraform.tfvars.example",
+            "infra/variables.tf",
+            "secrets/client_secret.md",
+            "secrets/client_secret_notes.txt",
+            "/home/u/.pgpass.example",
+            "/home/u/.docker/config.toml",
+            "/home/u/project/config.json",
+            "/home/u/project/config",
+            "/home/u/.kube-notes/config",
+            "/home/u/.config/other/config.json",
+            "/home/u/.gcloud/config",
+            "/home/u/.kube/cache/discovery.json",
+            "/home/u/.gnupg-notes.md",
+            "/home/u/.ssh/config",
+            "/home/u/.ssh/known_hosts",
+            "/home/u/.ssh/id_ed25519.pub",
         ] {
             assert!(
                 !is_secret_file(Path::new(path)),
