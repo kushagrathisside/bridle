@@ -10,7 +10,7 @@ use std::path::{Component, Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::ToolClass;
-use super::command_risk::{CommandAssessment, ShellKind, argument_words, assess_command};
+use super::command_risk::{CommandAssessment, ShellKind, argument_words_in, assess_command};
 use super::path_guard::{PathGuard, PathViolation, has_percent_expansion, is_unresolvable};
 use super::redact::is_secret_file;
 use crate::config::{SecuritySection, Verdict};
@@ -150,15 +150,21 @@ impl ToolPolicy {
         }
     }
 
-    /// Classifies a shell command with the configured extra safe prefixes.
+    /// Classifies a shell command with the configured extra safe prefixes, in the host's shell.
     pub fn assess(&self, command: &str) -> CommandAssessment {
-        assess_command(command, self.shell, &self.security.safe_commands)
+        self.assess_in(command, self.shell)
+    }
+
+    /// [`Self::assess`] for a command the harness runs itself in a known shell (verification
+    /// steps), which must be classified in the grammar that will run it.
+    pub fn assess_in(&self, command: &str, shell: ShellKind) -> CommandAssessment {
+        assess_command(command, shell, &self.security.safe_commands)
     }
 
     /// Denies a shell command whose arguments name a secret file, a glob that could expand to one,
     /// or a path outside the authorised roots. Returns `None` when every argument passes.
     fn shell_argument_violation(&self, command: &str, base: &Path) -> Option<PolicyDecision> {
-        for word in argument_words(command) {
+        for word in argument_words_in(command, self.shell) {
             // A word too large to expand is left to `unresolved_argument`.
             for candidate in argument_candidates(&word).unwrap_or_default() {
                 if let Some(decision) = self.argument_violation(&candidate, base) {
@@ -194,7 +200,7 @@ impl ToolPolicy {
     /// a backtick, `%NAME%` in a path). Such a word is checked only when the command would
     /// otherwise run: a command already classed Ask or Deny keeps its own rule.
     fn unresolved_argument(&self, command: &str) -> Option<PolicyDecision> {
-        for word in argument_words(command) {
+        for word in argument_words_in(command, self.shell) {
             let Some(candidates) = argument_candidates(&word) else {
                 return Some(unresolved_denial(&word));
             };
@@ -237,7 +243,7 @@ impl ToolPolicy {
     /// The first argument or redirect target of `command` that names a protected control file,
     /// resolved against `base` the way the shell would resolve it.
     fn shell_touches_protected(&self, command: &str, base: &Path) -> Option<String> {
-        for word in argument_words(command) {
+        for word in argument_words_in(command, self.shell) {
             for candidate in argument_candidates(&word).unwrap_or_default() {
                 if let Ok(resolved) = self.guard.check(Path::new(&candidate), base)
                     && self.is_protected(&resolved)
@@ -812,7 +818,14 @@ mod tests {
         ] {
             let d = p.evaluate(&shell(cmd));
             assert_eq!(d.verdict, Verdict::Deny, "{cmd}");
-            assert_eq!(d.rule, "unresolved_path", "{cmd}");
+            // On Windows the inner `\056env` is a rooted path, so the workspace check can deny the
+            // printf substitution before the unresolved-word check does. Either denial is right.
+            let substitution = cmd.contains("$(printf");
+            assert!(
+                d.rule == "unresolved_path" || (substitution && d.rule == "path_guard"),
+                "{cmd}: {}",
+                d.rule
+            );
         }
     }
 
