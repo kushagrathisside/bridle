@@ -16,6 +16,26 @@ Remaining to close M1, in order:
    Reset `calc.py` to the buggy version first (`git checkout calc.py`). Start the model with `agent models serve main --detach`.
 4. Update this log and the traceability matrix, then merge `m1-basic-integration` into `main` and tag `m1`.
 
+Review findings received so far (fix majors before tagging M1):
+
+- MCP review (`mcp/protocol.rs`, `mcp/tools.rs`), 2026-10-22:
+  - MAJOR `git_diff` with no `paths` (or `.`) emits the patch of every modified tracked file, secret files
+    included; only regex redaction protects them. Fix: list names with `git diff --name-only -z`, run
+    `ctx.policy.evaluate` on each, and diff only the allowed paths (report how many were excluded). Add a
+    test for the empty and `.` cases.
+  - MAJOR `--stat` output is not capped. Cap the lines with an "... and N more" marker.
+  - MAJOR `max_bytes` has no upper bound, and `run_git` buffers the whole patch before truncating. Clamp to
+    a server maximum and stop reading past it.
+  - MAJOR the structured result lists every path; only the text is capped. Cap the lists and add counts.
+  - MAJOR `run_git` has no deadline: a hung git blocks the single-threaded server. Reuse the
+    try_wait/deadline/kill loop from `execute`.
+  - minor: `output_tail` takes the last 4000 bytes of stdout and stderr together, so stderr can hide stdout;
+    `kill_tree` runs only on timeout; `kill_tree` ignores a missing `kill` binary; no line-length cap on
+    incoming JSON-RPC; id-less messages with a bad envelope get an error reply.
+  - Clean: argument injection (paths follow `--`), ordering of policy checks, invalid UTF-8, malformed JSON,
+    tool panics.
+- Pending: policy/classifier, redaction/logging, and providers/launcher/init/models reviews.
+
 Restarts: AI Code restarts kill background agents and long foreground commands. Run long commands detached
 (`nohup ... &`) with a log file, and commit after each verified step.
 
