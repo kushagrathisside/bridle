@@ -27,10 +27,27 @@ Merged and verified on Windows (fmt, clippy and all 11 test suites pass, `fbbce0
 - `git config` writes were already EXECUTE_RISKY on the classifier branch (only `--get`, `--get-all` and
   `--list` are read-only), so the extra item needs no code; read forms such as `--get-regexp` stay blocked.
 
-Still open for M1: config trust and launcher items (repo layer limits, `extra_args`, bounds, process group,
-SSE cap), `models stop` PID safety, `doctor` busy port, init minors, event-log secret test, MCP timeout in the
-generated config, `permission` failure answer `deny`, module docs for security and MCP, then the gates, the
-Windows end-to-end reruns, the traceability matrix, and the `m1` tag.
+Then fixed in the main session, each with tests, Windows gate green after each (`a8fe97d`):
+- `ab3005b` repository-config trust (`config/trust.rs`); V22 reserved `extra_args` flags, also refused by the
+  launcher; V23 timeout and retry bounds; 1 MiB SSE line cap. The toy repo's `safe_commands` entry was removed
+  (`python -m unittest` is built in; a repository may no longer set safe prefixes).
+- `67609f0` `models stop` checks the PID's executable before signalling (records hold `pid=` and `bin=`;
+  PIDs outside `1..=i32::MAX` refused); `--version` bounded at 5 s; `doctor` reports a busy or reserved port
+  (M1 exit item 4).
+- `ec77ac7` MCP timeout derived from the verification step timeouts; unanswered `permission` is `deny` (Rust and
+  shim; `tsc` not run, no Node on Windows).
+- `a8fe97d` event-log top-level text redacted, with file read-back tests; `init` minors.
+- Deferred to release 2: a process group for launched servers on Unix.
+- Found: a machine config written by a process the AI desktop app started lands in the app's MSIX
+  storage (`%LOCALAPPDATA%\Packages\AI_pzs8sxrjxfjjc\LocalCache\Roaming\local-agent\config.toml`), not in
+  `%APPDATA%`. Programs started outside the app do not see it. Documented in cli-commands.md.
+
+Docs (`32d8d97`): module pages for security and MCP written; the other five pages, `security.md` and
+`configuration.md` updated to the fixed behaviour.
+
+Still open for M1: rebuild `agent.exe` and rerun the Windows end-to-end runs (edit-and-test, secret read, MCP
+`git_status`, plus `git_diff` and `run_verification` through OpenCode for the first time); traceability
+matrix; merge into `main` and tag `m1`. The WSL repo must fetch from `D:` before it is used again.
 
 ## M1 closing checklist (2026-10-22, morning)
 
