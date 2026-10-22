@@ -1,5 +1,25 @@
 # Progress log
 
+## M1 closing checklist (2026-10-22, current)
+
+Done today: process-tree kill on verification timeout (`4f52dc4`); server-side MCP redaction (`6fb64b0`);
+safe prefixes only upgrade risky commands (`dc61a5a`); doctor warns on a missing models directory (`e4242df`);
+security residual risks updated (`2be261d`). `doctor` with missing models and runtimes: runtimes block, models
+warn, no panic, exit 1 (checked by hand).
+
+Remaining to close M1, in order:
+1. Collect the four read-only code reviews (policy/classifier, redaction/logging, MCP, providers/launcher/init/models)
+   started on 2026-10-22; fix every blocker and major finding, each with a test.
+2. Full workspace tests on WSL, then the Windows gate (`D:\cargo-target\run-wintest.bat`, vendored crates) on the final head.
+3. Rebuild the Windows `agent.exe` (`D:\cargo-target\run-build-agent.bat`) and rerun the scripted end-to-end runs in
+   `D:\e2e\toy`: the edit-and-test fix (`run-e2e.bat`), the secret read (`run-sec.bat`), and MCP `git_status` (`run-mcp.bat`).
+   Reset `calc.py` to the buggy version first (`git checkout calc.py`). Start the model with `agent models serve main --detach`.
+4. Update this log and the traceability matrix, then merge `m1-basic-integration` into `main` and tag `m1`.
+
+Restarts: AI Code restarts kill background agents and long foreground commands. Run long commands detached
+(`nohup ... &`) with a log file, and commit after each verified step.
+
+
 A running record. Newest entries first. Every "verified" line names the evidence.
 
 ## 2026-10-21 (latest): fixtures, read fix, gates
