@@ -76,6 +76,17 @@ Review findings received so far (fix majors before tagging M1):
     `<bin> --version` has no timeout; no SSE line cap; `timeout_ms` and `retries` unbounded; init overwrites
     an unreadable machine config; init skips the ledger save if the shim write fails.
   - Clean: API key handling, argv separation, panics.
+- Found while writing the module docs (2026-10-22):
+  - GAP (M1 exit item 4): `doctor` has no busy-port check.
+  - `failure_answer` and the shim answer `ask` for `permission` when the harness cannot answer; `deny` matches D3.
+    Tool calls are still blocked by `tool-before`, so this is consistency, not a hole.
+  - No unit test writes an event containing a secret and checks the log file (verified only end to end).
+  - `run_verification` has not been called through OpenCode; the generated MCP entry has a 10 s timeout, and
+    verification steps default to 600 s. Check what OpenCode's MCP `timeout` covers.
+
+Fix work started 2026-10-22, four Haiku agents in worktrees (high effort): classifier (`command_risk.rs`), path
+policy (`tool_policy.rs`, `path_guard.rs`), MCP (`mcp/`), redaction (`redact.rs`, hook message, `config validate`).
+Queued for the next free slot: config trust and launcher/models/init/doctor fixes.
 
 Restarts: AI Code restarts kill background agents and long foreground commands. Run long commands detached
 (`nohup ... &`) with a log file, and commit after each verified step.
