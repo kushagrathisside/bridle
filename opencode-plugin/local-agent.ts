@@ -2,8 +2,8 @@
 //
 // This file holds NO policy logic. It forwards OpenCode hook payloads as JSON to the Rust
 // `agent hook <event>` command and applies the verdict it returns. Policy hooks fail closed:
-// if the harness cannot answer, the tool call is blocked (tool.execute.before) or a human is
-// asked (permission.ask). Telemetry-only hooks fail open.
+// if the harness cannot answer, the tool call is blocked (tool.execute.before) and the
+// permission is denied (permission.ask). Telemetry-only hooks fail open.
 //
 // Generated into `.opencode/plugins/local-agent.ts` by `agent init`, which replaces the
 // placeholder below with the absolute path of the agent executable. Edit the template in the
@@ -122,7 +122,8 @@ export const LocalAgentPlugin: Plugin = async ({ directory, worktree }) => {
           output.status = result.status
         }
       } catch {
-        output.status = "ask"
+        // Decision D3: if the policy engine cannot answer, the permission is denied.
+        output.status = "deny"
       }
     },
 

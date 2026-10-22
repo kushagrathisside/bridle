@@ -442,7 +442,8 @@ pub fn failure_answer(event: HookEvent, error: &str) -> Value {
             "action": "block",
             "message": format!("{} policy engine unavailable: {error}", identity::PRODUCT_ID),
         }),
-        HookEvent::Permission => json!({ "status": "ask", "reason": error }),
+        // Decision D3: an unanswered permission is a deny, never a question `--auto` approves.
+        HookEvent::Permission => json!({ "status": "deny", "reason": error }),
         HookEvent::ShellEnv => shell_env(std::env::vars()),
         HookEvent::ToolAfter | HookEvent::Event => json!({}),
     }
@@ -451,6 +452,27 @@ pub fn failure_answer(event: HookEvent, error: &str) -> Value {
 // ---------------------------------------------------------------------------------------------
 // opencode.json generation
 // ---------------------------------------------------------------------------------------------
+
+/// The slowest harness MCP call: `git_diff` runs up to four git commands of 30 s each.
+const MCP_GIT_WORST_CASE_MS: u64 = 4 * 30_000;
+/// Slack on top of the slowest call, for process start-up and output handling.
+const MCP_TIMEOUT_MARGIN_MS: u64 = 30_000;
+
+/// OpenCode 1.19.3 applies the MCP `timeout` to every request, tool calls included. A
+/// `run_verification` call runs every configured step in turn, so the timeout covers the sum of
+/// the step timeouts, and never less than the slowest git tool.
+fn mcp_timeout_ms(cfg: &Config) -> u64 {
+    let steps: u64 = cfg
+        .verification
+        .steps
+        .iter()
+        .map(|step| {
+            step.timeout_ms
+                .unwrap_or(cfg.verification.default_timeout_ms)
+        })
+        .sum();
+    steps.max(MCP_GIT_WORST_CASE_MS) + MCP_TIMEOUT_MARGIN_MS
+}
 
 /// OpenCode provider id for a model slot (`local-agent-main`).
 pub fn provider_id(slot: &str) -> String {
@@ -631,7 +653,7 @@ pub fn generate_opencode_config(cfg: &Config, agent_bin: &Path) -> Value {
             "type": "local",
             "command": [agent_bin.to_string_lossy(), "mcp"],
             "enabled": true,
-            "timeout": 10000,
+            "timeout": mcp_timeout_ms(cfg),
         }),
     );
 
@@ -775,7 +797,7 @@ mod tests {
             failure_answer(HookEvent::ToolBefore, "x")["action"],
             "block"
         );
-        assert_eq!(failure_answer(HookEvent::Permission, "x")["status"], "ask");
+        assert_eq!(failure_answer(HookEvent::Permission, "x")["status"], "deny");
         assert_eq!(failure_answer(HookEvent::Event, "x"), json!({}));
     }
 
@@ -837,6 +859,24 @@ mod tests {
     }
 
     #[test]
+    fn mcp_timeout_covers_every_verification_step_in_turn() {
+        let cfg = harness_core::config::from_toml_str(
+            r#"
+            [verification]
+            default_timeout_ms = 600000
+            [[verification.steps]]
+            command = "python -m pytest -q"
+            [[verification.steps]]
+            command = "ruff check ."
+            timeout_ms = 60000
+            "#,
+        )
+        .expect("config");
+        // 600 s + 60 s of steps, plus 30 s of margin; OpenCode's 10 s default would cut it short.
+        assert_eq!(mcp_timeout_ms(&cfg), 690_000);
+    }
+
+    #[test]
     fn generated_config_is_local_first() {
         let cfg = harness_core::config::from_toml_str(
             r#"
@@ -868,6 +908,8 @@ mod tests {
             "http://127.0.0.1:8001/v1"
         );
         assert_eq!(oc["mcp"]["local-agent"]["command"][1], "mcp");
+        // No verification steps: the git tools set the floor (4 × 30 s) plus the margin.
+        assert_eq!(oc["mcp"]["local-agent"]["timeout"], 150_000);
         assert_eq!(oc["agent"]["deep"]["permission"]["edit"], "deny");
         assert_eq!(oc["agent"]["explore"]["permission"]["edit"], "deny");
         assert_eq!(oc["agent"]["build"]["permission"]["bash"]["*"], "ask");
