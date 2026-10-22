@@ -64,8 +64,8 @@ program (so `serve` would fail) or one the OS refuses (on Windows, usually an ex
 - The shim copy gets the absolute path of the `agent` binary baked in, in place of `__AGENT_BIN__`.
 - `init --machine` stops with an error when an existing machine config cannot be read, rather than replacing it.
   The ledger is saved even when a later file fails, so the next run recognises what was written.
-- Under the AI desktop app (an MSIX package), `%APPDATA%` writes from processes it starts are redirected to
-  `%LOCALAPPDATA%\Packages\AI_<id>\LocalCache\Roaming\`. A machine config written that way is invisible to
+- Under the desktop app that hosts OpenCode (an MSIX package), `%APPDATA%` writes from processes it starts are
+  redirected to `%LOCALAPPDATA%\Packages\<app>_<id>\LocalCache\Roaming\`. A machine config written that way is invisible to
   programs started from your own terminal. Run `agent init --machine` from your own terminal for a config every
   program sees.
 

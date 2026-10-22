@@ -853,7 +853,7 @@ mod tests {
     fn json_walk_recurses_and_scans_string_values() {
         let mut value = json!({
             "config": {
-                "model": "ai",
+                "model": "qwen3.5-9b",
                 "max_tokens": 4096,
                 "usage": {"input_tokens": 12, "output_tokens": 7},
                 "providers": [
@@ -869,7 +869,7 @@ mod tests {
             value,
             json!({
                 "config": {
-                    "model": "ai",
+                    "model": "qwen3.5-9b",
                     "max_tokens": 4096,
                     "usage": {"input_tokens": 12, "output_tokens": 7},
                     "providers": [
