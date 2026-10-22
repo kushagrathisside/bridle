@@ -149,6 +149,10 @@ pub fn default_tools() -> Vec<Box<dyn McpTool>> {
         Box::new(verify::RUN_LINTER),
         Box::new(verify::RUN_TYPECHECKER),
         Box::new(failures::ParseTestFailureTool),
+        Box::new(code::RepoMapTool),
+        Box::new(code::FileSummaryTool),
+        Box::new(code::SymbolSearchTool),
+        Box::new(code::FindReferencesTool),
         Box::new(run::RunCommandTool),
         Box::new(run::InspectConfigTool),
         Box::new(HarnessInfoTool),
@@ -1227,6 +1231,7 @@ impl McpTool for HarnessInfoTool {
 }
 
 /// A context for tests: the given workspace, default config and policy.
+pub mod code;
 pub mod failures;
 pub mod history;
 pub mod run;
@@ -1741,6 +1746,10 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
                 "run_linter",
                 "run_typechecker",
                 "parse_test_failure",
+                "repo_map",
+                "file_summary",
+                "symbol_search",
+                "find_references",
                 "run_command",
                 "inspect_config",
                 "harness_info"

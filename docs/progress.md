@@ -1,5 +1,15 @@
 # Progress log
 
+## 2026-10-22 (later): M2 step 5 done (tree-sitter code tools, ADR-0003)
+
+- ADR-0003: tree-sitter 0.27.1 with the Rust, Python and C++ grammars (exact pins, MIT). Syntactic only.
+- `crate::code`: pure parsing (definitions, identifier occurrences outside comments and strings, imports).
+- MCP tools: `repo_map`, `file_summary`, `symbol_search`, `find_references`. Only tracked files that pass the
+  read policy are parsed; files over 512 KB and binaries are skipped; at most 2000 parsed per call.
+- Build: the offline vendor set is now `D:\cargo-vendor\harness-new` (`cargo vendor` run 2026-10-22); the old
+  `harness` directory is kept for rollback. The build scripts point at `harness-new`.
+- Gate green on Windows (492 tests across the workspace).
+
 ## 2026-10-22 (late): M2 step 4 done (run_command, inspect_config)
 
 - `run_command`: one program on PATH, plain words only (no shell syntax), workspace cwd, timeout capped at 10 min. The whole command goes through the full policy (secret and path checks, command class) before it runs; blocked calls return `status: blocked` with the rule. `git --version` is blocked as an unrecognised git form (fail closed); `git status --short` runs.
