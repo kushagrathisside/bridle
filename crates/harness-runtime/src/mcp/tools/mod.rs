@@ -139,6 +139,8 @@ pub fn default_tools() -> Vec<Box<dyn McpTool>> {
     vec![
         Box::new(GitStatusTool),
         Box::new(GitDiffTool),
+        Box::new(history::GitHistoryTool),
+        Box::new(history::GitLogRangeTool),
         Box::new(RunVerificationTool),
         Box::new(HarnessInfoTool),
     ]
@@ -1175,6 +1177,11 @@ impl McpTool for HarnessInfoTool {
 }
 
 /// A context for tests: the given workspace, default config and policy.
+pub mod history;
+
+#[cfg(test)]
+mod test_support;
+
 #[cfg(test)]
 pub(crate) fn test_context(workspace: &Path) -> ToolContext {
     let policy = ToolPolicy::new(workspace, &harness_core::config::SecuritySection::default())
@@ -1193,6 +1200,7 @@ pub(crate) fn test_context(workspace: &Path) -> ToolContext {
 mod tests {
     use std::fs;
 
+    use super::test_support::{commit_files, git, git_available, init_repo};
     use super::*;
 
     const CLEAN_REPO: &[u8] = b"# branch.oid 0123456789abcdef\0# branch.head main\0# branch.upstream origin/main\0# branch.ab +0 -0\0";
@@ -1213,51 +1221,6 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
 
     fn strings(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
-    }
-
-    fn git_available() -> bool {
-        Command::new("git")
-            .arg("--version")
-            .output()
-            .is_ok_and(|output| output.status.success())
-    }
-
-    fn git(dir: &Path, args: &[&str]) {
-        let status = Command::new("git")
-            .args(args)
-            .current_dir(dir)
-            .stdin(Stdio::null())
-            .status()
-            .unwrap();
-        assert!(status.success(), "git {args:?} failed");
-    }
-
-    /// A temporary repository with one committed file, or `None` when git is unavailable.
-    fn init_repo() -> Option<tempfile::TempDir> {
-        if !git_available() {
-            eprintln!("git not found; skipping");
-            return None;
-        }
-        let dir = tempfile::tempdir().unwrap();
-        git(dir.path(), &["init", "-q"]);
-        fs::write(dir.path().join("README.md"), "hello\n").unwrap();
-        git(dir.path(), &["add", "README.md"]);
-        git(
-            dir.path(),
-            &[
-                "-c",
-                "user.name=test",
-                "-c",
-                "user.email=test@example.invalid",
-                "-c",
-                "commit.gpgsign=false",
-                "commit",
-                "-q",
-                "-m",
-                "init",
-            ],
-        );
-        Some(dir)
     }
 
     fn ctx_for(dir: &Path) -> ToolContext {
@@ -1658,33 +1621,14 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
         let names: Vec<&str> = default_tools().iter().map(|tool| tool.name()).collect();
         assert_eq!(
             names,
-            ["git_status", "git_diff", "run_verification", "harness_info"]
-        );
-    }
-
-    /// Commits `files` (path, content) on top of the repository's history.
-    fn commit_files(dir: &Path, files: &[(&str, &str)]) {
-        for (path, content) in files {
-            let full = dir.join(path);
-            fs::create_dir_all(full.parent().unwrap()).unwrap();
-            fs::write(&full, content).unwrap();
-            // Forced: fixtures such as `.env` may match an ignore rule on the machine running tests.
-            git(dir, &["add", "-f", path]);
-        }
-        git(
-            dir,
-            &[
-                "-c",
-                "user.name=test",
-                "-c",
-                "user.email=test@example.invalid",
-                "-c",
-                "commit.gpgsign=false",
-                "commit",
-                "-q",
-                "-m",
-                "files",
-            ],
+            [
+                "git_status",
+                "git_diff",
+                "git_history",
+                "git_log_range",
+                "run_verification",
+                "harness_info"
+            ]
         );
     }
 
