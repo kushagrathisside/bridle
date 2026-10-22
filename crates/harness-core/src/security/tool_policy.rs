@@ -468,20 +468,37 @@ fn is_url(word: &str) -> bool {
         && !rest.is_empty()
 }
 
-/// Representative secret names. A glob argument is denied when it could match any of them,
-/// because the shell expands `.e*` to `.env` before the program runs.
+/// One representative of every name rule in `is_secret_file`: exact names, suffixes, `.env.*`, and
+/// the `.aws` and `.ssh` directory rules. A glob word is denied when it could match one, because
+/// the shell expands `.e*` to `.env` and `.git-cred*` to `.git-credentials` before the program runs.
+/// Each entry must be a secret by `is_secret_file`; `glob_prefixes_of_every_secret_name_are_denied`
+/// checks that. The rule lists are private to `redact.rs`, so this mirror is maintained by hand.
 const SECRET_SAMPLES: &[&str] = &[
-    ".env",
-    ".env.local",
     ".netrc",
+    "_netrc",
     ".npmrc",
+    ".pypirc",
+    ".git-credentials",
     "id_rsa",
+    "id_dsa",
+    "id_ecdsa",
     "id_ed25519",
+    "cookies",
+    "login data",
     "server.pem",
     "server.key",
-    "credentials",
-    "secrets.json",
+    "server.p12",
+    "server.pfx",
+    "store.kdbx",
+    ".env",
+    ".env.local",
+    ".aws/credentials",
+    ".ssh/id_rsa",
 ];
+
+/// Further names the glob check also protects. They are not secret by `is_secret_file`, but a
+/// wildcard that reaches them is refused as it was before the samples were aligned with the rules.
+const SECRET_EXTRA_SAMPLES: &[&str] = &["credentials", "secrets.json"];
 
 /// Whether a word with wildcards could expand to one of the secret names. A word without `*`, `?`
 /// or `[` is a literal, and `is_secret_file` judges it instead.
@@ -490,9 +507,18 @@ fn glob_may_match_secret(word: &str) -> bool {
         return false;
     }
     let pattern = parse_glob(word);
+    // Name rules hold in any directory, so the last component of the word is matched against the
+    // last component of each sample too (`keys/*.pem` against `server.pem`).
+    let name = parse_glob(last_component(word));
     SECRET_SAMPLES
         .iter()
-        .any(|sample| glob_matches(&pattern, sample))
+        .chain(SECRET_EXTRA_SAMPLES)
+        .any(|sample| glob_matches(&pattern, sample) || glob_matches(&name, last_component(sample)))
+}
+
+/// The part of a path after its last separator, for either separator style.
+fn last_component(path: &str) -> &str {
+    path.rsplit(['/', '\\']).next().unwrap_or(path)
 }
 
 /// One token of a shell glob.
@@ -792,5 +818,32 @@ mod tests {
         assert!(glob_matches(&parse_glob("[]x]"), "]"));
         assert!(!glob_may_match_secret("[.env"));
         assert!(glob_may_match_secret("[!x]env"));
+    }
+
+    /// Item 16: every name rule of `is_secret_file` must be reachable through a glob, so each
+    /// sample is a secret and each of its prefixes followed by `*` is denied.
+    #[test]
+    fn glob_prefixes_of_every_secret_name_are_denied() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        for sample in SECRET_SAMPLES {
+            assert!(
+                is_secret_file(Path::new(sample)),
+                "{sample} is a secret name"
+            );
+            for end in (1..=sample.len()).filter(|&n| sample.is_char_boundary(n)) {
+                let glob = format!("{}*", &sample[..end]);
+                assert!(glob_may_match_secret(&glob), "{glob} may name {sample}");
+            }
+        }
+        for cmd in ["cat .git-cred*", "cat keys/*.pem", "cat .aws/cred*"] {
+            let d = p.evaluate(&shell(cmd));
+            assert_eq!(d.verdict, Verdict::Deny, "{cmd}");
+            assert_eq!(d.rule, "secret_file", "{cmd}");
+        }
+        assert!(
+            glob_may_match_secret("*.PEM"),
+            "matching is case-insensitive"
+        );
     }
 }
