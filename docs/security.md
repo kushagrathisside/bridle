@@ -44,12 +44,16 @@ paths are refused. Null devices (`NUL`, `/dev/null`) are allowed, so redirection
 - `webfetch` and `websearch` are denied in the generated OpenCode config, and the policy denies network-class commands.
 - `share` is disabled and `autoupdate` is off in the generated config.
 
-## Residual risks (known, not yet fixed)
+## Residual risks
 
-1. **Recursive search over the repo.** `grep -r PATTERN .` reads secret files through the search, and the file names don't appear in the command. Output redaction is the backstop, and it has not been tested for this case.
-2. **Timeouts and grandchildren.** A verification step that times out has its shell killed, but processes it started can keep running.
-3. **`extra_safe` ordering.** A configured safe prefix is checked before the built-in WRITE and READ_ONLY rules, so a prefix such as `cp` could downgrade a WRITE command. Needs a policy review.
-4. **Whole-request timeout.** A very long streamed generation can be cut off by `timeout_ms`.
-5. **Heuristics.** Glob matching uses representative secret names, not the real files. A secret with an unusual name is caught only by the file-name rules.
-6. **Machine config and proxy credentials.** Secrets in the Windows environment are visible to every process. Keep them out of the environment where possible.
-7. **MCP output is not seen by the after-hook.** In the run of 2026-10-21, `tool.execute.after` for `local-agent_git_status` reported 0 output bytes, while built-in tools reported their real sizes (`bash` 348 bytes). The model still received the tool's text. So the shim's redaction does not run on MCP output. The MCP server itself redacts `git_diff` and `run_verification` output; `git_status` and `harness_info` rely on not containing secrets. Needs investigation of how OpenCode 1.19.3 passes MCP results to the hook.
+Fixed since the first list (2026-10-22):
+- Verification timeouts now kill the whole process tree (`taskkill /T` on Windows, a process group on Unix), commit `4f52dc4`.
+- A configured safe prefix only upgrades EXECUTE_RISKY results; it can no longer relabel write or read-only commands, commit `dc61a5a`.
+- MCP output did not reach the after-hook (0 bytes observed in the run of 2026-10-21). The MCP server now redacts every result itself, text and structured content, commit `6fb64b0`.
+- A `read` call with no file path is denied as malformed, commit `86e619a`.
+
+Still open:
+1. **Recursive search over the repo.** `grep -r PATTERN .` reads secret files without naming them, so the path checks cannot see it. The values are caught by output redaction (assignments such as `API_KEY=...`, known token shapes, URL passwords, PEM blocks), tested by fixture row 32. A secret in an unrecognised format would still reach the model.
+2. **Whole-request timeout.** A very long streamed generation can be cut off by `timeout_ms`. Matters for the deep model (M5).
+3. **Heuristics.** Glob matching uses representative secret names, not the real files. A secret with an unusual file name is caught only by output redaction.
+4. **Environment secrets.** Secrets in the Windows environment are visible to every process. Keep them out of the environment where possible.
