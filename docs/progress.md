@@ -1,5 +1,14 @@
 # Progress log
 
+## 2026-10-22 (later still): M2 step 6 done (dependency_search)
+
+- `dependency_search`: declared dependencies from Cargo.toml (all sections and the workspace table),
+  pyproject.toml (PEP 621 and Poetry), requirements*.txt and package.json, matched case and -/_ insensitively.
+  With a name, it also lists the source imports of that package (Rust `use`, Python `import`/`from`).
+  Manifests and sources pass the read policy; sources are capped at 2000 per call.
+- Not yet: CMake `find_package` and Go/Gradle manifests.
+- Gate green on Windows.
+
 ## 2026-10-22 (later): M2 step 5 done (tree-sitter code tools, ADR-0003)
 
 - ADR-0003: tree-sitter 0.27.1 with the Rust, Python and C++ grammars (exact pins, MIT). Syntactic only.
