@@ -63,6 +63,27 @@ impl EventLog {
             r.redact_json(&mut data);
         }
         truncate_strings(&mut data, self.max_field_bytes);
+        // Top-level text copied from host payloads gets the same treatment. Identifiers
+        // (task, session and call ids) are left alone: they correlate events and hold no secrets.
+        for text in [
+            &mut event.tool,
+            &mut event.status,
+            &mut event.actor,
+            &mut event.model,
+            &mut event.phase,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if let Some(r) = &self.redactor {
+                *text = r.redact(text).into_owned();
+            }
+            let mut value = serde_json::Value::String(std::mem::take(text));
+            truncate_strings(&mut value, self.max_field_bytes);
+            if let serde_json::Value::String(capped) = value {
+                *text = capped;
+            }
+        }
         if let serde_json::Value::Object(map) = data {
             event.data = map;
         }
@@ -96,8 +117,40 @@ pub fn truncate_strings(value: &mut serde_json::Value, max: usize) {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn appended_events_never_contain_secret_values() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let log = EventLog::for_workspace(dir.path(), true, 2048, true);
+        let mut event = Event::now(EventKind::ToolBefore)
+            .with("command", "curl -u admin:hunter2 https://x")
+            .with("output_preview", "API_KEY=sk-live-0123456789abcdefghij");
+        event.tool = Some("bash DB_PASSWORD=hunter3".to_owned());
+        event.session_id = Some("ses_42".to_owned());
+        log.append(event).expect("append");
+
+        let written = fs::read_to_string(dir.path().join(identity::STATE_DIR).join(TOOL_EVENTS))
+            .expect("log file");
+        for secret in ["hunter2", "hunter3", "sk-live-0123456789abcdefghij"] {
+            assert!(!written.contains(secret), "{secret} in {written}");
+        }
+        assert!(
+            written.contains("ses_42"),
+            "session ids are kept: {written}"
+        );
+        assert!(written.ends_with('\n') && written.lines().count() == 1);
+    }
+
+    #[test]
+    fn a_disabled_log_writes_nothing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let log = EventLog::for_workspace(dir.path(), true, 2048, false);
+        log.append(Event::now(EventKind::Session)).expect("append");
+        assert!(!dir.path().join(identity::STATE_DIR).exists());
+    }
 
     #[test]
     fn truncation_respects_char_boundaries() {
