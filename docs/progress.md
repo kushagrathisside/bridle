@@ -81,8 +81,10 @@ Review findings received so far (fix majors before tagging M1):
   - `failure_answer` and the shim answer `ask` for `permission` when the harness cannot answer; `deny` matches D3.
     Tool calls are still blocked by `tool-before`, so this is consistency, not a hole.
   - No unit test writes an event containing a secret and checks the log file (verified only end to end).
-  - `run_verification` has not been called through OpenCode; the generated MCP entry has a 10 s timeout, and
-    verification steps default to 600 s. Check what OpenCode's MCP `timeout` covers.
+  - BUG: the generated MCP entry has `timeout: 10000`, and OpenCode 1.19.3 applies it to every MCP request
+    ("Timeout in ms for MCP server requests", from the binary). Verification steps default to 600 s, so a test
+    suite longer than 10 s fails through OpenCode. Fix: derive the timeout from the verification step timeouts
+    plus a margin. `run_verification` has not yet been called through OpenCode.
 
 Fix work started 2026-10-22, four Haiku agents in worktrees (high effort): classifier (`command_risk.rs`), path
 policy (`tool_policy.rs`, `path_guard.rs`), MCP (`mcp/`), redaction (`redact.rs`, hook message, `config validate`).
