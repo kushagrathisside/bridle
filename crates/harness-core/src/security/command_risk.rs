@@ -637,15 +637,30 @@ fn shell_c_argument(args: &[String]) -> Option<String> {
     None
 }
 
-/// Classify one program (already normalised) with its arguments. Rules are tried in the spec's
-/// order: PRIVILEGED, DESTRUCTIVE, NETWORK, configured and built-in SAFE, RISKY, WRITE,
-/// READ_ONLY, and finally the fail-closed default.
+/// Classify one program with its arguments, then apply the configured safe prefixes.
+///
+/// A configured prefix only upgrades a result that would otherwise be EXECUTE_RISKY (for example
+/// `make test`). It can never lower a WRITE, NETWORK, DESTRUCTIVE or PRIVILEGED result, and it does
+/// not relabel READ_ONLY commands, so the logged class stays accurate.
 fn classify_program(
     program: &str,
     args: &[String],
     in_xargs: bool,
     extra_safe: &[String],
 ) -> Verdict {
+    match classify_builtin(program, args, in_xargs) {
+        Verdict::Leaf(ToolClass::ExecuteRisky, _)
+            if extra_safe.iter().any(|p| prefix_matches(p, program, args)) =>
+        {
+            leaf(ToolClass::ExecuteSafe, "matches a configured safe prefix")
+        }
+        other => other,
+    }
+}
+
+/// Built-in rules, tried in the spec's order: PRIVILEGED, DESTRUCTIVE, NETWORK, SAFE, RISKY,
+/// WRITE, READ_ONLY, and finally the fail-closed default.
+fn classify_builtin(program: &str, args: &[String], in_xargs: bool) -> Verdict {
     use ToolClass::{Destructive, ExecuteRisky, ExecuteSafe, Network, Privileged, ReadOnly, Write};
 
     let lower: Vec<String> = args.iter().map(|a| a.to_ascii_lowercase()).collect();
@@ -810,10 +825,7 @@ fn classify_program(
         return leaf(Network, "docker contacts a registry");
     }
 
-    // EXECUTE_SAFE: configured prefixes first, then the built-in allow-list.
-    if extra_safe.iter().any(|p| prefix_matches(p, program, args)) {
-        return leaf(ExecuteSafe, "matches a configured safe prefix");
-    }
+    // EXECUTE_SAFE: the built-in allow-list (configured prefixes are applied by the caller).
     if program == "pytest" {
         return leaf(ExecuteSafe, "pytest runs tests");
     }
@@ -1315,5 +1327,31 @@ mod windows_shell_tests {
             .flat_map(|a| a.args)
             .collect();
         assert_eq!(words, vec!["a b".to_owned()]);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod extra_safe_tests {
+    use super::*;
+
+    fn class(cmd: &str, extra: &[&str]) -> ToolClass {
+        let extra: Vec<String> = extra.iter().map(|s| (*s).to_owned()).collect();
+        assess_command(cmd, ShellKind::Posix, &extra).class
+    }
+
+    #[test]
+    fn a_safe_prefix_upgrades_only_risky_commands() {
+        assert_eq!(class("make test", &["make test"]), ToolClass::ExecuteSafe);
+        assert_eq!(class("make test", &[]), ToolClass::ExecuteRisky);
+    }
+
+    #[test]
+    fn a_safe_prefix_never_lowers_or_relabels_other_classes() {
+        assert_eq!(class("cp a b", &["cp"]), ToolClass::Write);
+        assert_eq!(class("rm -rf build", &["rm"]), ToolClass::Destructive);
+        assert_eq!(class("curl https://x", &["curl"]), ToolClass::Network);
+        assert_eq!(class("sudo ls", &["sudo"]), ToolClass::Privileged);
+        assert_eq!(class("ls src", &["ls"]), ToolClass::ReadOnly);
     }
 }
