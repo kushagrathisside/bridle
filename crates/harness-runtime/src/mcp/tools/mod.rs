@@ -154,6 +154,9 @@ pub fn default_tools() -> Vec<Box<dyn McpTool>> {
         Box::new(code::SymbolSearchTool),
         Box::new(code::FindReferencesTool),
         Box::new(deps::DependencySearchTool),
+        Box::new(artifacts::InspectArtifactTool),
+        Box::new(artifacts::SummarizeExperimentTool),
+        Box::new(artifacts::CompareExperimentsTool),
         Box::new(run::RunCommandTool),
         Box::new(run::InspectConfigTool),
         Box::new(HarnessInfoTool),
@@ -1232,6 +1235,7 @@ impl McpTool for HarnessInfoTool {
 }
 
 /// A context for tests: the given workspace, default config and policy.
+pub mod artifacts;
 pub mod code;
 pub mod deps;
 pub mod failures;
@@ -1753,6 +1757,9 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
                 "symbol_search",
                 "find_references",
                 "dependency_search",
+                "inspect_artifact",
+                "summarize_experiment",
+                "compare_experiments",
                 "run_command",
                 "inspect_config",
                 "harness_info"

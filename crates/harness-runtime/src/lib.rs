@@ -4,6 +4,7 @@
 //! event log appends telemetry; the MCP server exposes deterministic tools to the coding-agent
 //! host. Policy decisions are never made here — they come from `harness-core`.
 
+pub mod artifacts;
 pub mod code;
 pub mod event_log;
 pub mod health;
