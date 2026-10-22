@@ -86,6 +86,7 @@ const READ_ONLY_HARNESS_TOOLS: &[&str] = &[
     "git_diff",
     "git_history",
     "git_log_range",
+    "parse_test_failure",
     "harness_info",
 ];
 /// Harness and host control files, relative to the workspace root (lowercase). The harness reads

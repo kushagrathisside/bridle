@@ -56,6 +56,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use harness_core::config::{Config, ModelRole, Verdict, VerificationSection, VerificationStep};
+use harness_core::failures::{Failure, parse_failures};
 use harness_core::security::command_risk::ShellKind;
 use harness_core::security::redact::Redactor;
 use harness_core::security::tool_policy::{ToolKind, ToolPolicy, ToolRequest};
@@ -72,6 +73,8 @@ const DIFF_READ_MARGIN: usize = 4_096;
 const NAME_LIST_LIMIT_BYTES: usize = 4 * 1024 * 1024;
 /// Bytes of each output stream reported for a verification step (the tail).
 const OUTPUT_TAIL_BYTES: usize = 2_000;
+/// Parsed failures listed per step in the text result; all of them are in the structured result.
+const FAILURES_IN_TEXT: usize = 10;
 /// Bytes kept per output stream while a step runs; only the tail is ever reported.
 const CAPTURE_LIMIT_BYTES: usize = 64 * 1024;
 /// Entries listed per category in the `git_status` summary and structured lists, and in the
@@ -145,6 +148,7 @@ pub fn default_tools() -> Vec<Box<dyn McpTool>> {
         Box::new(verify::RUN_TESTS),
         Box::new(verify::RUN_LINTER),
         Box::new(verify::RUN_TYPECHECKER),
+        Box::new(failures::ParseTestFailureTool),
         Box::new(HarnessInfoTool),
     ]
 }
@@ -709,6 +713,9 @@ struct StepResult {
     output_tail: String,
     /// The last [`OUTPUT_TAIL_BYTES`] of stderr, redacted.
     stderr_tail: String,
+    /// Failures parsed from the step's captured output when it did not pass (AC-A5).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    failures: Vec<Failure>,
 }
 
 impl McpTool for RunVerificationTool {
@@ -768,6 +775,16 @@ fn report_steps(label: &str, results: &[StepResult]) -> Result<ToolOutput, Strin
             "\n- {}: {}{exit} ({} ms)",
             step.name, step.status, step.duration_ms
         ));
+        // Parsed failures first: they say where to look without reading the log.
+        for failure in step.failures.iter().take(FAILURES_IN_TEXT) {
+            text.push_str(&format!("\n  x {}", failures::describe(failure)));
+        }
+        if step.failures.len() > FAILURES_IN_TEXT {
+            text.push_str(&format!(
+                "\n  ... and {} more failures (see the structured result)",
+                step.failures.len() - FAILURES_IN_TEXT
+            ));
+        }
         if step.status != PASSED {
             for line in step.output_tail.trim_end().lines() {
                 text.push_str(&format!("\n    {line}"));
@@ -858,6 +875,7 @@ fn run_step(
                 .redact(&format!("not run: {reasons}"))
                 .into_owned(),
             stderr_tail: String::new(),
+            failures: Vec::new(),
         };
     }
 
@@ -886,6 +904,15 @@ fn run_step(
         }
         Err(error) => (FAILED, None, error.into_bytes(), Vec::new()),
     };
+    // Parse the whole captured output (up to the capture limit per stream), not only the tails.
+    let failures = if status == PASSED {
+        Vec::new()
+    } else {
+        let mut both = lossy(&stdout);
+        both.push('\n');
+        both.push_str(&lossy(&stderr));
+        parse_failures(&both).failures
+    };
     // Redact each whole stream before cutting its tail, so no secret is shown in halves.
     StepResult {
         name,
@@ -895,6 +922,7 @@ fn run_step(
         duration_ms,
         output_tail: tail_text(&ctx.redactor.redact(&lossy(&stdout)), OUTPUT_TAIL_BYTES),
         stderr_tail: tail_text(&ctx.redactor.redact(&lossy(&stderr)), OUTPUT_TAIL_BYTES),
+        failures,
     }
 }
 
@@ -1197,6 +1225,7 @@ impl McpTool for HarnessInfoTool {
 }
 
 /// A context for tests: the given workspace, default config and policy.
+pub mod failures;
 pub mod history;
 pub mod verify;
 
@@ -1602,6 +1631,49 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
         );
     }
 
+    #[test]
+    fn a_failed_step_returns_its_parsed_failures() {
+        let has_pytest = Command::new("python")
+            .args(["-m", "pytest", "--version"])
+            .output()
+            .is_ok_and(|out| out.status.success());
+        if !has_pytest {
+            eprintln!("pytest not available; skipping");
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("test_calc.py"),
+            "def add(a, b):\n    return a - b\n\n\ndef test_add():\n    assert add(1, 2) == 3\n",
+        )
+        .unwrap();
+        let mut ctx = ctx_for(dir.path());
+        ctx.verification.steps = vec![VerificationStep {
+            name: Some("pytest".to_owned()),
+            command: "python -m pytest -q test_calc.py".to_owned(),
+            timeout_ms: None,
+            cwd: None,
+            kind: StepKind::Test,
+            targets: false,
+        }];
+        let output = RunVerificationTool.call(&json!({}), &ctx).unwrap();
+        let step = output.structured.unwrap()["steps"][0].clone();
+        assert_eq!(step["status"], json!("failed"), "{step}");
+        assert_eq!(
+            step["failures"][0]["name"],
+            json!("test_calc.py::test_add"),
+            "{step}"
+        );
+        assert_eq!(step["failures"][0]["line"], json!(6), "{step}");
+        assert!(
+            output
+                .text
+                .contains("x test_calc.py::test_add at test_calc.py:6"),
+            "{}",
+            output.text
+        );
+    }
+
     /// Steps run under `cmd /C` on Windows and `sh -c` elsewhere, whatever shell the host uses for
     /// the agent, so they are classified in that grammar. In cmd a single quote does not quote,
     /// so this step deletes a directory; in PowerShell it would only print text.
@@ -1665,6 +1737,7 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
                 "run_tests",
                 "run_linter",
                 "run_typechecker",
+                "parse_test_failure",
                 "harness_info"
             ]
         );

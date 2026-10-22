@@ -1,6 +1,6 @@
 # M2: deterministic tools
 
-Status: in progress (branch `m2-tools`, started 2026-10-22). Release 1 targets Windows, so every step is built
+Status: in progress (branch `m2-tools`, started 2026-10-22). Steps 0 to 3 done; step 4 next. Release 1 targets Windows, so every step is built
 and tested on Windows (`D:\cargo-target\wgate.bat`).
 
 ## Goal
