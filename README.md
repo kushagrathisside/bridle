@@ -1,127 +1,181 @@
 # Bridle
 
-Bridle is a local-first coding-agent harness. A small model runs on your own machine and does the coding work
-inside [OpenCode](https://opencode.ai). Around the model, deterministic checks decide what it may do, verify its
-changes by running real commands, keep secret values out of its context, and record every decision.
+**A coding agent that runs on your own machine, with the checks a small model needs.**
 
-## Why
+Bridle connects [OpenCode](https://opencode.ai) to a small local model (Qwen3.5-9B on an 8 GB GPU). The model does
+the coding. Bridle decides what the model may run and read, runs the tests itself to check the result, keeps secret
+values out of the model's context, and writes a log of every decision.
 
 Small local models are fast and private, but they make mistakes and ignore instructions. Bridle keeps the model's
-power for the work it does well and takes away the decisions that matter: which commands run, which files can be
-read, and whether a change is really finished.
+power for the work it does well and takes away the decisions that should not depend on the model's judgement.
 
-## Status
+> **Status:** release 1, Windows native, one tested machine. Milestones M0 to M2 are complete. M3 (state and loop
+> detection) is next. Details in [docs/progress.md](docs/progress.md).
 
-- **Milestone M2 (deterministic tools) is complete.** M3 (state machine and loop detection) is next.
-- **Platform:** Windows native, release 1.
-- What is verified, and what is not, is recorded in [docs/progress.md](docs/progress.md).
+## What it does
 
-## How it works
+- **Checks every tool call.** Each command gets a class from `READ_ONLY` to `PRIVILEGED`. Unknown programs and
+  commands it cannot parse are denied. Nothing that would need a human's approval is allowed.
+- **Keeps secrets away from the model.** Secret files (`.env`, keys, credential files) are denied for file tools and
+  shell arguments. Output is redacted before the model sees it, and the event log holds no secret values.
+- **Checks results by running them.** Twenty deterministic tools let the model read git history, navigate code,
+  check dependencies and run the project's own tests, linter and type checker. Failures are parsed into file, line
+  and message.
+- **Keeps the model local.** Model endpoints must be loopback addresses. External providers are off in the local-only
+  profile.
+- **Lets you add tools.** You can declare your own commands as tools in the machine config. They pass the same checks.
 
-A tool call from the model goes through these steps:
+## How a tool call flows
 
-1. The model asks OpenCode to run a tool, such as `bash`, `read`, `edit`, or a Bridle MCP tool.
-2. OpenCode calls the plugin shim before the tool runs. The shim forwards the call to `agent hook tool-before`
-   and applies the answer. It holds no policy logic.
-3. The CLI maps the call to a request and evaluates it against the policy: paths, secret-file rules, shell
-   arguments, and command class.
-4. Only an Allow passes. Any other verdict blocks the call, and OpenCode shows the reason to the model. If the hook
-   cannot answer, the call is blocked.
-5. After the tool runs, its output is redacted of secret values before the model sees it.
-6. Every decision is written to `.local-agent/tool-events.jsonl`, with secret values left out.
+1. The model asks OpenCode to run a tool: `bash`, `read`, `edit`, or one of Bridle's `local-agent_*` tools.
+2. A thin plugin shim in OpenCode calls `agent hook tool-before`. The shim holds no policy logic.
+3. Bridle checks the paths, the secret-file rules, the shell arguments and the command class.
+4. Only an Allow passes. Any other verdict blocks the call, and the model sees the reason.
+5. The output of an allowed call is redacted before the model sees it.
+6. Every decision goes to `.local-agent/tool-events.jsonl` in the repository, with secret values left out.
 
-The layers and where state lives are described in [docs/architecture.md](docs/architecture.md).
+If Bridle cannot answer, the call is blocked. A broken config blocks everything. See
+[docs/architecture.md](docs/architecture.md) for the layers and where state lives.
 
 ## Quick start (Windows)
 
-Prerequisites, the folder layout for model weights and runtimes, and proxy notes are in
-[docs/installation.md](docs/installation.md). The command-line binary is `agent`.
+**You need:** Windows 11, Visual Studio 2022 with the C++ workload, an NVIDIA GPU with a current driver,
+OpenCode 1.19.3, and llama.cpp b11756 (CUDA 12.4). The Rust version is pinned in `rust-toolchain.toml`.
+Model weights are not included. The full list is in [docs/installation.md](docs/installation.md).
+
+Run these from a shell with the Visual Studio environment loaded (`vcvars64.bat`):
 
 ```bat
-:: Build, from a shell with the Visual Studio environment loaded (vcvars64.bat)
+:: 1. Build the agent command
 set CARGO_TARGET_DIR=D:\cargo-target\harness
 cargo build -p harness-cli --bin agent
 
-:: Set the machine config once
+:: 2. Tell Bridle where the models and runtimes are (once per machine)
 D:\cargo-target\harness\debug\agent.exe init --machine --models-dir D:\models --runtimes-dir D:\runtimes --opencode-bin D:\runtimes\opencode\1.19.3\opencode.exe
 
-:: In your repository
+:: 3. Set up a repository
+cd /d path\to\your\repo
 D:\cargo-target\harness\debug\agent.exe init --profile local-only
 D:\cargo-target\harness\debug\agent.exe config validate
+
+:: 4. Start the model and check it
 D:\cargo-target\harness\debug\agent.exe models serve main --detach
 D:\cargo-target\harness\debug\agent.exe health main
+
+:: 5. Give the agent a task (or run opencode with no arguments for the interactive interface)
 D:\runtimes\opencode\1.19.3\opencode.exe run "your task here"
 
-:: Check the installation
+:: Check the installation at any time
 D:\cargo-target\harness\debug\agent.exe doctor
 ```
 
-Run `opencode` without `run` for the interactive interface.
-
 ## Security
 
-This summarises [docs/security.md](docs/security.md). It is a practical model, not a formal audit.
+Bridle is a set of guardrails, not a sandbox. The full model is in [docs/security.md](docs/security.md).
 
-- **Secrets stay out of the model's context and logs.** Secret-file paths are denied for file tools and shell
-  arguments, and output is redacted. See [Secret handling](docs/security.md#secret-handling).
-- **Fail closed, and `Ask` is never allowed.** Unknown programs and unparseable commands are denied, and a missing or
-  broken config blocks every call. See [Decisions](docs/security.md#decisions-that-shape-the-policy).
-- **The model cannot change the policy.** Arguments are inspected rather than trusted, and the agent cannot write
-  the harness's control files or `.git`. See [Decisions](docs/security.md#decisions-that-shape-the-policy).
-- **Commands are classified before they run.** Each command gets a class from READ_ONLY to PRIVILEGED, and a
-  compound command gets the class of its most dangerous part. See [Command classes](docs/security.md#command-classes).
-- **Paths stay inside the workspace, and model endpoints are loopback only.** See [Paths](docs/security.md#paths)
-  and [Network](docs/security.md#network).
-- **Known residual risks.** Bridle is not a sandbox. An allowed test run executes code the model wrote, with your
-  user account's rights. A recursive search such as `grep -r` can read secret files without naming them, so output
-  redaction is the only protection for those values. Run Bridle on repositories you would run yourself. See
-  [Residual risks](docs/security.md#residual-risks).
+- **Fail closed.** `Ask` is never allowed. An unanswered permission is denied.
+- **The model cannot change its own policy.** The agent cannot write Bridle's control files or `.git`.
+  Repository config can only make rules stricter, never looser.
+- **Paths stay in the workspace.** Traversal, symlinks, device names and unresolved `~` or `$VAR` are denied.
+- **Known limits.** An allowed test run executes code the model wrote, with your account's rights. A recursive search
+  such as `grep -r` can read secret files without naming them, so output redaction is the only protection for those
+  values. Run Bridle on repositories you would run yourself. See [residual risks](docs/security.md#residual-risks).
 
-<details>
-<summary>What leaves the machine</summary>
+## Models
 
-The local-only profile runs models on this machine and allows only loopback model endpoints. OpenCode fetches its
-model catalog from models.dev when it starts; this is the known exception described in
-[troubleshooting.md](docs/troubleshooting.md).
+| Role | Model | Status |
+|---|---|---|
+| Main coding model | Qwen3.5-9B, Q4_K_M, served by llama.cpp | In use (release 1) |
+| Micro model (classifier and summariser) | LFM2.5-1.2B-Thinking | Planned, M4 (research use) |
+| Deep model | Ternary Bonsai 2 27B, PTQ1_0 | Planned, M5. Needs the PrismML llama.cpp fork |
 
-</details>
+Measured on the tested machine: the main model is ready about 11 seconds after start and uses about 5.4 GB of the
+8 GB VRAM. The two larger models cannot run together on 8 GB. Numbers and checksums are in
+[docs/models.md](docs/models.md).
+
+## Tools for the model
+
+Registered in OpenCode as `local-agent_<name>`.
+
+| Group | Tools |
+|---|---|
+| Git | `git_status`, `git_diff`, `git_history`, `git_log_range` |
+| Code navigation (tree-sitter: Rust, Python, C++) | `repo_map`, `file_summary`, `symbol_search`, `find_references` |
+| Dependencies | `dependency_search` (Cargo, pyproject, requirements, package.json) |
+| Verification | `run_verification`, `run_tests`, `run_linter`, `run_typechecker`, `parse_test_failure` |
+| Commands and config | `run_command` (one program, no shell), `inspect_config` (secrets redacted), `harness_info` |
+| Results | `inspect_artifact`, `summarize_experiment`, `compare_experiments` |
+| Your tools | Adapters declared in the machine config |
+
+`find_references` is syntactic: it finds identifiers by name, not by type. There is no persistent symbol index yet (M3).
+
+## Roadmap
+
+| Milestone | Scope | State |
+|---|---|---|
+| M0 | Audit and architecture | Done |
+| M1 | Basic integration on Windows: policy, hook, runtime, OpenCode | Done |
+| M2 | Deterministic tools | Done |
+| M3 | State and loop detection, event log in a state directory | Next |
+| M4 | Micro model as classifier or summariser (LFM2.5) | Planned |
+| M5 | Deep model on demand (Bonsai), one GPU model at a time | Planned |
+| M6 | Context management | Planned |
+| M7 | Jev integration with TLS and endpoint policy | Planned |
+| M8 | LiteLLM for external providers, behind the policy | Planned |
+| M9 | Security threat-model tests and egress audit | Planned |
+| M10 | Evaluation on a Rust coding benchmark | Planned |
+| M11 | Open-source release: licence, README, CI | Planned |
+
+The same stages as a diagram, with status colours, are in
+[docs/diagrams/bridle-stages.drawio](docs/diagrams/bridle-stages.drawio) (page "Roadmap"). Open the file in
+[draw.io](https://app.diagrams.net). Page "Tool call flow" in the same file shows the flow below.
 
 ## Documentation
 
 | Document | What it covers |
 |---|---|
-| [architecture.md](docs/architecture.md) | Layers, request flow, where state lives |
-| [installation.md](docs/installation.md) | Windows prerequisites, build, first run |
-| [configuration.md](docs/configuration.md) | Machine config, project config, profiles, validation rules |
-| [security.md](docs/security.md) | Decisions, command classes, secret handling, residual risks |
-| [models.md](docs/models.md) | Model weights, checksums, licences, measured numbers |
-| [troubleshooting.md](docs/troubleshooting.md) | Problems seen on the target machine and their fixes |
-| [progress.md](docs/progress.md) | What is verified, what is not, and when |
-| [adr/](docs/adr/) | Architecture decisions: host boundary, runtime OS and scope, tree-sitter for code intelligence |
-| [modules/](docs/modules/README.md) | Notes on the modules of each crate |
-| [milestones/](docs/milestones/) | Milestone plans, for example M2 tools |
-| [spec/](docs/spec/) | Master development plan and requirements traceability |
-| [audit/](docs/audit/) | Repository architecture audit (M0) |
+| [Architecture](docs/architecture.md) | Layers, request flow, where state lives |
+| [Installation](docs/installation.md) | Windows prerequisites, build, first run |
+| [Configuration](docs/configuration.md) | Machine config, project config, profiles, validation rules |
+| [Security](docs/security.md) | Decisions, command classes, secret handling, residual risks |
+| [Models](docs/models.md) | Weights, checksums, licences, measured numbers |
+| [Troubleshooting](docs/troubleshooting.md) | Problems seen on the tested machine and their fixes |
+| [Progress log](docs/progress.md) | What is verified, what is not, and when |
+| [Decisions (ADRs)](docs/adr/) | Host boundary, runtime OS and scope, tree-sitter for code intelligence |
+| [Module notes](docs/modules/README.md) | One page per crate module |
+| [Milestones](docs/milestones/) | Milestone plans and results, for example [M2](docs/milestones/m2-tools.md) |
+| [Spec and traceability](docs/spec/) | Master development plan and requirements traceability |
+| [Audit](docs/audit/) | Repository architecture audit (M0) |
 
 ## Repository layout
 
 ```
-crates/harness-core      config, model registry, security policy, redaction (no network)
+crates/harness-core      config, security policy, command classifier, redaction (no network)
 crates/harness-runtime   model providers, health checks, server launcher, event log, MCP server and tools
 crates/harness-cli       the `agent` command and the OpenCode adapter
 opencode-plugin/         thin TypeScript shim (no policy logic)
 configs/                 shipped profiles: local-only, development
-examples/                example project (toy-python-repo)
-docs/                    architecture, installation, security, ADRs, progress log
+examples/                toy Python project used for the end-to-end run
+docs/                    architecture, installation, security, decisions, progress log
 ```
 
 Some file names still use the earlier working name `local-agent` (for example `local-agent.toml` and
 `.local-agent/`). The binary is `agent`.
 
+## Development
+
+```bat
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+```
+
+The build uses a pinned Rust toolchain (`rust-toolchain.toml`). Build output goes to `D:\cargo-target\harness`.
+
 ## Licence
 
-No licence has been chosen yet. The project lead's decision is Apache-2.0, but no LICENSE file is in the repository
-yet, and the workspace `Cargo.toml` marks the licence as pending. No licence applies until a LICENSE file is added.
+No licence has been chosen yet. The project lead has decided on Apache-2.0, but no LICENSE file is in the repository,
+and the workspace `Cargo.toml` still marks the licence as pending. No licence applies until a LICENSE file is added.
 Model weights are not included and keep their own licences (see [docs/models.md](docs/models.md)).
 
 ## Author
