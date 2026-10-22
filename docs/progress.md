@@ -1,5 +1,37 @@
 # Progress log
 
+## 2026-10-22 (evening): M1 end-to-end on Windows, all exit criteria met
+
+End-to-end on native Windows with the current build (`35fd79d`), Qwen3.5-9B on the RTX 4060, OpenCode 1.19.3,
+toy repo `D:\e2e\toy` regenerated with `agent init --force` (logs in `D:\e2e\logs\`):
+- `agent models serve main --detach`: healthy in 9.6 s. It found yesterday's PID record, saw that the process was
+  gone, and cleared it (the new identity check on real data). Quick health: pass.
+- Fix task: the model read the files, edited `calc.py` (`a - b` to `a + b`), tried `python test_calc.py`
+  (blocked: EXECUTE_RISKY, running a repo script), then ran `pytest test_calc.py -v`: 2 passed.
+  `python -m unittest -q` afterwards: OK.
+- `local-agent_git_diff` through OpenCode for the first time: correct one-line summary of the fix.
+- `local-agent_git_status`: branch and uncommitted changes reported from the tool output.
+- Secret read: `read .env` denied by `secret_file`; the model said it cannot read it.
+- `local-agent_run_verification` through OpenCode for the first time: "unit tests" passed (under the derived
+  MCP timeout).
+- `agent models stop main`: verified the process image, then stopped it.
+- The planted secret value occurs 0 times in `tool-events.jsonl`, `events.jsonl`, the server log and every run
+  output.
+
+M1 exit criteria (plan section 4):
+1. No `todo!(` in the crates: 0.
+2. fmt, clippy `-D warnings`, tests: pass on native Windows (`wgate.bat`). WSL is release 2 (user decision:
+   postpone WSL use), so the WSL gate is not run for M1.
+3. Hook fixtures: 34 payloads pass on Windows; Ask is never allowed; secret reads denied through every prefix.
+4. `doctor`: missing model file, models directory on the system drive, busy or reserved port; no panic.
+5. Launcher argv snapshots: no `--no-mmap`, `--load-mode`, `-np 1`, explicit `--cache-ram`, no spec flags.
+6. The generated config loads in OpenCode 1.19.3; the plugin loads; tool calls reach the policy (event log).
+7. `tsc --noEmit`: last run 2026-10-21 against `@opencode-ai/plugin` 1.19.3. Not re-run today (no Node on the
+   Windows host); the only shim change since is one string literal of the same union type, and OpenCode loaded
+   the shim in today's runs.
+8. Traceability matrix updated with evidence.
+9. Real Qwen run on Windows: done (above).
+
 ## 2026-10-22 (afternoon): work moved to Windows; review fixes merged
 
 Where the work happens now (user decision: postpone WSL use; no subagents):
