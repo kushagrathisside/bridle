@@ -32,6 +32,12 @@ pub(super) fn check_repo_layer(
         reason: reason.to_owned(),
     };
 
+    if repo.contains_key("tools") {
+        return Err(deny(
+            "tools".to_owned(),
+            "a repository may not add tools; declare adapters in the machine config or a --config file",
+        ));
+    }
     if repo.contains_key("paths") {
         return Err(deny(
             "paths".to_owned(),
