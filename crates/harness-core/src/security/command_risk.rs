@@ -550,13 +550,22 @@ fn prefix_matches(prefix: &str, program: &str, args: &[String]) -> bool {
 
 /// Classify a `git` invocation by its subcommand. Always returns a verdict.
 fn classify_git(args: &[String]) -> Verdict {
-    // Skip global options such as `-C <path>` and `-c key=value`.
+    // Skip global options such as `-C <path>`. `-c` / `--config-env` inject configuration that can
+    // name a program (`diff.external`, `core.sshCommand`, `core.fsmonitor`), and `--exec-path`
+    // picks the directory git runs its subcommands from, so those are never plain reads.
     let mut i = 0usize;
     while let Some(a) = args.get(i) {
-        if matches!(
-            a.as_str(),
-            "-C" | "-c" | "--git-dir" | "--work-tree" | "--namespace"
-        ) {
+        if matches!(a.as_str(), "-c" | "--config-env")
+            || a.starts_with("--config-env=")
+            || a == "--exec-path"
+            || a.starts_with("--exec-path=")
+        {
+            return leaf(
+                ToolClass::ExecuteRisky,
+                "git -c, --config-env or --exec-path can run configured programs",
+            );
+        }
+        if matches!(a.as_str(), "-C" | "--git-dir" | "--work-tree" | "--namespace") {
             i += 2;
         } else if a.starts_with('-') {
             i += 1;
@@ -602,10 +611,14 @@ fn classify_git(args: &[String]) -> Verdict {
             "git restore --staged only changes the index",
         ),
         "push" => {
+            // `+<ref>` forces the update, `:<ref>` deletes the remote ref.
             let force_or_delete = lower.iter().any(|a| {
-                matches!(a.as_str(), "--force" | "--delete" | "--force-if-includes")
-                    || a.starts_with("--force-with-lease")
+                matches!(
+                    a.as_str(),
+                    "--force" | "--delete" | "--force-if-includes" | "--mirror" | "--prune"
+                ) || a.starts_with("--force-with-lease")
                     || a.starts_with(':')
+                    || a.starts_with('+')
                     || has_short(a, 'f')
                     || has_short(a, 'd')
             });
@@ -674,6 +687,9 @@ fn classify_git(args: &[String]) -> Verdict {
         "clone" | "fetch" | "pull" | "ls-remote" | "submodule" => {
             leaf(ToolClass::Network, &format!("git {sub} contacts a remote"))
         }
+        "diff" | "log" | "show" if lower.iter().any(|a| a == "--output" || a.starts_with("--output=")) => {
+            leaf(ToolClass::Write, &format!("git {sub} --output writes a file"))
+        }
         "status" | "diff" | "log" | "show" | "rev-parse" | "ls-files" | "blame" | "grep"
         | "describe" | "shortlog" => leaf(ToolClass::ReadOnly, &format!("git {sub} only reads")),
         "config" if has("--get") || has("--get-all") || has("--list") => {
@@ -722,6 +738,49 @@ fn classify_program(
         }
         other => other,
     }
+}
+
+/// Flags that make a tool which would otherwise be EXECUTE_SAFE run a helper program or load
+/// configuration it was not given directly: `go -toolexec`/`-exec` run a program, `-overlay`
+/// substitutes source files, `cargo --config` sets `target.<t>.runner`, `cargo -Z` enables unstable
+/// behaviour, `pytest -p` imports a plugin. `--script-shell` and `--node-options` make the npm
+/// family run arbitrary code. `--pyargs` and `--target-dir` are deliberately absent: they do not.
+const EXEC_FLAGS: &[(&str, &[&str])] = &[
+    ("go", &["-toolexec", "-exec", "-overlay"]),
+    ("cargo", &["--config", "-Z"]),
+    ("pytest", &["-p"]),
+    ("npm", &["--script-shell", "--node-options"]),
+    ("pnpm", &["--script-shell", "--node-options"]),
+    ("yarn", &["--script-shell", "--node-options"]),
+];
+
+/// Whether `arg` is `flag`, `flag=value`, or, for a single-letter short flag, `flag` with its
+/// value attached (`-pmyplugin`).
+fn flag_matches(arg: &str, flag: &str) -> bool {
+    if arg == flag {
+        return true;
+    }
+    match arg.strip_prefix(flag) {
+        Some(rest) => rest.starts_with('=') || flag.len() == 2,
+        None => false,
+    }
+}
+
+/// The first flag in [`EXEC_FLAGS`] that `program` is given, if any. `python -m pytest` is
+/// treated as `pytest`.
+fn exec_flag(program: &str, args: &[String]) -> Option<String> {
+    let runner = if matches!(program, "python" | "python3" | "py")
+        && args.first().map(String::as_str) == Some("-m")
+        && args.get(1).map(String::as_str) == Some("pytest")
+    {
+        "pytest"
+    } else {
+        program
+    };
+    let (_, flags) = EXEC_FLAGS.iter().find(|(p, _)| *p == runner)?;
+    args.iter()
+        .find(|a| flags.iter().any(|f| flag_matches(a, f)))
+        .cloned()
 }
 
 /// Built-in rules, tried in the spec's order: PRIVILEGED, DESTRUCTIVE, NETWORK, SAFE, RISKY,
@@ -889,6 +948,11 @@ fn classify_builtin(program: &str, args: &[String], in_xargs: bool) -> Verdict {
     }
     if program == "docker" && matches!(pos0, "pull" | "push" | "login") {
         return leaf(Network, "docker contacts a registry");
+    }
+
+    // A flag that runs or loads code turns an otherwise safe tool into EXECUTE_RISKY.
+    if let Some(flag) = exec_flag(program, args) {
+        return leaf(ExecuteRisky, &format!("{program} {flag} runs or loads code"));
     }
 
     // EXECUTE_SAFE: the built-in allow-list (configured prefixes are applied by the caller).
@@ -1161,6 +1225,7 @@ fn analyse_segment(pieces: &[Piece], extra_safe: &[String], depth: usize) -> Vec
         }];
     };
 
+    let floor = stripped.floor;
     let program = normalise_program(&stripped.words[0]);
     let raw_program = stripped.words[0].as_str();
     let args: Vec<String> = stripped.words[1..].to_vec();
@@ -1183,6 +1248,17 @@ fn analyse_segment(pieces: &[Piece], extra_safe: &[String], depth: usize) -> Vec
     match verdict {
         Verdict::Nested(inner, inner_shell) => {
             let mut out = Vec::new();
+            if let Some(reason) = floor {
+                out.push(Analysed {
+                    segment: SegmentAssessment {
+                        text: text.clone(),
+                        program: Some(program.clone()),
+                        class: ToolClass::ExecuteRisky,
+                        reason,
+                    },
+                    args: Vec::new(),
+                });
+            }
             if write_redirect {
                 out.push(Analysed {
                     segment: SegmentAssessment {
@@ -1198,6 +1274,12 @@ fn analyse_segment(pieces: &[Piece], extra_safe: &[String], depth: usize) -> Vec
             out
         }
         Verdict::Leaf(mut class, mut reason) => {
+            if let Some(floor_reason) = floor
+                && class < ToolClass::ExecuteRisky
+            {
+                class = ToolClass::ExecuteRisky;
+                reason = floor_reason;
+            }
             if write_redirect && class < ToolClass::Write {
                 class = ToolClass::Write;
                 reason = "output redirection to a file".to_owned();
@@ -1220,6 +1302,59 @@ struct Stripped {
     words: Vec<String>,
     /// True when the command runs under `xargs`, so the classified program receives many args.
     in_xargs: bool,
+    /// Why the segment is at least EXECUTE_RISKY whatever its program: it sets a variable that
+    /// changes which code runs.
+    floor: Option<String>,
+}
+
+/// Environment variables that change which code a program runs or loads: helper programs, startup
+/// files, preloaded libraries, configuration. A segment that sets one is at least EXECUTE_RISKY
+/// whatever its program (`GIT_EXTERNAL_DIFF=... git diff` runs a command).
+fn is_code_influencing_env(name: &str) -> bool {
+    const PREFIXES: &[&str] = &[
+        "GIT_",
+        "LD_",
+        "DYLD_",
+        "CARGO_",
+        "RUST",
+        "NPM_CONFIG_",
+        "PYTHON",
+        "NODE",
+        "RUBY",
+        "PERL",
+        "PYTEST_",
+        "BASH_FUNC_",
+    ];
+    const NAMES: &[&str] = &[
+        "PATH",
+        "HOME",
+        "XDG_CONFIG_HOME",
+        "ENV",
+        "BASH_ENV",
+        "IFS",
+        "CDPATH",
+        "PS4",
+        "SHELLOPTS",
+        "BASHOPTS",
+        "PROMPT_COMMAND",
+        "PAGER",
+        "EDITOR",
+        "VISUAL",
+        "SSH_ASKPASS",
+        "GOFLAGS",
+        "GOROOT",
+        "GOPATH",
+        "GOENV",
+        "GOTOOLCHAIN",
+    ];
+    let upper = name.to_ascii_uppercase();
+    PREFIXES.iter().any(|p| upper.starts_with(p)) || NAMES.contains(&upper.as_str())
+}
+
+/// The floor reason for an assignment word (`NAME=value`) that sets a code-influencing variable.
+fn env_assignment_floor(word: &str) -> Option<String> {
+    let (name, _) = word.split_once('=')?;
+    is_code_influencing_env(name).then(|| format!("sets {name}, which changes the code that runs"))
 }
 
 /// Lower-cased basename of a program word, without a Windows executable suffix.
@@ -1249,8 +1384,10 @@ fn is_assignment(word: &str) -> bool {
 fn strip_wrappers(mut words: Vec<String>) -> Option<Stripped> {
     let mut in_xargs = false;
     let mut last_wrapper: Option<String> = None;
+    let mut floor: Option<String> = None;
     while let Some(first) = words.first().cloned() {
         if is_assignment(&first) {
+            floor = floor.or_else(|| env_assignment_floor(&first));
             words.remove(0);
             continue;
         }
@@ -1277,6 +1414,7 @@ fn strip_wrappers(mut words: Vec<String>) -> Option<Stripped> {
                     words.remove(0);
                 }
             } else if opt.starts_with('-') || is_assignment(&opt) {
+                floor = floor.or_else(|| env_assignment_floor(&opt));
                 words.remove(0);
             } else {
                 break;
@@ -1292,11 +1430,16 @@ fn strip_wrappers(mut words: Vec<String>) -> Option<Stripped> {
             return Some(Stripped {
                 words: vec!["env".to_owned()],
                 in_xargs: false,
+                floor,
             });
         }
         return None;
     }
-    Some(Stripped { words, in_xargs })
+    Some(Stripped {
+        words,
+        in_xargs,
+        floor,
+    })
 }
 
 pub fn assess_command(command: &str, shell: ShellKind, extra_safe: &[String]) -> CommandAssessment {
