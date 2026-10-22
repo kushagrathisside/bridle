@@ -93,6 +93,9 @@ const READ_ONLY_HARNESS_TOOLS: &[&str] = &[
     "symbol_search",
     "find_references",
     "dependency_search",
+    "inspect_artifact",
+    "summarize_experiment",
+    "compare_experiments",
     "harness_info",
 ];
 /// Harness and host control files, relative to the workspace root (lowercase). The harness reads
