@@ -1,5 +1,67 @@
 # Progress log
 
+## 2026-10-22 (night): M2 complete (steps 0 to 9)
+
+- Step 9: end-to-end with Qwen3.5-9B through OpenCode on Windows. The model used `symbol_search` and
+  `find_references`, fixed `calc.py` (`add` subtracted), and ran `run_tests` with targets (`test_calc.py`), which
+  the policy allowed. The event log has no secret values. Details: [milestones/m2-tools.md](milestones/m2-tools.md).
+- Two errors in the first run were my own config and naming mistakes (`targets = false`, a non-existent step name).
+  The tool messages named the fix and the model recovered.
+
+## 2026-10-22 (end of day): M2 steps 7 and 8 done
+
+- Step 7: `inspect_artifact` (JSON shape, JSONL and CSV statistics, text tail), `summarize_experiment` (files,
+  redacted config, final metrics), `compare_experiments` (metric deltas, config keys that differ).
+- Step 8: declarative adapters. `[[tools.adapters]]` (machine or `--config` only: a repository may not add tools,
+  enforced in `config::trust`) become `adapter_<name>` tools. They run through the same `execute_plain` path as
+  `run_command`, so they get the same classification, secret and path checks. Validation V25 checks names,
+  bare program names, plain arguments and descriptions.
+
+## 2026-10-22 (later still): M2 step 6 done (dependency_search)
+
+- `dependency_search`: declared dependencies from Cargo.toml (all sections and the workspace table),
+  pyproject.toml (PEP 621 and Poetry), requirements*.txt and package.json, matched case and -/_ insensitively.
+  With a name, it also lists the source imports of that package (Rust `use`, Python `import`/`from`).
+  Manifests and sources pass the read policy; sources are capped at 2000 per call.
+- Not yet: CMake `find_package` and Go/Gradle manifests.
+- Gate green on Windows.
+
+## 2026-10-22 (later): M2 step 5 done (tree-sitter code tools, ADR-0003)
+
+- ADR-0003: tree-sitter 0.27.1 with the Rust, Python and C++ grammars (exact pins, MIT). Syntactic only.
+- `crate::code`: pure parsing (definitions, identifier occurrences outside comments and strings, imports).
+- MCP tools: `repo_map`, `file_summary`, `symbol_search`, `find_references`. Only tracked files that pass the
+  read policy are parsed; files over 512 KB and binaries are skipped; at most 2000 parsed per call.
+- Build: the offline vendor set is now `D:\cargo-vendor\harness-new` (`cargo vendor` run 2026-10-22); the old
+  `harness` directory is kept for rollback. The build scripts point at `harness-new`.
+- Gate green on Windows (492 tests across the workspace).
+
+## 2026-10-22 (late): M2 step 4 done (run_command, inspect_config)
+
+- `run_command`: one program on PATH, plain words only (no shell syntax), workspace cwd, timeout capped at 10 min. The whole command goes through the full policy (secret and path checks, command class) before it runs; blocked calls return `status: blocked` with the rule. `git --version` is blocked as an unrecognised git form (fail closed); `git status --short` runs.
+- `inspect_config`: effective config (redacted) and validation findings.
+- Gate green on Windows.
+
+## 2026-10-22 (night): M2 started, steps 0 to 3 done
+
+Branch `m2-tools` in `D:\src\harnessforkush`; plan in [milestones/m2-tools.md](milestones/m2-tools.md).
+Windows gate green after each step.
+- Step 0 (`6ddda6c`): `mcp/tools.rs` became `mcp/tools/mod.rs`; new tool groups are child modules; git test
+  helpers in `tools/test_support.rs`.
+- Step 1 (`6ddda6c`): `git_history` (follows renames for a file) and `git_log_range` (commits, changed files,
+  totals). Revisions must be plain and resolve to a commit; `--end-of-options` before them. A harness tool
+  given a secret path is now denied at the hook too.
+- Step 2 (`4b5d484`): steps have a `kind` (test, lint, typecheck, build, other; default test) and `targets`.
+  `run_tests`, `run_linter`, `run_typechecker` run steps of their kind; `run_tests` appends checked targets
+  to steps with `targets = true`. V24 warns about targets on a non-test step.
+- Step 3: `harness_core::failures` parses pytest, unittest, Python tracebacks, cargo test, rustc, gtest,
+  ctest, go test, GCC/Clang, MSVC, tsc, mypy, pyright and ruff/flake8 output into failures (tool, kind, name,
+  file, line, column, message). Failed steps carry them, and `parse_test_failure` parses output the model
+  already has (AC-A5). A real failing pytest run on Windows returns `test_calc.py::test_add at test_calc.py:6`.
+
+Next (step 4): `run_command`, `inspect_config`. Then tree-sitter tools (ADR-0003 first), dependency search,
+artifacts, adapters, the end-to-end run, and the `m2` tag.
+
 ## 2026-10-22 (evening): M1 end-to-end on Windows, all exit criteria met
 
 End-to-end on native Windows with the current build (`35fd79d`), Qwen3.5-9B on the RTX 4060, OpenCode 1.19.3,

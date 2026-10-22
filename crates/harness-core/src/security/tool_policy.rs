@@ -81,7 +81,23 @@ impl PolicyDecision {
 }
 
 /// Harness MCP tools that only read state.
-const READ_ONLY_HARNESS_TOOLS: &[&str] = &["git_status", "git_diff", "harness_info"];
+const READ_ONLY_HARNESS_TOOLS: &[&str] = &[
+    "git_status",
+    "git_diff",
+    "git_history",
+    "git_log_range",
+    "parse_test_failure",
+    "inspect_config",
+    "repo_map",
+    "file_summary",
+    "symbol_search",
+    "find_references",
+    "dependency_search",
+    "inspect_artifact",
+    "summarize_experiment",
+    "compare_experiments",
+    "harness_info",
+];
 /// Harness and host control files, relative to the workspace root (lowercase). The harness reads
 /// its profile, and the host its config, on every call, so the agent must not change them.
 const PROTECTED_ROOT_ENTRIES: &[&str] = &[
@@ -97,7 +113,13 @@ const PROTECTED_ROOT_ENTRIES: &[&str] = &[
 const GIT_DIR: &str = ".git";
 /// Harness MCP tools that execute configured commands; each command is policy-checked inside the
 /// tool itself, so the call is classed EXECUTE_SAFE here.
-const EXECUTING_HARNESS_TOOLS: &[&str] = &["run_verification"];
+const EXECUTING_HARNESS_TOOLS: &[&str] = &[
+    "run_verification",
+    "run_tests",
+    "run_linter",
+    "run_typechecker",
+    "run_command",
+];
 
 #[derive(Debug, Clone)]
 pub struct ToolPolicy {
@@ -291,7 +313,8 @@ impl ToolPolicy {
             .find(|p| is_secret_file(Path::new(p.as_str())));
         if let Some(p) = secret {
             match req.kind {
-                ToolKind::Read | ToolKind::List | ToolKind::Search => {
+                // Harness tools only read what they are pointed at, and none takes a secret file.
+                ToolKind::Read | ToolKind::List | ToolKind::Search | ToolKind::Harness(_) => {
                     return PolicyDecision::new(
                         Verdict::Deny,
                         ToolClass::ReadOnly,
@@ -398,6 +421,13 @@ impl ToolPolicy {
                     "runs configured verification commands (each command is policy-checked)",
                 )
             }
+            // Configured adapters run their command through the same checks as run_command.
+            ToolKind::Harness(name) if name.starts_with("adapter_") => PolicyDecision::new(
+                self.class_verdict(ToolClass::ExecuteSafe),
+                ToolClass::ExecuteSafe,
+                "harness_tool",
+                "configured adapter (its command is policy-checked inside the tool)",
+            ),
             ToolKind::Harness(name) | ToolKind::Other(name) => PolicyDecision::new(
                 self.class_verdict(ToolClass::ExecuteRisky),
                 ToolClass::ExecuteRisky,
@@ -725,6 +755,24 @@ mod tests {
         let mut req = ToolRequest::new(ToolKind::Read);
         req.paths = vec![path.to_owned()];
         req
+    }
+
+    #[test]
+    fn harness_history_tools_are_read_only_and_never_take_a_secret_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        for tool in ["git_history", "git_log_range"] {
+            let d = p.evaluate(&ToolRequest::new(ToolKind::Harness(tool.to_owned())));
+            assert_eq!(
+                (d.verdict, d.class),
+                (Verdict::Allow, ToolClass::ReadOnly),
+                "{tool}"
+            );
+        }
+        let mut secret = ToolRequest::new(ToolKind::Harness("git_history".to_owned()));
+        secret.paths = vec![".env".to_owned()];
+        let d = p.evaluate(&secret);
+        assert_eq!((d.verdict, d.rule.as_str()), (Verdict::Deny, "secret_file"));
     }
 
     #[test]

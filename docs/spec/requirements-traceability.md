@@ -51,7 +51,7 @@ the ADR is linked.
 |---|---|---|---|---|
 | R-0.1 | STRAT | Open-source, local-first coding-agent system for a constrained workstation and demanding software/research workflows | all | open |
 | R-0.2 | REQ | Target environment: Windows host, RTX 4060 8 GB VRAM, 16 GB RAM, WSL only when a repo/toolchain requires Linux | M1 (doctor) | open |
-| R-0.3 | REQ | Support Git projects in Python, C++, and Rust | M2 | open |
+| R-0.3 | REQ | Support Git projects in Python, C++, and Rust | M2 | done (Rust, Python and C++: tree-sitter analysis, failure parsers, manifests; M2) |
 | R-0.4 | REQ | Support research workloads: robotics, simulation, RL, numerical computation, experiment execution and analysis | M2, M10 | open |
 | R-0.5 | REQ | Optimise for: unfamiliar-repo comprehension, multi-file implementation, research-code modification, debugging, test/execute/observe/repair loops, simulation/experiment execution, architecture reasoning, numerical correctness, context management, efficient local inference, safe autonomous execution, escalation | all (measured M10) | open |
 | R-0.6 | STRAT | Not a chat-with-files app. Build a model-agnostic, policy-driven, local-first harness that improves a small model through orchestration, deterministic tools, verification, context management, and selective escalation. | all | open |
@@ -188,16 +188,16 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-14.1 | CON | Do not use an LLM for anything that can be answered deterministically | all | open |
-| R-14.2 | REQ | Initial tools: repo_map, symbol_search, find_references, file_summary, dependency_search, git_status, git_diff, git_history, git_log_range, run_tests, run_linter, run_typechecker, parse_test_failure, run_command, inspect_artifact, compare_experiments, summarize_experiment, inspect_config | M2 | open |
-| R-14.3 | REQ | Extensible research tool adapters: run_experiment, inspect_training_log, compare_runs, extract_metrics, inspect_mujoco_xml, inspect_jax_trace, inspect_tensor_shapes | M2 (adapter API), later | open |
-| R-14.4 | CON | Do not hard-code the user's current research repository into the core. Use adapters. | all | open |
+| R-14.2 | REQ | Initial tools: repo_map, symbol_search, find_references, file_summary, dependency_search, git_status, git_diff, git_history, git_log_range, run_tests, run_linter, run_typechecker, parse_test_failure, run_command, inspect_artifact, compare_experiments, summarize_experiment, inspect_config | M2 | done (all 18 initial tools exist: git, repo, symbol, reference, dependency, test, lint, type, failure, command, artifact, experiment and config tools; M2) |
+| R-14.3 | REQ | Extensible research tool adapters: run_experiment, inspect_training_log, compare_runs, extract_metrics, inspect_mujoco_xml, inspect_jax_trace, inspect_tensor_shapes | M2 (adapter API), later | done (declarative adapters `[[tools.adapters]]`, checked like run_command; the research runners are configuration, not core code; M2 step 8) |
+| R-14.4 | CON | Do not hard-code the user's current research repository into the core. Use adapters. | all | done (no project is hard-coded: adapters and verification steps come from config) |
 
 ## §15 Repository intelligence
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-15.1 | CON | No vector database as the first solution | M2–M6 | open |
-| R-15.2 | REQ | Deterministic retrieval first: ripgrep, AST, Tree-sitter, LSP, Git, symbol index, dependency graph | M2 | open |
+| R-15.1 | CON | No vector database as the first solution | M2–M6 | done (no vector database; deterministic retrieval only) |
+| R-15.2 | REQ | Deterministic retrieval first: ripgrep, AST, Tree-sitter, LSP, Git, symbol index, dependency graph | M2 | in-progress (ripgrep-style text prefilter, git, tree-sitter syntax analysis done; LSP not used in release 1; symbol index in M3) |
 | R-15.3 | REQ | Use semantic retrieval only for conceptual queries, behind a future `ContextRetriever`. Not in the MVP. | post-M6 | open |
 
 ## §16 Persistent state
@@ -246,17 +246,17 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-21.1 | CON | "The model says it is fixed" is never evidence | all | open |
-| R-21.2 | REQ | Verify via git diff, syntax/build, targeted tests, broader tests, lint/typecheck where configured | M2, M3 | open |
+| R-21.2 | REQ | Verify via git diff, syntax/build, targeted tests, broader tests, lint/typecheck where configured | M2, M3 | in-progress (git diff, syntax and build via steps, targeted tests via run_tests with targets, linter and type checker run; broader-test ordering in M3) |
 | R-21.3 | REQ | Research code: experiment smoke test, metric extraction, regression comparison, artifact validity | M2, M10 | open |
 | R-21.4 | REQ | Robotics: simulation startup, environment reset, rollout execution, metric computation, optional trajectory sanity | adapters (M2+) | open |
-| R-21.5 | REQ | Declarative verification adapters (a list of commands in config) | M2 | open |
+| R-21.5 | REQ | Declarative verification adapters (a list of commands in config) | M2 | done (declared verification steps with kinds; run by run_verification, run_tests, run_linter, run_typechecker) |
 
 ## §22 Research workflow support
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-22.1 | REQ | Research task mode with hypothesis, expected_behavior, experiment_command, parameters, metrics, baseline, current_result, interpretation, next_action | M3 (schema), M10 | open |
-| R-22.2 | REQ | Prefer structured metrics over natural-language summaries | M2+ | open |
+| R-22.2 | REQ | Prefer structured metrics over natural-language summaries | M2+ | done (every M2 tool returns structured content next to its text) |
 
 ## §23 Context engineering
 
@@ -570,7 +570,7 @@ the ADR is linked.
 | AC-A2 | Agent | Subagent invocation works | M1, M4 | open |
 | AC-A3 | Agent | Subagent results can be summarised | M4 | open |
 | AC-A4 | Agent | Tests are automatically executed where configured | M2, M3 | open |
-| AC-A5 | Agent | Failures are parsed | M2 | open |
+| AC-A5 | Agent | Failures are parsed | M2 | done (failures parsed: 14 output formats; failed steps and parse_test_failure) |
 | AC-A6 | Agent | Repeated failures are detected | M3 | open |
 | AC-O1 | Orchestration | Model routing works | M4 | open |
 | AC-O2 | Orchestration | Escalation works | M5 | open |
