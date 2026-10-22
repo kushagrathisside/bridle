@@ -81,7 +81,13 @@ impl PolicyDecision {
 }
 
 /// Harness MCP tools that only read state.
-const READ_ONLY_HARNESS_TOOLS: &[&str] = &["git_status", "git_diff", "harness_info"];
+const READ_ONLY_HARNESS_TOOLS: &[&str] = &[
+    "git_status",
+    "git_diff",
+    "git_history",
+    "git_log_range",
+    "harness_info",
+];
 /// Harness and host control files, relative to the workspace root (lowercase). The harness reads
 /// its profile, and the host its config, on every call, so the agent must not change them.
 const PROTECTED_ROOT_ENTRIES: &[&str] = &[
@@ -291,7 +297,8 @@ impl ToolPolicy {
             .find(|p| is_secret_file(Path::new(p.as_str())));
         if let Some(p) = secret {
             match req.kind {
-                ToolKind::Read | ToolKind::List | ToolKind::Search => {
+                // Harness tools only read what they are pointed at, and none takes a secret file.
+                ToolKind::Read | ToolKind::List | ToolKind::Search | ToolKind::Harness(_) => {
                     return PolicyDecision::new(
                         Verdict::Deny,
                         ToolClass::ReadOnly,
@@ -725,6 +732,24 @@ mod tests {
         let mut req = ToolRequest::new(ToolKind::Read);
         req.paths = vec![path.to_owned()];
         req
+    }
+
+    #[test]
+    fn harness_history_tools_are_read_only_and_never_take_a_secret_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        for tool in ["git_history", "git_log_range"] {
+            let d = p.evaluate(&ToolRequest::new(ToolKind::Harness(tool.to_owned())));
+            assert_eq!(
+                (d.verdict, d.class),
+                (Verdict::Allow, ToolClass::ReadOnly),
+                "{tool}"
+            );
+        }
+        let mut secret = ToolRequest::new(ToolKind::Harness("git_history".to_owned()));
+        secret.paths = vec![".env".to_owned()];
+        let d = p.evaluate(&secret);
+        assert_eq!((d.verdict, d.rule.as_str()), (Verdict::Deny, "secret_file"));
     }
 
     #[test]

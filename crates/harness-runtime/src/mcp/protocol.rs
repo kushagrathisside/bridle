@@ -702,10 +702,12 @@ mod tests {
             .iter()
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert_eq!(
-            names,
-            ["git_status", "git_diff", "run_verification", "harness_info"]
-        );
+        // The order itself is pinned by the tools module; the server must list exactly that.
+        let expected: Vec<&str> = crate::mcp::tools::default_tools()
+            .iter()
+            .map(|tool| tool.name())
+            .collect();
+        assert_eq!(names, expected);
     }
 
     #[test]
