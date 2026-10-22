@@ -188,7 +188,7 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-14.1 | CON | Do not use an LLM for anything that can be answered deterministically | all | open |
-| R-14.2 | REQ | Initial tools: repo_map, symbol_search, find_references, file_summary, dependency_search, git_status, git_diff, git_history, git_log_range, run_tests, run_linter, run_typechecker, parse_test_failure, run_command, inspect_artifact, compare_experiments, summarize_experiment, inspect_config | M2 | open |
+| R-14.2 | REQ | Initial tools: repo_map, symbol_search, find_references, file_summary, dependency_search, git_status, git_diff, git_history, git_log_range, run_tests, run_linter, run_typechecker, parse_test_failure, run_command, inspect_artifact, compare_experiments, summarize_experiment, inspect_config | M2 | in-progress (M2: git_status, git_diff, git_history, git_log_range, run_tests, run_linter, run_typechecker, parse_test_failure done; others planned in docs/milestones/m2-tools.md) |
 | R-14.3 | REQ | Extensible research tool adapters: run_experiment, inspect_training_log, compare_runs, extract_metrics, inspect_mujoco_xml, inspect_jax_trace, inspect_tensor_shapes | M2 (adapter API), later | open |
 | R-14.4 | CON | Do not hard-code the user's current research repository into the core. Use adapters. | all | open |
 
@@ -249,7 +249,7 @@ the ADR is linked.
 | R-21.2 | REQ | Verify via git diff, syntax/build, targeted tests, broader tests, lint/typecheck where configured | M2, M3 | open |
 | R-21.3 | REQ | Research code: experiment smoke test, metric extraction, regression comparison, artifact validity | M2, M10 | open |
 | R-21.4 | REQ | Robotics: simulation startup, environment reset, rollout execution, metric computation, optional trajectory sanity | adapters (M2+) | open |
-| R-21.5 | REQ | Declarative verification adapters (a list of commands in config) | M2 | open |
+| R-21.5 | REQ | Declarative verification adapters (a list of commands in config) | M2 | done (declared `[[verification.steps]]` with `kind` and `targets`; run by `run_verification`, `run_tests`, `run_linter`, `run_typechecker`) |
 
 ## §22 Research workflow support
 
@@ -570,7 +570,7 @@ the ADR is linked.
 | AC-A2 | Agent | Subagent invocation works | M1, M4 | open |
 | AC-A3 | Agent | Subagent results can be summarised | M4 | open |
 | AC-A4 | Agent | Tests are automatically executed where configured | M2, M3 | open |
-| AC-A5 | Agent | Failures are parsed | M2 | open |
+| AC-A5 | Agent | Failures are parsed | M2 | done (`harness_core::failures`: 14 output formats; failed steps return parsed failures; `parse_test_failure` tool; M2 step 3) |
 | AC-A6 | Agent | Repeated failures are detected | M3 | open |
 | AC-O1 | Orchestration | Model routing works | M4 | open |
 | AC-O2 | Orchestration | Escalation works | M5 | open |

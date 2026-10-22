@@ -1,5 +1,25 @@
 # Progress log
 
+## 2026-10-22 (night): M2 started, steps 0 to 3 done (stopped here at the user's request)
+
+Branch `m2-tools` in `D:\src\harnessforkush`; plan in [milestones/m2-tools.md](milestones/m2-tools.md).
+Windows gate green after each step.
+- Step 0 (`6ddda6c`): `mcp/tools.rs` became `mcp/tools/mod.rs`; new tool groups are child modules; git test
+  helpers in `tools/test_support.rs`.
+- Step 1 (`6ddda6c`): `git_history` (follows renames for a file) and `git_log_range` (commits, changed files,
+  totals). Revisions must be plain and resolve to a commit; `--end-of-options` before them. A harness tool
+  given a secret path is now denied at the hook too.
+- Step 2 (`4b5d484`): steps have a `kind` (test, lint, typecheck, build, other; default test) and `targets`.
+  `run_tests`, `run_linter`, `run_typechecker` run steps of their kind; `run_tests` appends checked targets
+  to steps with `targets = true`. V24 warns about targets on a non-test step.
+- Step 3: `harness_core::failures` parses pytest, unittest, Python tracebacks, cargo test, rustc, gtest,
+  ctest, go test, GCC/Clang, MSVC, tsc, mypy, pyright and ruff/flake8 output into failures (tool, kind, name,
+  file, line, column, message). Failed steps carry them, and `parse_test_failure` parses output the model
+  already has (AC-A5). A real failing pytest run on Windows returns `test_calc.py::test_add at test_calc.py:6`.
+
+Next (step 4): `run_command`, `inspect_config`. Then tree-sitter tools (ADR-0003 first), dependency search,
+artifacts, adapters, the end-to-end run, and the `m2` tag.
+
 ## 2026-10-22 (evening): M1 end-to-end on Windows, all exit criteria met
 
 End-to-end on native Windows with the current build (`35fd79d`), Qwen3.5-9B on the RTX 4060, OpenCode 1.19.3,
