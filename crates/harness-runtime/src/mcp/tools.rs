@@ -56,6 +56,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use harness_core::config::{Config, ModelRole, Verdict, VerificationSection, VerificationStep};
+use harness_core::security::command_risk::ShellKind;
 use harness_core::security::redact::Redactor;
 use harness_core::security::tool_policy::{ToolKind, ToolPolicy, ToolRequest};
 use serde::Serialize;
@@ -816,7 +817,7 @@ fn select_steps<'a>(
 
 /// Classifies one step, then runs it unless the policy refuses it.
 fn run_step(ctx: &ToolContext, name: String, step: &VerificationStep) -> StepResult {
-    let assessment = ctx.policy.assess(&step.command);
+    let assessment = ctx.policy.assess_in(&step.command, STEP_SHELL);
     let verdict = ctx.policy.class_verdict(assessment.class);
     if !matches!(verdict, Verdict::Allow) {
         let reasons = if assessment.reasons.is_empty() {
@@ -887,6 +888,13 @@ fn tail_text(text: &str, limit: usize) -> String {
     }
     text.get(start..).unwrap_or_default().to_owned()
 }
+
+/// The grammar of the shell that [`shell_command`] runs; steps are classified in it.
+#[cfg(windows)]
+const STEP_SHELL: ShellKind = ShellKind::Cmd;
+/// The grammar of the shell that [`shell_command`] runs; steps are classified in it.
+#[cfg(not(windows))]
+const STEP_SHELL: ShellKind = ShellKind::Posix;
 
 /// The platform shell invocation for a verification command.
 #[cfg(windows)]
@@ -1590,6 +1598,31 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
         ctx.verification.steps = vec![VerificationStep {
             name: Some("wipe".to_owned()),
             command: "rm -rf x".to_owned(),
+            timeout_ms: None,
+            cwd: None,
+        }];
+        let output = RunVerificationTool.call(&json!({}), &ctx).unwrap();
+        assert_eq!(
+            output.structured.unwrap()["steps"][0]["status"],
+            json!("blocked")
+        );
+    }
+
+    /// Steps run under `cmd /C` on Windows and `sh -c` elsewhere, whatever shell the host uses for
+    /// the agent, so they are classified in that grammar. In cmd a single quote does not quote,
+    /// so this step deletes a directory; in PowerShell it would only print text.
+    #[test]
+    fn verification_steps_are_classified_in_the_shell_that_runs_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut ctx = ctx_for(dir.path());
+        let command = if cfg!(windows) {
+            "echo ' & rd /s /q build & '"
+        } else {
+            "echo \"$(rm -rf build)\""
+        };
+        ctx.verification.steps = vec![VerificationStep {
+            name: Some("sneaky".to_owned()),
+            command: command.to_owned(),
             timeout_ms: None,
             cwd: None,
         }];

