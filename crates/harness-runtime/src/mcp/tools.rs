@@ -5,17 +5,24 @@
 //! commands with `std::process::Command` in `ctx.workspace`, never through a shell, except
 //! verification steps (see below). Outputs are redacted with `ctx.redactor` before returning.
 //!
+//! Bounds: every git call is read-only (`GIT_OPTIONAL_LOCKS=0`, `GIT_TERMINAL_PROMPT=0`) and is
+//! killed after [`GIT_TIMEOUT`]. Output is captured through bounded buffers and never held whole.
+//! Structured path lists are capped at [`LIST_LIMIT`] entries, with full counts beside them.
+//!
 //! - `git_status` (no args): runs `git status --porcelain=v2 --branch -z`; parse with the pure
 //!   `parse_porcelain_v2(&[u8]) -> GitStatus { branch, upstream, ahead, behind, staged: Vec<String>,
 //!   unstaged: Vec<String>, untracked: Vec<String>, conflicted: Vec<String> }` (handle `1`, `2`
 //!   (rename: path + orig path), `u`, `?` records and `# branch.*` headers). `text` = a compact
 //!   human summary; `structured` = the JSON of `GitStatus`. Not a git repo → `Err`.
 //! - `git_diff` args `{ "staged": bool = false, "paths": [string] = [], "stat_only": bool = false,
-//!   "max_bytes": int = 60000 }`: every path must pass `ctx.policy` path checks (use
-//!   `ToolPolicy::evaluate` with `ToolKind::Read` and the path; Deny → `Err`). Runs
-//!   `git diff [--cached] --stat` and (unless stat_only) `git diff [--cached] --no-color -- <paths>`,
-//!   truncating the patch to `max_bytes` with a marker. `structured` = `{ files_changed,
-//!   insertions, deletions, truncated }` parsed from the shortstat line (pure helper
+//!   "max_bytes": int = 60000 }` (clamped to `MAX_DIFF_BYTES`): every path must pass the read
+//!   policy (`check_read_path`; Deny → `Err`). The changed names are listed first
+//!   (`git diff [--cached] --name-only -z --no-renames -- <scope>`), each name is checked with the
+//!   same read policy, and the shortstat, stat and patch are built only from the allowed names.
+//!   Excluded names are reported in the text (`N file(s) excluded by policy`) and as `excluded`.
+//!   The stat lists at most `LIST_LIMIT` files. The patch is redacted, then cut to `max_bytes` on
+//!   a character boundary with a marker. `structured` = `{ files_changed, insertions, deletions,
+//!   truncated, excluded }`; the totals come from the shortstat line (pure helper
 //!   `parse_shortstat`).
 //! - `run_verification` args `{ "steps": [string] (optional names to run; default all) }`: runs
 //!   `ctx.verification.steps` sequentially. BEFORE running each step, classify its command with
@@ -25,7 +32,8 @@
 //!   `cwd = workspace/step.cwd`, a timeout (step.timeout_ms or `default_timeout_ms`) enforced by
 //!   polling `try_wait` and killing on expiry, and capture stdout+stderr. Result per step: `{ name,
 //!   command, status: passed|failed|timeout|blocked, exit_code, duration_ms, output_tail }` where
-//!   `output_tail` is the last 4000 bytes, redacted. `structured` = `{ passed: bool, steps: [...] }`;
+//!   `output_tail` is the last 2000 bytes of stdout and `stderr_tail` the last 2000 bytes of
+//!   stderr, both redacted. `structured` = `{ passed: bool, steps: [...] }`;
 //!   `is_error` = false even when steps fail (failure is information, not a tool error). No steps
 //!   configured → text explains how to add `[[verification.steps]]`.
 //! - `harness_info` (no args): `structured` = `{ product, version, workspace, profile, models: [{slot,
@@ -36,7 +44,7 @@
 //!   `run_verification` with passing, failing, blocked (`rm -rf x`) and timeout (`sleep 5` with a
 //!   100 ms timeout; on Windows use `ping -n 6 127.0.0.1 > NUL`) steps.
 
-use std::io::{ErrorKind, Read};
+use std::io::{self, ErrorKind, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Sender};
@@ -52,15 +60,23 @@ use serde_json::{Value, json};
 
 const PRODUCT_NAME: &str = "harness";
 const DEFAULT_DIFF_MAX_BYTES: u64 = 60_000;
-const OUTPUT_TAIL_BYTES: usize = 4_000;
+/// The largest patch `git_diff` returns; a larger `max_bytes` is clamped to this.
+const MAX_DIFF_BYTES: u64 = 1_000_000;
+/// Bytes read past the patch limit, so a secret that straddles the cut is redacted whole.
+const DIFF_READ_MARGIN: usize = 4_096;
+/// Bytes of each output stream reported for a verification step (the tail).
+const OUTPUT_TAIL_BYTES: usize = 2_000;
 /// Bytes kept per output stream while a step runs; only the tail is ever reported.
 const CAPTURE_LIMIT_BYTES: usize = 64 * 1024;
-/// Entries listed per category in the `git_status` summary.
+/// Entries listed per category in the `git_status` summary and structured lists, and in the
+/// `git_diff` stat listing and exclusion note.
 const LIST_LIMIT: usize = 50;
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
-/// How long to wait for output readers after a step exits, so a grandchild that inherited the
+/// How long to wait for output readers after a process exits, so a grandchild that inherited the
 /// pipes cannot hold the tool call open.
 const DRAIN_TIMEOUT: Duration = Duration::from_millis(250);
+/// How long a read-only git call may run before it is killed.
+const GIT_TIMEOUT: Duration = Duration::from_secs(30);
 
 const PASSED: &str = "passed";
 const FAILED: &str = "failed";
@@ -261,28 +277,51 @@ pub fn parse_shortstat(text: &str) -> DiffStat {
     stat
 }
 
-/// Runs `git` with explicit arguments in the workspace. Errors are redacted.
-fn run_git(ctx: &ToolContext, args: &[&str]) -> Result<Vec<u8>, String> {
-    let output = Command::new("git")
-        .args(args)
+/// Runs a read-only `git` command in the workspace and returns its stdout, at most `stdout_limit`
+/// bytes. Git never prompts or takes optional locks. `usize::MAX` reads everything.
+fn run_git(ctx: &ToolContext, args: &[&str], stdout_limit: usize) -> Result<Vec<u8>, String> {
+    let mut git = Command::new("git");
+    git.args(args)
         .current_dir(&ctx.workspace)
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|error| {
-            ctx.redactor
-                .redact(&format!("failed to run git: {error}"))
-                .into_owned()
-        })?;
-    if output.status.success() {
-        Ok(output.stdout)
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let command = args.first().copied().unwrap_or_default();
-        Err(ctx
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_OPTIONAL_LOCKS", "0");
+    let subcommand = args.first().copied().unwrap_or_default();
+    run_git_command(ctx, git, subcommand, stdout_limit, GIT_TIMEOUT)
+}
+
+/// Runs a prepared git `command` under `timeout`. Errors and timeouts are redacted. Reaching
+/// `stdout_limit` closes the pipe, so git stops writing, and the output so far is returned.
+fn run_git_command(
+    ctx: &ToolContext,
+    command: Command,
+    subcommand: &str,
+    stdout_limit: usize,
+    timeout: Duration,
+) -> Result<Vec<u8>, String> {
+    let run = run_child(command, timeout, Keep::Head(stdout_limit)).map_err(|error| {
+        ctx.redactor
+            .redact(&format!("failed to run git: {error}"))
+            .into_owned()
+    })?;
+    // A full buffer ends the read on purpose, so the exit status says nothing about success.
+    let full = run.stdout.len() >= stdout_limit;
+    if run.timed_out && !full {
+        return Err(ctx
             .redactor
-            .redact(&format!("git {command} failed: {}", stderr.trim()))
-            .into_owned())
+            .redact(&format!(
+                "git {subcommand} timed out after {} s",
+                timeout.as_secs()
+            ))
+            .into_owned());
     }
+    if full || run.exit.is_some_and(|exit| exit.success()) {
+        return Ok(run.stdout);
+    }
+    let stderr = tail_text(&lossy(&run.stderr), OUTPUT_TAIL_BYTES);
+    Err(ctx
+        .redactor
+        .redact(&format!("git {subcommand} failed: {}", stderr.trim()))
+        .into_owned())
 }
 
 fn lossy(bytes: &[u8]) -> String {
@@ -351,15 +390,40 @@ impl McpTool for GitStatusTool {
         json!({"type": "object", "properties": {}, "additionalProperties": false})
     }
     fn call(&self, _args: &Value, ctx: &ToolContext) -> Result<ToolOutput, String> {
-        let stdout = run_git(ctx, &["status", "--porcelain=v2", "--branch", "-z"])?;
+        let stdout = run_git(
+            ctx,
+            &["status", "--porcelain=v2", "--branch", "-z"],
+            usize::MAX,
+        )?;
         let status = parse_porcelain_v2(&stdout);
-        let structured = serde_json::to_value(&status).map_err(|error| error.to_string())?;
         Ok(redacted_output(
             ctx,
             &render_status(&status),
-            Some(structured),
+            Some(status_structured(&status)),
         ))
     }
+}
+
+/// The `git_status` structured content: branch and counts, plus each path list capped at
+/// [`LIST_LIMIT`]. A list keeps its key; `<key>_count` carries the full length.
+fn status_structured(status: &GitStatus) -> Value {
+    let mut value = json!({
+        "branch": status.branch,
+        "upstream": status.upstream,
+        "ahead": status.ahead,
+        "behind": status.behind,
+    });
+    let lists = [
+        ("staged", &status.staged),
+        ("unstaged", &status.unstaged),
+        ("untracked", &status.untracked),
+        ("conflicted", &status.conflicted),
+    ];
+    for (key, paths) in lists {
+        value[key] = json!(&paths[..paths.len().min(LIST_LIMIT)]);
+        value[format!("{key}_count")] = json!(paths.len());
+    }
+    value
 }
 
 /// `git_diff`: the diff of the workspace, optionally staged and limited to paths.
@@ -378,9 +442,9 @@ impl McpTool for GitDiffTool {
             "type": "object",
             "properties": {
                 "staged": {"type": "boolean", "description": "Diff the index against HEAD.", "default": false},
-                "paths": {"type": "array", "items": {"type": "string"}, "description": "Limit the diff to these paths."},
+                "paths": {"type": "array", "items": {"type": "string"}, "description": "Limit the diff to these paths. Files the read policy denies (secret files) are excluded and only counted."},
                 "stat_only": {"type": "boolean", "description": "Return only the file summary.", "default": false},
-                "max_bytes": {"type": "integer", "minimum": 0, "description": "Truncate the patch to this many bytes.", "default": DEFAULT_DIFF_MAX_BYTES},
+                "max_bytes": {"type": "integer", "minimum": 0, "description": format!("Truncate the patch to this many bytes. Larger values are clamped to {MAX_DIFF_BYTES}."), "default": DEFAULT_DIFF_MAX_BYTES},
             },
             "additionalProperties": false,
         })
@@ -388,79 +452,168 @@ impl McpTool for GitDiffTool {
     fn call(&self, args: &Value, ctx: &ToolContext) -> Result<ToolOutput, String> {
         let staged = bool_arg(args, "staged", false)?;
         let stat_only = bool_arg(args, "stat_only", false)?;
-        let max_bytes = usize::try_from(u64_arg(args, "max_bytes", DEFAULT_DIFF_MAX_BYTES)?)
-            .unwrap_or(usize::MAX);
+        let requested = u64_arg(args, "max_bytes", DEFAULT_DIFF_MAX_BYTES)?;
+        let max_bytes = usize::try_from(requested.min(MAX_DIFF_BYTES)).unwrap_or(usize::MAX);
         let paths = optional_string_list(args, "paths")?.unwrap_or_default();
         for path in &paths {
             check_read_path(ctx, path)?;
         }
+        let scope: Vec<&str> = paths.iter().map(String::as_str).collect();
 
-        // Shared tail of both invocations: `--cached` first, then `--` and the paths.
-        let mut scope: Vec<&str> = Vec::new();
-        if staged {
-            scope.push("--cached");
-        }
-        if !paths.is_empty() {
-            scope.push("--");
-            scope.extend(paths.iter().map(String::as_str));
-        }
-        let stat_args: Vec<&str> = ["diff", "--stat", "--no-color", "--no-ext-diff"]
-            .into_iter()
-            .chain(scope.iter().copied())
-            .collect();
-        let patch_args: Vec<&str> = ["diff", "--no-color", "--no-ext-diff"]
-            .into_iter()
-            .chain(scope.iter().copied())
-            .collect();
+        // The policy decides per changed file, so a denied file never reaches the stat or patch.
+        let names_raw = run_git(
+            ctx,
+            &diff_args(&["--name-only", "-z"], staged, &scope),
+            usize::MAX,
+        )?;
+        let (allowed, excluded) = split_by_policy(ctx, &names_raw);
 
-        let stat_raw = lossy(&run_git(ctx, &stat_args)?);
-        let stat = parse_shortstat(&stat_raw);
-        let (patch, truncated) = if stat_only {
-            (String::new(), false)
-        } else {
-            // Redact before truncating so a secret cannot survive by being cut in half.
-            let patch_raw = lossy(&run_git(ctx, &patch_args)?);
-            let redacted = ctx.redactor.redact(&patch_raw);
-            truncate_text(&redacted, max_bytes)
-        };
+        let mut sections: Vec<String> = Vec::new();
+        let mut stat = DiffStat::default();
+        let mut truncated = false;
+        // With no allowed names there is nothing to diff: an unscoped `git diff` would show it all.
+        if !allowed.is_empty() {
+            // Literal pathspecs anchored at the repository root, the form `--name-only` reports.
+            let pathspecs: Vec<String> = allowed
+                .iter()
+                .map(|name| format!(":(top,literal){name}"))
+                .collect();
+            let pathspec_refs: Vec<&str> = pathspecs.iter().map(String::as_str).collect();
 
-        let mut text = ctx.redactor.redact(&stat_raw).trim_end().to_owned();
-        if !patch.is_empty() {
-            if !text.is_empty() {
-                text.push_str("\n\n");
+            let shortstat = lossy(&run_git(
+                ctx,
+                &diff_args(&["--shortstat"], staged, &pathspec_refs),
+                usize::MAX,
+            )?);
+            stat = parse_shortstat(&shortstat);
+            let stat_limit = usize::try_from(MAX_DIFF_BYTES).unwrap_or(usize::MAX);
+            let stat_raw = lossy(&run_git(
+                ctx,
+                &diff_args(&["--stat"], staged, &pathspec_refs),
+                stat_limit.saturating_add(DIFF_READ_MARGIN),
+            )?);
+            sections.push(render_stat(&stat_raw, &shortstat, stat.files_changed));
+
+            if !stat_only {
+                // The read stops just past the limit; `capped` marks a patch cut short by it.
+                let limit = max_bytes.saturating_add(DIFF_READ_MARGIN);
+                let patch_bytes = run_git(ctx, &diff_args(&[], staged, &pathspec_refs), limit)?;
+                let capped = patch_bytes.len() >= limit;
+                // Redact before truncating so a secret cannot survive by being cut in half.
+                let patch_text = lossy(&patch_bytes);
+                let redacted = ctx.redactor.redact(&patch_text);
+                let (patch, cut) = truncate_text(&redacted, max_bytes, capped);
+                truncated = cut;
+                sections.push(patch);
             }
-            text.push_str(&patch);
         }
-        if text.is_empty() {
-            text.push_str("No changes.");
+        sections.retain(|section| !section.is_empty());
+        if sections.is_empty() {
+            sections.push("No changes.".to_owned());
+        }
+        if !excluded.is_empty() {
+            sections.push(exclusion_note(&excluded));
         }
 
-        Ok(ToolOutput {
-            text,
-            structured: Some(json!({
+        Ok(redacted_output(
+            ctx,
+            &sections.join("\n\n"),
+            Some(json!({
                 "files_changed": stat.files_changed,
                 "insertions": stat.insertions,
                 "deletions": stat.deletions,
                 "truncated": truncated,
+                "excluded": excluded.len(),
             })),
-            is_error: false,
-        })
+        ))
     }
 }
 
+/// Arguments for one `git diff` call: the flags every diff of this tool shares (no external or
+/// textconv drivers, no rename pairing), then `--cached` when `staged`, then `--` and `scope`.
+fn diff_args<'a>(extra: &[&'a str], staged: bool, scope: &[&'a str]) -> Vec<&'a str> {
+    let mut args = vec!["diff"];
+    args.extend_from_slice(extra);
+    args.extend([
+        "--no-color",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--no-renames",
+    ]);
+    if staged {
+        args.push("--cached");
+    }
+    if !scope.is_empty() {
+        args.push("--");
+        args.extend_from_slice(scope);
+    }
+    args
+}
+
+/// Splits the NUL-separated names git listed into the names the read policy allows and the names
+/// it excludes. Each name is checked exactly as a `paths` entry is.
+fn split_by_policy(ctx: &ToolContext, names_raw: &[u8]) -> (Vec<String>, Vec<String>) {
+    let mut allowed = Vec::new();
+    let mut excluded = Vec::new();
+    for name in names_raw
+        .split(|byte| *byte == 0)
+        .filter(|name| !name.is_empty())
+        .map(lossy)
+    {
+        if check_read_path(ctx, &name).is_ok() {
+            allowed.push(name);
+        } else {
+            excluded.push(name);
+        }
+    }
+    (allowed, excluded)
+}
+
+/// The stat listing: at most [`LIST_LIMIT`] file lines, a `... and N more` marker, then the
+/// summary line. `files` is the full count from the shortstat line.
+fn render_stat(stat_raw: &str, shortstat: &str, files: u64) -> String {
+    let shown = usize::try_from(files).unwrap_or(usize::MAX).min(LIST_LIMIT);
+    let mut out: Vec<String> = stat_raw
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .take(shown)
+        .map(str::to_owned)
+        .collect();
+    if files > LIST_LIMIT as u64 {
+        out.push(format!(" ... and {} more", files - LIST_LIMIT as u64));
+    }
+    if !shortstat.trim().is_empty() {
+        out.push(shortstat.trim().to_owned());
+    }
+    out.join("\n")
+}
+
+/// The note that names the files the read policy left out of the diff.
+fn exclusion_note(excluded: &[String]) -> String {
+    let mut note = format!("{} file(s) excluded by policy:", excluded.len());
+    for name in excluded.iter().take(LIST_LIMIT) {
+        note.push_str("\n  ");
+        note.push_str(name);
+    }
+    if excluded.len() > LIST_LIMIT {
+        note.push_str(&format!("\n  ... and {} more", excluded.len() - LIST_LIMIT));
+    }
+    note
+}
+
 /// Cuts `text` to at most `max_bytes` (on a character boundary) and appends a marker when it cut.
-fn truncate_text(text: &str, max_bytes: usize) -> (String, bool) {
-    if text.len() <= max_bytes {
+/// `incomplete` says `text` is only the start of a longer output, so it is marked even when short.
+fn truncate_text(text: &str, max_bytes: usize, incomplete: bool) -> (String, bool) {
+    if text.len() <= max_bytes && !incomplete {
         return (text.to_owned(), false);
     }
-    let mut end = max_bytes;
+    let mut end = max_bytes.min(text.len());
     while !text.is_char_boundary(end) {
         end -= 1;
     }
-    let omitted = text.len() - end;
     let mut out = text.get(..end).unwrap_or_default().to_owned();
     out.push_str(&format!(
-        "\n[... diff truncated: {omitted} bytes omitted; raise max_bytes or narrow paths ...]\n"
+        "\n[... diff truncated after {end} bytes; raise max_bytes or narrow paths ...]\n"
     ));
     (out, true)
 }
@@ -524,7 +677,10 @@ struct StepResult {
     status: &'static str,
     exit_code: Option<i32>,
     duration_ms: u64,
+    /// The last [`OUTPUT_TAIL_BYTES`] of stdout, redacted.
     output_tail: String,
+    /// The last [`OUTPUT_TAIL_BYTES`] of stderr, redacted.
+    stderr_tail: String,
 }
 
 impl McpTool for RunVerificationTool {
@@ -580,6 +736,9 @@ impl McpTool for RunVerificationTool {
             ));
             if step.status != PASSED {
                 for line in step.output_tail.trim_end().lines() {
+                    text.push_str(&format!("\n    {line}"));
+                }
+                for line in step.stderr_tail.trim_end().lines() {
                     text.push_str(&format!("\n    {line}"));
                 }
             }
@@ -653,6 +812,7 @@ fn run_step(ctx: &ToolContext, name: String, step: &VerificationStep) -> StepRes
                 .redactor
                 .redact(&format!("not run: {reasons}"))
                 .into_owned(),
+            stderr_tail: String::new(),
         };
     }
 
@@ -667,22 +827,29 @@ fn run_step(ctx: &ToolContext, name: String, step: &VerificationStep) -> StepRes
     let outcome = execute(&step.command, &cwd, Duration::from_millis(timeout_ms));
     let duration_ms = elapsed_ms(started);
 
-    let (status, exit_code, output) = match outcome {
-        Ok(run) if run.timed_out => (TIMEOUT, None, run.output),
+    let (status, exit_code, stdout, stderr) = match outcome {
+        Ok(run) if run.timed_out => (TIMEOUT, None, run.stdout, run.stderr),
         Ok(run) => {
             let success = run.exit.as_ref().is_some_and(ExitStatus::success);
             let status = if success { PASSED } else { FAILED };
-            (status, run.exit.and_then(|exit| exit.code()), run.output)
+            (
+                status,
+                run.exit.and_then(|exit| exit.code()),
+                run.stdout,
+                run.stderr,
+            )
         }
-        Err(error) => (FAILED, None, error.into_bytes()),
+        Err(error) => (FAILED, None, error.into_bytes(), Vec::new()),
     };
+    // Redact each whole stream before cutting its tail, so no secret is shown in halves.
     StepResult {
         name,
         command: step.command.clone(),
         status,
         exit_code,
         duration_ms,
-        output_tail: ctx.redactor.redact(&tail(&output)).into_owned(),
+        output_tail: tail_text(&ctx.redactor.redact(&lossy(&stdout)), OUTPUT_TAIL_BYTES),
+        stderr_tail: tail_text(&ctx.redactor.redact(&lossy(&stderr)), OUTPUT_TAIL_BYTES),
     }
 }
 
@@ -690,10 +857,13 @@ fn elapsed_ms(started: Instant) -> u64 {
     u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
-/// The last [`OUTPUT_TAIL_BYTES`] bytes of `output`, decoded lossily.
-fn tail(output: &[u8]) -> String {
-    let start = output.len().saturating_sub(OUTPUT_TAIL_BYTES);
-    lossy(output.get(start..).unwrap_or_default())
+/// The last `limit` bytes of `text`, starting on a character boundary.
+fn tail_text(text: &str, limit: usize) -> String {
+    let mut start = text.len().saturating_sub(limit);
+    while !text.is_char_boundary(start) {
+        start += 1;
+    }
+    text.get(start..).unwrap_or_default().to_owned()
 }
 
 /// The platform shell invocation for a verification command.
@@ -712,43 +882,66 @@ fn shell_command(command: &str) -> Command {
     shell
 }
 
-/// What happened when a command was executed.
+/// What happened when a command was run.
 struct Execution {
     /// The exit status, if the process was reaped.
     exit: Option<ExitStatus>,
     /// Whether the timeout expired and the process was killed.
     timed_out: bool,
-    /// The tail of stdout followed by the tail of stderr.
-    output: Vec<u8>,
+    /// The captured stdout, as the [`Keep`] it was run with directs.
+    stdout: Vec<u8>,
+    /// The last [`CAPTURE_LIMIT_BYTES`] of stderr.
+    stderr: Vec<u8>,
+}
+
+/// Which part of an output stream a capture keeps.
+#[derive(Debug, Clone, Copy)]
+enum Keep {
+    /// The last `n` bytes; older output is discarded as it arrives.
+    Tail(usize),
+    /// The first `n` bytes; once they are read the pipe is closed, so the process can not grow
+    /// the buffer and is stopped by the closed pipe.
+    Head(usize),
 }
 
 /// Runs `command` through the platform shell in `cwd`, killing it once `timeout` expires.
 fn execute(command: &str, cwd: &Path, timeout: Duration) -> Result<Execution, String> {
     let mut shell = shell_command(command);
-    // Own process group, so a timeout can kill the step's children too (see `kill_tree`).
+    shell.current_dir(cwd);
+    run_child(shell, timeout, Keep::Tail(CAPTURE_LIMIT_BYTES))
+        .map_err(|error| format!("failed to run step: {error}"))
+}
+
+/// Spawns `command` with piped output, waits for it under `timeout` and kills its whole tree on
+/// expiry. stdout is kept as `stdout_keep` directs; stderr keeps its tail.
+fn run_child(mut command: Command, timeout: Duration, stdout_keep: Keep) -> io::Result<Execution> {
+    // Own process group, so a timeout can kill the children too (see `kill_tree`).
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        shell.process_group(0);
+        command.process_group(0);
     }
-    let mut child = shell
-        .current_dir(cwd)
+    let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("failed to start step: {error}"))?;
+        .spawn()?;
 
     let (done_tx, done_rx) = mpsc::channel::<()>();
     let stdout = Arc::new(Mutex::new(Vec::new()));
     let stderr = Arc::new(Mutex::new(Vec::new()));
     let mut readers = 0_usize;
     if let Some(pipe) = child.stdout.take() {
-        capture(pipe, Arc::clone(&stdout), done_tx.clone());
+        capture(pipe, Arc::clone(&stdout), stdout_keep, done_tx.clone());
         readers += 1;
     }
     if let Some(pipe) = child.stderr.take() {
-        capture(pipe, Arc::clone(&stderr), done_tx.clone());
+        capture(
+            pipe,
+            Arc::clone(&stderr),
+            Keep::Tail(CAPTURE_LIMIT_BYTES),
+            done_tx.clone(),
+        );
         readers += 1;
     }
     drop(done_tx);
@@ -762,14 +955,16 @@ fn execute(command: &str, cwd: &Path, timeout: Duration) -> Result<Execution, St
                 thread::sleep(POLL_INTERVAL);
             }
             Ok(None) => {
-                kill_tree(child.id());
+                if let Err(error) = kill_tree(child.id()) {
+                    eprintln!("harness mcp: {error}");
+                }
                 let _ = child.kill();
                 break (child.wait().ok(), true);
             }
             Err(error) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(format!("failed to wait for step: {error}"));
+                return Err(error);
             }
         }
     };
@@ -777,35 +972,46 @@ fn execute(command: &str, cwd: &Path, timeout: Duration) -> Result<Execution, St
     for _ in 0..readers {
         let _ = done_rx.recv_timeout(DRAIN_TIMEOUT);
     }
-    let mut output = snapshot(&stdout);
-    output.extend(snapshot(&stderr));
     Ok(Execution {
         exit,
         timed_out,
-        output,
+        stdout: snapshot(&stdout),
+        stderr: snapshot(&stderr),
     })
 }
 
-/// Kills a step's whole process tree, not just the shell: a shell's children (for example
-/// `npm test` under `cmd /C`) would otherwise keep running after the timeout. Windows uses
-/// `taskkill /T`; Unix kills the process group the step was started in.
-fn kill_tree(pid: u32) {
-    #[cfg(windows)]
-    {
-        let _ = Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-    }
-    #[cfg(unix)]
-    {
-        let _ = Command::new("kill")
-            .args(["-KILL", &format!("-{pid}")])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-    }
+/// Kills a process tree, not just its root: a shell's children (for example `npm test` under
+/// `cmd /C`) would otherwise keep running after a timeout. Windows uses `taskkill /T`; Unix kills
+/// the process group the child was started in. Errors only when the killer cannot be run; a
+/// non-zero killer status (the tree already exited) is not an error.
+fn kill_tree(pid: u32) -> Result<(), String> {
+    run_killer(kill_command(pid))
+}
+
+/// The command that kills the tree rooted at `pid`.
+#[cfg(windows)]
+fn kill_command(pid: u32) -> Command {
+    let mut killer = Command::new("taskkill");
+    killer.args(["/PID", &pid.to_string(), "/T", "/F"]);
+    killer
+}
+
+/// The command that kills the process group `pid`.
+#[cfg(unix)]
+fn kill_command(pid: u32) -> Command {
+    let mut killer = Command::new("kill");
+    killer.args(["-KILL", &format!("-{pid}")]);
+    killer
+}
+
+/// Runs a killer quietly, reporting only a failure to start it.
+fn run_killer(mut killer: Command) -> Result<(), String> {
+    killer
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|_| ())
+        .map_err(|error| format!("failed to run the process killer: {error}"))
 }
 
 /// Copies what a capture buffer holds so far.
@@ -815,19 +1021,36 @@ fn snapshot(sink: &Arc<Mutex<Vec<u8>>>) -> Vec<u8> {
         .unwrap_or_default()
 }
 
-/// Reads `pipe` to EOF on a background thread, keeping only the last [`CAPTURE_LIMIT_BYTES`].
-/// Sends on `done` once the pipe is closed.
-fn capture<R: Read + Send + 'static>(mut pipe: R, sink: Arc<Mutex<Vec<u8>>>, done: Sender<()>) {
+/// Reads `pipe` on a background thread into `sink`, keeping what `keep` says. Sends on `done`
+/// once the pipe is closed or the head limit has been read.
+fn capture<R: Read + Send + 'static>(
+    mut pipe: R,
+    sink: Arc<Mutex<Vec<u8>>>,
+    keep: Keep,
+    done: Sender<()>,
+) {
     thread::spawn(move || {
         let mut chunk = [0_u8; 8192];
         loop {
             match pipe.read(&mut chunk) {
                 Ok(0) => break,
                 Ok(read) => {
-                    if let Ok(mut buffer) = sink.lock() {
-                        buffer.extend_from_slice(&chunk[..read]);
-                        let excess = buffer.len().saturating_sub(CAPTURE_LIMIT_BYTES);
-                        buffer.drain(..excess);
+                    let Ok(mut buffer) = sink.lock() else {
+                        break;
+                    };
+                    match keep {
+                        Keep::Tail(limit) => {
+                            buffer.extend_from_slice(&chunk[..read]);
+                            let excess = buffer.len().saturating_sub(limit);
+                            buffer.drain(..excess);
+                        }
+                        Keep::Head(limit) => {
+                            let room = limit.saturating_sub(buffer.len());
+                            buffer.extend_from_slice(&chunk[..read.min(room)]);
+                            if buffer.len() >= limit {
+                                break;
+                            }
+                        }
                     }
                 }
                 Err(error) if error.kind() == ErrorKind::Interrupted => {}
@@ -1116,11 +1339,17 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
 
     #[test]
     fn truncation_respects_character_boundaries() {
-        let (text, truncated) = truncate_text("ééé", 3);
+        let (text, truncated) = truncate_text("ééé", 3, false);
         assert!(truncated);
         assert!(text.starts_with('é'));
         assert!(text.contains("truncated"));
-        assert_eq!(truncate_text("short", 60_000), ("short".to_owned(), false));
+        assert_eq!(
+            truncate_text("short", 60_000, false),
+            ("short".to_owned(), false)
+        );
+        // A capped read is marked even when the redacted text came out short.
+        let (text, truncated) = truncate_text("short", 60_000, true);
+        assert!(truncated && text.contains("truncated"), "{text}");
     }
 
     #[test]
@@ -1282,7 +1511,7 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
         let run = execute("echo hello", dir.path(), Duration::from_secs(30)).unwrap();
         assert!(!run.timed_out);
         assert!(run.exit.is_some_and(|exit| exit.success()));
-        assert!(String::from_utf8_lossy(&run.output).contains("hello"));
+        assert!(String::from_utf8_lossy(&run.stdout).contains("hello"));
 
         let run = execute("exit 3", dir.path(), Duration::from_secs(30)).unwrap();
         assert_eq!(run.exit.and_then(|exit| exit.code()), Some(3));
@@ -1375,6 +1604,253 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
         assert_eq!(
             names,
             ["git_status", "git_diff", "run_verification", "harness_info"]
+        );
+    }
+
+    /// Commits `files` (path, content) on top of the repository's history.
+    fn commit_files(dir: &Path, files: &[(&str, &str)]) {
+        for (path, content) in files {
+            let full = dir.join(path);
+            fs::create_dir_all(full.parent().unwrap()).unwrap();
+            fs::write(&full, content).unwrap();
+            // Forced: fixtures such as `.env` may match an ignore rule on the machine running tests.
+            git(dir, &["add", "-f", path]);
+        }
+        git(
+            dir,
+            &[
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-q",
+                "-m",
+                "files",
+            ],
+        );
+    }
+
+    #[test]
+    fn git_diff_excludes_policy_denied_files_in_every_scope() {
+        let Some(dir) = init_repo() else { return };
+        commit_files(
+            dir.path(),
+            &[
+                (".env", "TOKEN=old\n"),
+                ("config/prod.pem", "old key\n"),
+                ("config/calc.py", "def add(a, b):\n    return a + b\n"),
+            ],
+        );
+        fs::write(dir.path().join(".env"), "sentinel-env-9317\n").unwrap();
+        fs::write(dir.path().join("config/prod.pem"), "sentinel-pem-9317\n").unwrap();
+        fs::write(
+            dir.path().join("config/calc.py"),
+            "def add(a, b):\n    return a + b  # changed\n",
+        )
+        .unwrap();
+        let ctx = ctx_for(dir.path());
+
+        let cases = [
+            (json!({}), 2),
+            (json!({"paths": ["."]}), 2),
+            (json!({"paths": ["config"]}), 1),
+        ];
+        for (args, excluded) in cases {
+            let output = GitDiffTool.call(&args, &ctx).unwrap();
+            let structured = output.structured.clone().unwrap();
+            assert!(
+                !output.text.contains("sentinel-"),
+                "{args}: {}",
+                output.text
+            );
+            assert!(
+                !structured.to_string().contains("sentinel-"),
+                "{args}: {structured}"
+            );
+            assert!(output.text.contains("# changed"), "{args}: {}", output.text);
+            assert_eq!(structured["excluded"], json!(excluded), "{args}");
+            assert!(
+                output.text.contains("excluded by policy"),
+                "{args}: {}",
+                output.text
+            );
+        }
+    }
+
+    #[test]
+    fn git_diff_with_only_excluded_changes_says_no_changes() {
+        let Some(dir) = init_repo() else { return };
+        commit_files(dir.path(), &[(".env", "TOKEN=old\n")]);
+        fs::write(dir.path().join(".env"), "sentinel-env-9317\n").unwrap();
+
+        let output = GitDiffTool.call(&json!({}), &ctx_for(dir.path())).unwrap();
+        assert!(output.text.starts_with("No changes."), "{}", output.text);
+        assert!(output.text.contains("1 file(s) excluded by policy"));
+        assert!(!output.text.contains("sentinel-"), "{}", output.text);
+        let structured = output.structured.unwrap();
+        assert_eq!(structured["files_changed"], json!(0));
+        assert_eq!(structured["excluded"], json!(1));
+    }
+
+    #[test]
+    fn git_diff_caps_the_stat_listing_and_keeps_the_summary() {
+        let Some(dir) = init_repo() else { return };
+        let files: Vec<(String, String)> = (0..60)
+            .map(|index| (format!("f{index:02}.txt"), "one\n".to_owned()))
+            .collect();
+        let refs: Vec<(&str, &str)> = files
+            .iter()
+            .map(|(path, content)| (path.as_str(), content.as_str()))
+            .collect();
+        commit_files(dir.path(), &refs);
+        for (path, _) in &files {
+            fs::write(dir.path().join(path), "two\n").unwrap();
+        }
+
+        let output = GitDiffTool
+            .call(&json!({"stat_only": true}), &ctx_for(dir.path()))
+            .unwrap();
+        assert_eq!(
+            output.text.matches(" | ").count(),
+            LIST_LIMIT,
+            "{}",
+            output.text
+        );
+        assert!(output.text.contains("... and 10 more"), "{}", output.text);
+        assert!(output.text.contains("60 files changed"), "{}", output.text);
+        assert_eq!(output.structured.unwrap()["files_changed"], json!(60));
+    }
+
+    #[test]
+    fn git_diff_clamps_max_bytes_and_bounds_the_read() {
+        let Some(dir) = init_repo() else { return };
+        let big = "added line of text\n".repeat(200_000);
+        fs::write(dir.path().join("README.md"), format!("hello\n{big}")).unwrap();
+
+        // Asks for far more than the server maximum (1_000_000 bytes).
+        let output = GitDiffTool
+            .call(
+                &json!({"max_bytes": 1_099_511_627_776_u64}),
+                &ctx_for(dir.path()),
+            )
+            .unwrap();
+        assert!(output.text.len() < 1_000_500, "{}", output.text.len());
+        assert!(output.text.contains("diff truncated"));
+        assert_eq!(output.structured.unwrap()["truncated"], json!(true));
+    }
+
+    #[test]
+    fn git_diff_truncation_never_exposes_a_cut_secret() {
+        let Some(dir) = init_repo() else { return };
+        fs::write(
+            dir.path().join("README.md"),
+            "hello\nAPI_KEY=abcdef123456\n",
+        )
+        .unwrap();
+        let raw = Command::new("git")
+            .args(["diff", "--no-color"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap()
+            .stdout;
+        let secret_at = raw
+            .windows(b"abcdef123456".len())
+            .position(|window| window == b"abcdef123456")
+            .unwrap();
+
+        // The cut lands inside the secret; the redacted text must not show its start.
+        let output = GitDiffTool
+            .call(&json!({"max_bytes": secret_at + 4}), &ctx_for(dir.path()))
+            .unwrap();
+        assert!(!output.text.contains("abcd"), "{}", output.text);
+    }
+
+    #[test]
+    fn git_status_caps_structured_lists_and_reports_counts() {
+        let Some(dir) = init_repo() else { return };
+        for index in 0..120 {
+            fs::write(dir.path().join(format!("u{index:03}.txt")), "x\n").unwrap();
+        }
+
+        let output = GitStatusTool
+            .call(&json!({}), &ctx_for(dir.path()))
+            .unwrap();
+        let structured = output.structured.unwrap();
+        assert_eq!(
+            structured["untracked"].as_array().unwrap().len(),
+            LIST_LIMIT
+        );
+        assert_eq!(structured["untracked_count"], json!(120));
+        assert!(output.text.contains("... and 70 more"), "{}", output.text);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_verification_reports_stdout_and_stderr_tails_separately() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut ctx = ctx_for(dir.path());
+        ctx.verification.steps = vec![VerificationStep {
+            name: Some("noisy".to_owned()),
+            command: format!("echo important-stdout; echo {} 1>&2", "E".repeat(5_000)),
+            timeout_ms: Some(30_000),
+            cwd: None,
+        }];
+        let output = RunVerificationTool.call(&json!({}), &ctx).unwrap();
+        let step = &output.structured.unwrap()["steps"][0];
+        assert!(
+            step["output_tail"]
+                .as_str()
+                .unwrap()
+                .contains("important-stdout"),
+            "{step}"
+        );
+        assert!(
+            step["stderr_tail"].as_str().unwrap().contains("EEEE"),
+            "{step}"
+        );
+    }
+
+    #[test]
+    fn git_command_past_its_timeout_is_killed_with_a_clear_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = ctx_for(dir.path());
+        let hung = if cfg!(windows) {
+            let mut command = Command::new("cmd");
+            command.args(["/C", "ping -n 6 127.0.0.1 > NUL"]);
+            command
+        } else {
+            let mut command = Command::new("sleep");
+            command.arg("5");
+            command
+        };
+        let started = Instant::now();
+        let error = run_git_command(&ctx, hung, "diff", usize::MAX, Duration::from_millis(100))
+            .unwrap_err();
+        assert!(error.contains("git diff timed out after"), "{error}");
+        assert!(started.elapsed() < Duration::from_secs(4));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn git_command_output_stops_at_the_head_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = ctx_for(dir.path());
+        let mut producer = Command::new("head");
+        producer.args(["-c", "100000", "/dev/zero"]);
+        let stdout =
+            run_git_command(&ctx, producer, "diff", 1_000, Duration::from_secs(30)).unwrap();
+        assert_eq!(stdout.len(), 1_000);
+    }
+
+    #[test]
+    fn a_missing_process_killer_is_reported_not_ignored() {
+        let error = run_killer(Command::new("harness-no-such-killer")).unwrap_err();
+        assert!(
+            error.contains("failed to run the process killer"),
+            "{error}"
         );
     }
 }
