@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use super::ToolClass;
 use super::command_risk::{CommandAssessment, ShellKind, argument_words, assess_command};
-use super::path_guard::PathGuard;
+use super::path_guard::{PathGuard, PathViolation, has_percent_expansion, is_unresolvable};
 use super::redact::is_secret_file;
 use crate::config::{SecuritySection, Verdict};
 
@@ -160,15 +160,27 @@ impl ToolPolicy {
             if looks_like_path(&word)
                 && let Err(v) = self.guard.check(Path::new(&word), base)
             {
-                return Some(PolicyDecision::new(
-                    Verdict::Deny,
-                    ToolClass::Privileged,
-                    "path_guard",
-                    format!("{word}: {v}"),
-                ));
+                return Some(guard_denial(&word, &v));
             }
         }
         None
+    }
+
+    /// Denies a shell argument that only the shell can resolve at run time (`~`, `$HOME`, `$(...)`,
+    /// a backtick, `%NAME%` in a path). Such a word is checked only when the command would
+    /// otherwise run: a command already classed Ask or Deny keeps its own rule.
+    fn unresolved_argument(&self, command: &str) -> Option<PolicyDecision> {
+        argument_words(command)
+            .into_iter()
+            .find(|word| is_unresolved_argument(word))
+            .map(|word| {
+                PolicyDecision::new(
+                    Verdict::Deny,
+                    ToolClass::Privileged,
+                    "unresolved_path",
+                    format!("`{word}` cannot be resolved statically; shell access to it is denied"),
+                )
+            })
     }
 
     pub fn evaluate(&self, req: &ToolRequest) -> PolicyDecision {
@@ -180,7 +192,7 @@ impl ToolPolicy {
                     return PolicyDecision::new(
                         Verdict::Deny,
                         ToolClass::Privileged,
-                        "path_guard",
+                        path_rule(&v),
                         format!("working directory rejected: {v}"),
                     );
                 }
@@ -189,12 +201,7 @@ impl ToolPolicy {
         };
         for p in &req.paths {
             if let Err(v) = self.guard.check(Path::new(p), &base) {
-                return PolicyDecision::new(
-                    Verdict::Deny,
-                    ToolClass::Privileged,
-                    "path_guard",
-                    format!("{p}: {v}"),
-                );
+                return guard_denial(p, &v);
             }
         }
 
@@ -274,8 +281,14 @@ impl ToolPolicy {
                     return decision;
                 }
                 let a = self.assess(cmd);
+                let verdict = self.class_verdict(a.class);
+                if verdict == Verdict::Allow
+                    && let Some(decision) = self.unresolved_argument(cmd)
+                {
+                    return decision;
+                }
                 PolicyDecision {
-                    verdict: self.class_verdict(a.class),
+                    verdict,
                     class: a.class,
                     rule: "command_risk".to_owned(),
                     reasons: a.reasons,
@@ -305,6 +318,31 @@ impl ToolPolicy {
             ),
         }
     }
+}
+
+/// The denial for a path the guard refused. An unresolvable path gets its own rule name.
+fn guard_denial(word: &str, violation: &PathViolation) -> PolicyDecision {
+    PolicyDecision::new(
+        Verdict::Deny,
+        ToolClass::Privileged,
+        path_rule(violation),
+        format!("{word}: {violation}"),
+    )
+}
+
+fn path_rule(violation: &PathViolation) -> &'static str {
+    match violation {
+        PathViolation::Unresolved => "unresolved_path",
+        _ => "path_guard",
+    }
+}
+
+/// Words the command resolves at run time. `command_risk` replaces `$(...)`, backticks and
+/// `<(...)` with the `<subst>` marker, so a substitution is caught here as well.
+fn is_unresolved_argument(word: &str) -> bool {
+    is_unresolvable(word)
+        || word.contains("<subst>")
+        || (looks_like_path(word) && has_percent_expansion(word))
 }
 
 /// Null devices may be written to by shell redirection; they are not paths inside the workspace.
@@ -477,5 +515,51 @@ mod tests {
         let d = p.evaluate(&read(".env"));
         assert_eq!(d.verdict, Verdict::Deny);
         assert_eq!(d.rule, "secret_file");
+    }
+
+    /// Item 13: `~` and `$VAR` are not expanded by the guard, so a word that starts with them (or
+    /// contains a substitution) cannot be shown to stay in the workspace.
+    #[test]
+    fn tilde_and_variable_words_are_unresolved_not_joined_under_the_workspace() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        for cmd in [
+            "cat ~/.bashrc",
+            "cat $HOME/notes.txt",
+            "cat ${HOME}/x",
+            "cd ~ && cat .bashrc",
+            "echo x >> ~/.bashrc",
+            "grep -r BEGIN ~",
+            "cat $FILE",
+            "cat \"$(printf '\\056env')\"",
+            "cat $(printf '\\056env')",
+            "cat %USERPROFILE%/.bashrc",
+        ] {
+            let d = p.evaluate(&shell(cmd));
+            assert_eq!(d.verdict, Verdict::Deny, "{cmd}");
+            assert_eq!(d.rule, "unresolved_path", "{cmd}");
+        }
+    }
+
+    /// Punctuation that is not an expansion stays allowed: a regex anchor, a `%Y%m%d` date format.
+    #[test]
+    fn words_without_an_expansion_are_not_unresolved() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        assert_eq!(
+            p.evaluate(&shell("grep 'end$' README.md")).verdict,
+            Verdict::Allow
+        );
+        assert_ne!(p.evaluate(&shell("date +%Y%m%d")).rule, "unresolved_path");
+    }
+
+    /// Item 13: a `cd` target is an argument like any other, so it is path-checked.
+    #[test]
+    fn cd_targets_are_path_checked() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        let d = p.evaluate(&shell("cd /tmp && cat x"));
+        assert_eq!(d.verdict, Verdict::Deny);
+        assert_eq!(d.rule, "path_guard");
     }
 }
