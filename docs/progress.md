@@ -1,6 +1,12 @@
 # Progress log
 
-## 2026-10-22 (night): M2 started, steps 0 to 3 done (stopped here at the user's request)
+## 2026-10-22 (late): M2 step 4 done (run_command, inspect_config)
+
+- `run_command`: one program on PATH, plain words only (no shell syntax), workspace cwd, timeout capped at 10 min. The whole command goes through the full policy (secret and path checks, command class) before it runs; blocked calls return `status: blocked` with the rule. `git --version` is blocked as an unrecognised git form (fail closed); `git status --short` runs.
+- `inspect_config`: effective config (redacted) and validation findings.
+- Gate green on Windows.
+
+## 2026-10-22 (night): M2 started, steps 0 to 3 done
 
 Branch `m2-tools` in `D:\src\harnessforkush`; plan in [milestones/m2-tools.md](milestones/m2-tools.md).
 Windows gate green after each step.

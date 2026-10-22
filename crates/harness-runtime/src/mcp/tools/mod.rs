@@ -149,6 +149,8 @@ pub fn default_tools() -> Vec<Box<dyn McpTool>> {
         Box::new(verify::RUN_LINTER),
         Box::new(verify::RUN_TYPECHECKER),
         Box::new(failures::ParseTestFailureTool),
+        Box::new(run::RunCommandTool),
+        Box::new(run::InspectConfigTool),
         Box::new(HarnessInfoTool),
     ]
 }
@@ -1227,6 +1229,7 @@ impl McpTool for HarnessInfoTool {
 /// A context for tests: the given workspace, default config and policy.
 pub mod failures;
 pub mod history;
+pub mod run;
 pub mod verify;
 
 #[cfg(test)]
@@ -1738,6 +1741,8 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
                 "run_linter",
                 "run_typechecker",
                 "parse_test_failure",
+                "run_command",
+                "inspect_config",
                 "harness_info"
             ]
         );
