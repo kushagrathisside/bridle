@@ -51,10 +51,10 @@ paths are refused. Null devices (`NUL`, `/dev/null`) are allowed, so redirection
 ## Residual risks
 
 Fixed since the first list (2026-10-22):
-- Verification timeouts now kill the whole process tree (`taskkill /T` on Windows, a process group on Unix), commit `5e9b9fc`.
-- A configured safe prefix only upgrades EXECUTE_RISKY results; it can no longer relabel write or read-only commands, commit `47b23d1`.
-- MCP output did not reach the after-hook (0 bytes observed in the run of 2026-10-21). The MCP server now redacts every result itself, text and structured content, commit `d0c3208`.
-- A `read` call with no file path is denied as malformed, commit `911a0cb`.
+- Verification timeouts now kill the whole process tree (`taskkill /T` on Windows, a process group on Unix), commit `7e5dab3`.
+- A configured safe prefix only upgrades EXECUTE_RISKY results; it can no longer relabel write or read-only commands, commit `6291138`.
+- MCP output did not reach the after-hook (0 bytes observed in the run of 2026-10-21). The MCP server now redacts every result itself, text and structured content, commit `9df0aa4`.
+- A `read` call with no file path is denied as malformed, commit `b45b851`.
 
 Fixed on 2026-10-22, after four code reviews (details in [progress.md](progress.md) and
 [docs/modules/](modules/README.md)): classifier bypasses (substitutions in quotes, `>()`, `>&file`, `git -c`, exec

