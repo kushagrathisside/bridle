@@ -707,13 +707,14 @@ fn classify_git(args: &[String]) -> Verdict {
 
 /// `bash -c STRING` style: the first flag containing `c` before any positional argument; the
 /// string is the argument after it.
-fn shell_c_argument(args: &[String]) -> Option<String> {
+/// Index of the command string that `bash -c` / `sh -c` runs (the word after the `-c` flag).
+fn shell_c_index(args: &[String]) -> Option<usize> {
     for (idx, a) in args.iter().enumerate() {
         if !a.starts_with('-') {
             return None;
         }
         if has_short(a, 'c') {
-            return args.get(idx + 1).cloned();
+            return (idx + 1 < args.len()).then_some(idx + 1);
         }
     }
     None
@@ -833,6 +834,76 @@ fn classify_builtin(program: &str, args: &[String], in_xargs: bool) -> Verdict {
     if matches!(program, "sudo" | "su" | "doas" | "runas" | "pkexec") {
         return leaf(Privileged, &format!("{program} escalates privileges"));
     }
+    // Service managers, mounts, accounts, kernel modules, firewalls, power and scheduling: the
+    // spec's PRIVILEGED list, whatever the subcommand (`systemctl status` is not exempt).
+    if matches!(
+        program,
+        "systemctl"
+            | "service"
+            | "launchctl"
+            | "mount"
+            | "umount"
+            | "chown"
+            | "chgrp"
+            | "useradd"
+            | "userdel"
+            | "usermod"
+            | "groupadd"
+            | "groupdel"
+            | "passwd"
+            | "visudo"
+            | "modprobe"
+            | "insmod"
+            | "rmmod"
+            | "sysctl"
+            | "iptables"
+            | "ip6tables"
+            | "nft"
+            | "ufw"
+            | "shutdown"
+            | "reboot"
+            | "halt"
+            | "poweroff"
+            | "crontab"
+            | "setcap"
+            | "diskpart"
+            | "vssadmin"
+            | "netsh"
+            | "bcdedit"
+            | "takeown"
+            | "icacls"
+            | "set-executionpolicy"
+            | "new-service"
+    ) {
+        return leaf(Privileged, &format!("{program} changes system configuration"));
+    }
+    if program == "chmod"
+        && (pos.iter().any(|a| a == "/")
+            || (args.iter().any(|a| has_short(a, 'R') || a == "--recursive")
+                && args.iter().any(|a| a == "777" || a == "0777")))
+    {
+        return leaf(Privileged, "chmod on / or a recursive chmod 777");
+    }
+    if program == "sc" && matches!(pos0, "config" | "create" | "delete" | "stop") {
+        return leaf(Privileged, "sc changes or stops a Windows service");
+    }
+    if program == "net" && matches!(pos0, "user" | "localgroup" | "group") {
+        return leaf(Privileged, "net user or group changes accounts");
+    }
+    if program == "reg"
+        && matches!(pos0, "add" | "delete")
+        && lower
+            .iter()
+            .any(|a| a.starts_with("hklm") || a.starts_with("hkey_local_machine"))
+    {
+        return leaf(Privileged, "reg add or delete on HKLM");
+    }
+    if program == "schtasks" && lower.iter().any(|a| a == "/create") {
+        return leaf(Privileged, "schtasks /create schedules a task");
+    }
+    if program == "wsl" && lower.iter().any(|a| a == "--unregister") {
+        return leaf(Privileged, "wsl --unregister deletes a distribution");
+    }
     if matches!(program, "powershell" | "pwsh")
         && lower
             .iter()
@@ -894,7 +965,6 @@ fn classify_builtin(program: &str, args: &[String], in_xargs: bool) -> Verdict {
                 | "format"
                 | "format-volume"
                 | "clear-disk"
-                | "diskpart"
                 | "truncate"
         )
     {
@@ -1047,8 +1117,16 @@ fn classify_builtin(program: &str, args: &[String], in_xargs: bool) -> Verdict {
         return leaf(ExecuteRisky, "bun runs code");
     }
     if matches!(program, "bash" | "sh" | "zsh") {
-        return match shell_c_argument(args) {
-            Some(inner) => Verdict::Nested(inner, ShellKind::Posix),
+        return match shell_c_index(args) {
+            Some(string_at) => Verdict::Nested(
+                args[string_at].clone(),
+                ShellKind::Posix,
+                args.iter()
+                    .enumerate()
+                    .filter(|(i, _)| *i != string_at)
+                    .map(|(_, a)| a.clone())
+                    .collect(),
+            ),
             None => leaf(ExecuteRisky, "runs a shell script"),
         };
     }
@@ -1056,7 +1134,7 @@ fn classify_builtin(program: &str, args: &[String], in_xargs: bool) -> Verdict {
         if let Some(idx) = lower.iter().position(|a| a == "-c" || a == "-command") {
             let inner = args.get(idx + 1..).unwrap_or(&[]).join(" ");
             if !inner.is_empty() {
-                return Verdict::Nested(inner, ShellKind::PowerShell);
+                return Verdict::Nested(inner, ShellKind::PowerShell, args[..idx].to_vec());
             }
         }
         return leaf(ExecuteRisky, "runs a PowerShell script");
@@ -1065,7 +1143,7 @@ fn classify_builtin(program: &str, args: &[String], in_xargs: bool) -> Verdict {
         if let Some(idx) = lower.iter().position(|a| a == "/c" || a == "/k") {
             let inner = args.get(idx + 1..).unwrap_or(&[]).join(" ");
             if !inner.is_empty() {
-                return Verdict::Nested(inner, ShellKind::Cmd);
+                return Verdict::Nested(inner, ShellKind::Cmd, args[..idx].to_vec());
             }
         }
         return leaf(ExecuteRisky, "runs a command shell");
@@ -1166,43 +1244,52 @@ fn classify_builtin(program: &str, args: &[String], in_xargs: bool) -> Verdict {
     leaf(ExecuteRisky, &format!("unrecognised program {program}"))
 }
 
-/// One analysed segment plus the argument words it carries (used by [`argument_words`]).
+/// One analysed item plus the argument words it carries (used by [`argument_words`]). A wrapper
+/// that runs an inner command string has no segment of its own (`segment` is `None`): its outer
+/// words are still policy-relevant, and its class comes from the inner command.
 #[derive(Debug, Clone)]
 struct Analysed {
-    segment: SegmentAssessment,
+    segment: Option<SegmentAssessment>,
     args: Vec<String>,
 }
 
 /// What a classification rule decided for a segment's program.
 enum Verdict {
     Leaf(ToolClass, String),
-    /// The program runs an inner command string (`bash -c`, `cmd /c`, `powershell -c`).
-    Nested(String, ShellKind),
+    /// The program runs an inner command string (`bash -c`, `cmd /c`, `powershell -c`). Carries
+    /// the string, its shell, and the program's own argument words other than that string.
+    Nested(String, ShellKind, Vec<String>),
+}
+
+/// The words of a command split on whitespace, used when it cannot be analysed: the policy must
+/// still see whatever paths it names.
+fn raw_words(command: &str) -> Vec<String> {
+    command.split_whitespace().map(str::to_owned).collect()
 }
 
 /// Split and classify `command` at nesting `depth`, recursing into inner commands.
 fn analyse(command: &str, shell: ShellKind, extra_safe: &[String], depth: usize) -> Vec<Analysed> {
     if depth > MAX_DEPTH {
         return vec![Analysed {
-            segment: SegmentAssessment {
+            segment: Some(SegmentAssessment {
                 text: command.to_owned(),
                 program: None,
                 class: ToolClass::ExecuteRisky,
                 reason: "nesting too deep".to_owned(),
-            },
-            args: Vec::new(),
+            }),
+            args: raw_words(command),
         }];
     }
     let lexed = lex(command, shell);
     if lexed.unparseable {
         return vec![Analysed {
-            segment: SegmentAssessment {
+            segment: Some(SegmentAssessment {
                 text: command.to_owned(),
                 program: None,
                 class: ToolClass::ExecuteRisky,
                 reason: "unparseable".to_owned(),
-            },
-            args: Vec::new(),
+            }),
+            args: raw_words(command),
         }];
     }
 
@@ -1254,7 +1341,7 @@ fn analyse_segment(pieces: &[Piece], extra_safe: &[String], depth: usize) -> Vec
     let Some(stripped) = strip_wrappers(words) else {
         // Only assignments or nothing runnable: not positively recognised.
         return vec![Analysed {
-            segment: SegmentAssessment {
+            segment: Some(SegmentAssessment {
                 text,
                 program: None,
                 class: if write_redirect {
@@ -1267,7 +1354,7 @@ fn analyse_segment(pieces: &[Piece], extra_safe: &[String], depth: usize) -> Vec
                 } else {
                     "no runnable program".to_owned()
                 },
-            },
+            }),
             args: redirect_targets,
         }];
     };
@@ -1276,8 +1363,10 @@ fn analyse_segment(pieces: &[Piece], extra_safe: &[String], depth: usize) -> Vec
     let program = normalise_program(&stripped.words[0]);
     let raw_program = stripped.words[0].as_str();
     let args: Vec<String> = stripped.words[1..].to_vec();
+    let wrapper_values = stripped.option_values;
     let mut arg_words = args.clone();
     arg_words.extend(attached_values(&args));
+    arg_words.extend(wrapper_values.iter().cloned());
     arg_words.extend(redirect_targets.iter().cloned());
 
     let path_qualified = raw_program.contains(['/', '\\']);
@@ -1301,33 +1390,42 @@ fn analyse_segment(pieces: &[Piece], extra_safe: &[String], depth: usize) -> Vec
     };
 
     match verdict {
-        Verdict::Nested(inner, inner_shell) => {
+        Verdict::Nested(inner, inner_shell, outer) => {
             let mut out = Vec::new();
             // The wrapper program itself is not judged by its inner string alone.
             let wrapper_floor =
                 floor.or_else(|| path_qualified.then(|| "runs a program by path".to_owned()));
             if let Some(reason) = wrapper_floor {
                 out.push(Analysed {
-                    segment: SegmentAssessment {
+                    segment: Some(SegmentAssessment {
                         text: text.clone(),
                         program: Some(program.clone()),
                         class: ToolClass::ExecuteRisky,
                         reason,
-                    },
+                    }),
                     args: Vec::new(),
                 });
             }
             if write_redirect {
                 out.push(Analysed {
-                    segment: SegmentAssessment {
+                    segment: Some(SegmentAssessment {
                         text: text.clone(),
                         program: Some(program.clone()),
                         class: ToolClass::Write,
                         reason: "output redirection".to_owned(),
-                    },
-                    args: redirect_targets.clone(),
+                    }),
+                    args: Vec::new(),
                 });
             }
+            // The outer words (`.env` in `sh -c 'cat "$1"' sh .env`) reach the policy too.
+            let mut outer_words = outer;
+            outer_words.extend(attached_values(&outer_words.clone()));
+            outer_words.extend(wrapper_values);
+            outer_words.extend(redirect_targets.iter().cloned());
+            out.push(Analysed {
+                segment: None,
+                args: outer_words,
+            });
             out.extend(analyse(&inner, inner_shell, extra_safe, depth + 1));
             out
         }
@@ -1343,12 +1441,12 @@ fn analyse_segment(pieces: &[Piece], extra_safe: &[String], depth: usize) -> Vec
                 reason = "output redirection to a file".to_owned();
             }
             vec![Analysed {
-                segment: SegmentAssessment {
+                segment: Some(SegmentAssessment {
                     text,
                     program: Some(program),
                     class,
                     reason,
-                },
+                }),
                 args: arg_words,
             }]
         }
@@ -1363,6 +1461,9 @@ struct Stripped {
     /// Why the segment is at least EXECUTE_RISKY whatever its program: it sets a variable that
     /// changes which code runs.
     floor: Option<String>,
+    /// Values of wrapper options that name a path or input, such as `xargs -a .env` or
+    /// `env -C dir`. The wrapper acts on them, so the policy must see them.
+    option_values: Vec<String>,
 }
 
 /// Environment variables that change which code a program runs or loads: helper programs, startup
@@ -1492,6 +1593,7 @@ fn strip_wrappers(mut words: Vec<String>) -> Option<Stripped> {
     let mut in_xargs = false;
     let mut last_wrapper: Option<String> = None;
     let mut floor: Option<String> = None;
+    let mut option_values: Vec<String> = Vec::new();
     while let Some(first) = words.first().cloned() {
         if is_assignment(&first) {
             floor = floor.or_else(|| env_assignment_floor(&first));
@@ -1534,6 +1636,7 @@ fn strip_wrappers(mut words: Vec<String>) -> Option<Stripped> {
             } else if skip_value_opts.contains(&opt.as_str()) {
                 words.remove(0);
                 if !words.is_empty() {
+                    option_values.push(words[0].clone());
                     words.remove(0);
                 }
             } else if opt.starts_with('-') || is_assignment(&opt) {
@@ -1554,6 +1657,7 @@ fn strip_wrappers(mut words: Vec<String>) -> Option<Stripped> {
                 words: vec!["env".to_owned()],
                 in_xargs: false,
                 floor,
+                option_values,
             });
         }
         return None;
@@ -1562,13 +1666,14 @@ fn strip_wrappers(mut words: Vec<String>) -> Option<Stripped> {
         words,
         in_xargs,
         floor,
+        option_values,
     })
 }
 
 pub fn assess_command(command: &str, shell: ShellKind, extra_safe: &[String]) -> CommandAssessment {
     let segments: Vec<SegmentAssessment> = analyse(command, shell, extra_safe, 0)
         .into_iter()
-        .map(|a| a.segment)
+        .filter_map(|a| a.segment)
         .collect();
     let class = segments
         .iter()
@@ -1621,9 +1726,9 @@ mod tests {
     #[test]
     fn shell_c_string_is_the_following_argument() {
         let args = vec!["-lc".to_owned(), "ls -la".to_owned()];
-        assert_eq!(shell_c_argument(&args), Some("ls -la".to_owned()));
+        assert_eq!(shell_c_index(&args), Some(1));
         let script = vec!["script.sh".to_owned(), "-c".to_owned()];
-        assert_eq!(shell_c_argument(&script), None);
+        assert_eq!(shell_c_index(&script), None);
     }
 
     #[test]
