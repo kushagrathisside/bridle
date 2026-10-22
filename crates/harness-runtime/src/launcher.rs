@@ -139,8 +139,9 @@ fn push_pair(args: &mut Vec<String>, flag: &str, value: impl Display) {
     args.push(value.to_string());
 }
 
-/// Splits `http://HOST:PORT[/path]` into the host (without IPv6 brackets) and the port.
-fn parse_endpoint(endpoint: &str) -> Result<(String, u16), LaunchError> {
+/// Splits `http://HOST:PORT[/path]` into the host (without IPv6 brackets) and the port: the
+/// address the server is started on.
+pub fn parse_endpoint(endpoint: &str) -> Result<(String, u16), LaunchError> {
     let bad = || LaunchError::Endpoint(endpoint.to_owned());
     let rest = endpoint.strip_prefix("http://").ok_or_else(bad)?;
     let authority = rest.split_once('/').map_or(rest, |(auth, _)| auth);

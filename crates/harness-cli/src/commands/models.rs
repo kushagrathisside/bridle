@@ -90,18 +90,24 @@ fn serve(app: &App, slot: &str, detach: bool, wait_secs: u64) -> anyhow::Result<
     let plan = plan_serve(&app.config, slot)?;
     let state = app.state_dir();
     let pid_file = pid_path(&state, slot);
-    if let Some(pid) = read_pid(&pid_file)? {
-        bail!(
-            "`{slot}` already has a recorded server (pid {pid}); stop it with `{} models stop {slot}` first",
-            identity::CLI_NAME
-        );
+    if let Some(record) = read_record(&pid_file)? {
+        if record_state(&record, &plan.bin) == RecordState::Running {
+            bail!(
+                "`{slot}` already has a running server (pid {}); stop it with `{} models stop {slot}` first",
+                record.pid,
+                identity::CLI_NAME
+            );
+        }
+        // The recorded process is gone or the PID was reused: the record is stale.
+        let _ = fs::remove_file(&pid_file);
+        println!("· removed a stale record for `{slot}` (pid {})", record.pid);
     }
 
     let log = log_path(&state, slot);
     let mut child = launcher::spawn_server(&plan.bin, &plan.args, &log)
         .with_context(|| format!("starting {}", plan.bin.display()))?;
     let pid = child.id();
-    if let Err(err) = write_pid(&pid_file, pid) {
+    if let Err(err) = write_record(&pid_file, pid, &plan.bin) {
         let _ = child.kill();
         bail!(
             "cannot record the server pid in {}: {err}",
@@ -148,18 +154,30 @@ fn serve(app: &App, slot: &str, detach: bool, wait_secs: u64) -> anyhow::Result<
 fn stop(app: &App, slot: &str) -> anyhow::Result<ExitCode> {
     check_slot_name(slot)?;
     let pid_file = pid_path(&app.state_dir(), slot);
-    let Some(pid) = read_pid(&pid_file)? else {
+    let Some(record) = read_record(&pid_file)? else {
         println!("· no server recorded for `{slot}`; nothing to stop");
         return Ok(ExitCode::SUCCESS);
     };
-    if terminate(pid)? {
-        line(Mark::Ok, slot, format!("stopped (pid {pid})"));
-    } else {
-        line(
+    let pid = record.pid;
+    match record_state(&record, &expected_server_bin(&app.config, slot)) {
+        RecordState::Running => {
+            terminate(pid)?;
+            line(Mark::Ok, slot, format!("stopped (pid {pid})"));
+        }
+        RecordState::Gone => line(
             Mark::Info,
             slot,
             format!("pid {pid} was not running; removed the stale record"),
-        );
+        ),
+        // After a crash or reboot the PID can belong to an unrelated program: never signal it.
+        RecordState::Reused(image) => line(
+            Mark::Warn,
+            slot,
+            format!(
+                "pid {pid} now belongs to `{image}`, not the server; removed the stale record \
+                 without signalling it"
+            ),
+        ),
     }
     let _ = fs::remove_file(&pid_file);
     Ok(ExitCode::SUCCESS)
@@ -333,17 +351,10 @@ fn runtime_identity(config: &Config, runtime: &str) -> (Option<String>, Option<R
 }
 
 /// Full `<bin> --version` output, stdout and stderr together: llama.cpp writes its version line to
-/// either stream, after any backend-loading lines. `None` when the binary cannot be run.
+/// either stream, after any backend-loading lines. `None` when the binary cannot be run or does
+/// not answer within the probe timeout (a hung binary must not hang `doctor`).
 pub(crate) fn runtime_version_text(bin: &Path) -> Option<String> {
-    let out = Command::new(bin)
-        .arg("--version")
-        .stdin(Stdio::null())
-        .output()
-        .ok()?;
-    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
-    text.push('\n');
-    text.push_str(&String::from_utf8_lossy(&out.stderr));
-    Some(text)
+    sysprobe::command_output(bin, &["--version"])
 }
 
 /// Host facts recorded in every manifest.
@@ -409,40 +420,111 @@ fn log_path(state: &Path, slot: &str) -> PathBuf {
     state.join("logs").join(format!("{slot}.log"))
 }
 
-fn write_pid(path: &Path, pid: u32) -> io::Result<()> {
+/// What `serve` records about a server it started.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ServerRecord {
+    pid: u32,
+    /// The binary that was started. `None` in records written before it was recorded.
+    bin: Option<PathBuf>,
+}
+
+/// Where a recorded PID stands now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RecordState {
+    /// The PID runs the recorded server binary.
+    Running,
+    /// No process has that PID.
+    Gone,
+    /// The PID now belongs to another program (reused after a crash or reboot).
+    Reused(String),
+}
+
+fn write_record(path: &Path, pid: u32, bin: &Path) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
-    fs::write(path, format!("{pid}\n"))
+    fs::write(path, format!("pid={pid}\nbin={}\n", bin.display()))
 }
 
-/// `Ok(None)` when no PID file exists. A file that does not hold a number is an error.
-fn read_pid(path: &Path) -> anyhow::Result<Option<u32>> {
+/// `Ok(None)` when no record exists. A record without a valid process id is an error.
+fn read_record(path: &Path) -> anyhow::Result<Option<ServerRecord>> {
     match fs::read_to_string(path) {
-        Ok(text) => text
-            .trim()
-            .parse::<u32>()
+        Ok(text) => parse_record(&text)
             .map(Some)
-            .with_context(|| format!("{} does not contain a process id", path.display())),
+            .with_context(|| format!("{} is not a valid server record", path.display())),
         Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(err).with_context(|| format!("reading {}", path.display())),
     }
 }
 
-/// Asks process `pid` to exit. `Ok(false)` means no such process was found.
-fn terminate(pid: u32) -> anyhow::Result<bool> {
+/// Parses `pid=<n>` and `bin=<path>` lines; a bare number is an older record holding only the PID.
+fn parse_record(text: &str) -> anyhow::Result<ServerRecord> {
+    let mut pid = None;
+    let mut bin = None;
+    for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        match line.split_once('=') {
+            Some(("pid", value)) => pid = Some(value.trim()),
+            Some(("bin", value)) => bin = Some(PathBuf::from(value.trim())),
+            Some(_) => {}
+            None => pid = Some(line),
+        }
+    }
+    let pid: u32 = pid
+        .context("no process id")?
+        .parse()
+        .context("the process id is not a number")?;
+    // `kill 0` signals the caller's own process group, and values above i32::MAX wrap to negative
+    // ids (`-1` is every process the user owns), so only real process ids are accepted.
+    if pid == 0 || i32::try_from(pid).is_err() {
+        bail!("{pid} is not a usable process id");
+    }
+    Ok(ServerRecord { pid, bin })
+}
+
+/// Checks the recorded PID against the program that should be running there: the recorded binary,
+/// or `expected` for an older record.
+fn record_state(record: &ServerRecord, expected: &Path) -> RecordState {
+    let bin = record.bin.as_deref().unwrap_or(expected);
+    match sysprobe::process_image(record.pid) {
+        None => RecordState::Gone,
+        Some(image) if same_program(&image, bin) => RecordState::Running,
+        Some(image) => RecordState::Reused(image),
+    }
+}
+
+/// Whether a process image name is the program at `bin`: same file name, ignoring case and `.exe`.
+fn same_program(image: &str, bin: &Path) -> bool {
+    let stem = |name: &str| {
+        let lower = name.to_ascii_lowercase();
+        lower
+            .strip_suffix(".exe")
+            .map_or(lower.clone(), str::to_owned)
+    };
+    bin.file_name()
+        .is_some_and(|name| stem(&name.to_string_lossy()) == stem(image))
+}
+
+/// The server binary configured for `slot`, used to check records that do not name their binary.
+fn expected_server_bin(config: &Config, slot: &str) -> PathBuf {
+    config
+        .models
+        .get(slot)
+        .and_then(|model| model.launch.as_ref())
+        .and_then(|launch| config.resolve_runtime_bin(&launch.runtime))
+        .unwrap_or_else(|| PathBuf::from("llama-server"))
+}
+
+/// Asks process `pid` to exit. Fails only when the process is still running afterwards.
+fn terminate(pid: u32) -> anyhow::Result<()> {
     let status = signal_command(pid)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
         .context("running the stop command")?;
-    if status.success() {
-        return Ok(true);
-    }
-    if process_exists(pid) {
+    if !status.success() && sysprobe::process_image(pid).is_some() {
         bail!("could not stop pid {pid}; it is still running");
     }
-    Ok(false)
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -457,24 +539,6 @@ fn signal_command(pid: u32) -> Command {
     let mut cmd = Command::new("kill");
     cmd.arg(pid.to_string());
     cmd
-}
-
-#[cfg(not(windows))]
-fn process_exists(pid: u32) -> bool {
-    Command::new("kill")
-        .arg("-0")
-        .arg(pid.to_string())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
-}
-
-/// `taskkill` reports a missing process with a failure code and gives no cheap way to tell it apart
-/// from a denied request, so a failed Windows stop is treated as "not running".
-#[cfg(windows)]
-fn process_exists(_pid: u32) -> bool {
-    false
 }
 
 /// The server's exit code, forwarded. A process killed by a signal has no code and reports failure.
@@ -598,14 +662,69 @@ hardware = "cpu"
     }
 
     #[test]
-    fn pid_file_round_trips() {
+    fn server_record_round_trips_and_reads_older_records() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = pid_path(dir.path(), "main");
-        assert_eq!(read_pid(&path).expect("absent is fine"), None);
-        write_pid(&path, 4242).expect("write");
-        assert_eq!(read_pid(&path).expect("read"), Some(4242));
+        assert_eq!(read_record(&path).expect("absent is fine"), None);
+        write_record(&path, 4242, Path::new("llama-server")).expect("write");
+        assert_eq!(
+            read_record(&path).expect("read"),
+            Some(ServerRecord {
+                pid: 4242,
+                bin: Some(PathBuf::from("llama-server")),
+            })
+        );
+        fs::write(&path, "4242\n").expect("older record");
+        assert_eq!(
+            read_record(&path).expect("read"),
+            Some(ServerRecord {
+                pid: 4242,
+                bin: None
+            })
+        );
         fs::write(&path, "not a pid").expect("corrupt");
-        assert!(read_pid(&path).is_err());
+        assert!(read_record(&path).is_err());
+    }
+
+    #[test]
+    fn records_never_hold_a_process_group_or_wrapped_pid() {
+        for text in ["0", "pid=0", "4294967295", "pid=2147483648", "-1", "pid="] {
+            assert!(parse_record(text).is_err(), "{text}");
+        }
+        assert!(parse_record("pid=2147483647").is_ok());
+    }
+
+    #[test]
+    fn program_names_match_ignoring_case_and_exe() {
+        assert!(same_program(
+            "LLAMA-SERVER.EXE",
+            Path::new("runtimes/b11756/llama-server.exe")
+        ));
+        assert!(same_program("llama-server", Path::new("/opt/llama-server")));
+        assert!(!same_program("notepad.exe", Path::new("llama-server.exe")));
+    }
+
+    #[test]
+    fn a_reused_pid_is_reported_not_signalled() {
+        // This test process stands in for an unrelated program that got the recorded PID.
+        let record = ServerRecord {
+            pid: std::process::id(),
+            bin: Some(PathBuf::from("llama-server.exe")),
+        };
+        assert!(matches!(
+            record_state(&record, Path::new("llama-server.exe")),
+            RecordState::Reused(_)
+        ));
+        let ours = ServerRecord {
+            pid: std::process::id(),
+            bin: Some(std::env::current_exe().expect("current exe")),
+        };
+        assert_eq!(record_state(&ours, Path::new("x")), RecordState::Running);
+        let gone = ServerRecord {
+            pid: u32::try_from(i32::MAX - 1).expect("fits"),
+            bin: None,
+        };
+        assert_eq!(record_state(&gone, Path::new("x")), RecordState::Gone);
     }
 
     #[test]

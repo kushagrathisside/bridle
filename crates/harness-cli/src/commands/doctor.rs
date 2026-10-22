@@ -5,11 +5,14 @@
 //! cannot be found or the config has errors, so `doctor` is safe to run on a bare machine.
 
 use std::fs;
+use std::io;
+use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use harness_core::config::{Config, ConfigIssue, ModelConfig, RuntimeConfig, Severity};
 use harness_runtime::health::{Status, summarize};
+use harness_runtime::launcher;
 use harness_runtime::manifest::parse_llama_version;
 use harness_runtime::sysprobe::{self, GpuInfo, SystemReport, WslInfo};
 use serde::Serialize;
@@ -314,24 +317,74 @@ fn model_file_entry(config: &Config, slot: &str) -> ModelFileEntry {
 }
 
 /// Quick health of one endpoint. An endpoint that is down is a warning here: the server is often
-/// simply not started yet.
+/// simply not started yet. When a slot the harness launches does not answer, its port is checked
+/// too, because another program holding it makes `agent models serve` fail.
 fn endpoint_entry(slot: &str, model: &ModelConfig) -> EndpointEntry {
     let checks = check_slot(model, true);
     let status = summarize(&checks);
     let level = endpoint_level(status);
-    let detail = match checks
+    let mut detail = match checks
         .iter()
         .find(|check| matches!(check.status, Status::Fail | Status::Warn))
     {
         Some(check) => format!("{}: {}", wire_name(&check.kind), check.detail),
         None => "quick checks passed".to_owned(),
     };
+    if status != Status::Pass
+        && model.launch.is_some()
+        && let Ok((host, port)) = launcher::parse_endpoint(&model.endpoint)
+        && let Some(note) = port_note(port_state(&host, port), port, slot)
+    {
+        detail = format!("{detail}; {note}");
+    }
     EndpointEntry {
         slot: slot.to_owned(),
         endpoint: model.endpoint.clone(),
         status,
         level,
         detail,
+    }
+}
+
+/// Whether the server's port could be bound now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PortState {
+    Free,
+    /// Another program listens on it.
+    InUse,
+    /// The OS refuses the bind: on Windows usually a port in an excluded range (Hyper-V, WSL),
+    /// elsewhere a privileged port.
+    Reserved,
+    /// The bind failed for another reason.
+    Unknown,
+}
+
+fn port_state(host: &str, port: u16) -> PortState {
+    classify_bind(TcpListener::bind((host, port)).map(drop))
+}
+
+fn classify_bind(result: io::Result<()>) -> PortState {
+    match result {
+        Ok(()) => PortState::Free,
+        Err(err) if err.kind() == io::ErrorKind::AddrInUse => PortState::InUse,
+        Err(err) if err.kind() == io::ErrorKind::PermissionDenied => PortState::Reserved,
+        Err(_) => PortState::Unknown,
+    }
+}
+
+fn port_note(state: PortState, port: u16, slot: &str) -> Option<String> {
+    match state {
+        PortState::Free | PortState::Unknown => None,
+        PortState::InUse => Some(format!(
+            "port {port} is in use by another program, so `agent models serve {slot}` cannot bind it"
+        )),
+        PortState::Reserved if cfg!(windows) => Some(format!(
+            "port {port} cannot be bound: it is probably in an excluded port range (see \
+             `netsh interface ipv4 show excludedportrange protocol=tcp`); choose another port"
+        )),
+        PortState::Reserved => Some(format!(
+            "port {port} cannot be bound (permission denied; ports below 1024 need privileges)"
+        )),
     }
 }
 
@@ -689,6 +742,40 @@ model_file = "model.gguf"
         assert_eq!(entry.status, Status::Fail);
         assert_eq!(entry.level, Level::Warn);
         assert!(entry.detail.starts_with("health:"), "{}", entry.detail);
+    }
+
+    #[test]
+    fn a_port_held_by_another_program_is_reported() {
+        // A listener that never answers HTTP: the quick health check fails, and the port is busy.
+        let holder = TcpListener::bind(("127.0.0.1", 0)).expect("bind an ephemeral port");
+        let port = holder.local_addr().expect("local addr").port();
+        let mut config = config();
+        let model = config.models.get_mut("main").expect("main");
+        model.endpoint = format!("http://127.0.0.1:{port}/v1");
+        model.timeout_ms = 1_000;
+        model.retries = 0;
+        let entry = endpoint_entry("main", &config.models["main"]);
+        assert_eq!(entry.level, Level::Warn);
+        assert!(
+            entry.detail.contains("in use by another program"),
+            "{}",
+            entry.detail
+        );
+    }
+
+    #[test]
+    fn bind_errors_map_to_port_states() {
+        assert_eq!(classify_bind(Ok(())), PortState::Free);
+        assert_eq!(
+            classify_bind(Err(io::ErrorKind::AddrInUse.into())),
+            PortState::InUse
+        );
+        assert_eq!(
+            classify_bind(Err(io::ErrorKind::PermissionDenied.into())),
+            PortState::Reserved
+        );
+        assert!(port_note(PortState::Reserved, 8001, "main").is_some_and(|n| n.contains("8001")));
+        assert_eq!(port_note(PortState::Free, 8001, "main"), None);
     }
 
     #[test]

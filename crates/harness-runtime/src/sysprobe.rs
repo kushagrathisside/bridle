@@ -388,6 +388,56 @@ pub fn command_version(bin: &Path, args: &[&str]) -> Option<String> {
     first_nonempty_line(&lossy(&out.stdout)).or_else(|| first_nonempty_line(&lossy(&out.stderr)))
 }
 
+/// Runs `<bin> <args...>` and returns its whole output, stdout then stderr. `None` when the
+/// binary is missing or the run exceeds 5 s (it is killed).
+pub fn command_output(bin: &Path, args: &[&str]) -> Option<String> {
+    let mut cmd = Command::new(bin);
+    cmd.args(args);
+    let out = run_bounded(&mut cmd, PROBE_TIMEOUT)?;
+    let mut text = lossy(&out.stdout);
+    text.push('\n');
+    text.push_str(&lossy(&out.stderr));
+    Some(text)
+}
+
+/// The executable file name of running process `pid` (for example `llama-server.exe`), or
+/// `None` when no such process exists or it cannot be inspected. Used to check that a recorded
+/// PID still belongs to the program that was started, before signalling it.
+pub fn process_image(pid: u32) -> Option<String> {
+    #[cfg(windows)]
+    {
+        let filter = format!("PID eq {pid}");
+        let mut cmd = Command::new("tasklist");
+        cmd.args(["/FI", &filter, "/FO", "CSV", "/NH"]);
+        let out = run_bounded(&mut cmd, PROBE_TIMEOUT)?;
+        parse_tasklist_csv(&lossy(&out.stdout))
+    }
+    #[cfg(not(windows))]
+    {
+        if let Ok(exe) = std::fs::read_link(format!("/proc/{pid}/exe")) {
+            return exe
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned());
+        }
+        let mut cmd = Command::new("ps");
+        cmd.args(["-p", &pid.to_string(), "-o", "comm="]);
+        let out = run_bounded(&mut cmd, PROBE_TIMEOUT)?;
+        first_nonempty_line(&lossy(&out.stdout))
+            .map(|comm| comm.rsplit('/').next().unwrap_or(&comm).to_owned())
+    }
+}
+
+/// The image name from `tasklist /FO CSV /NH` output: the first quoted field of the first row.
+/// `tasklist` prints an `INFO:` line instead of a row when no process matches.
+pub fn parse_tasklist_csv(output: &str) -> Option<String> {
+    let row = output
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with('"'))?;
+    let name = row.strip_prefix('"')?.split('"').next()?;
+    (!name.is_empty()).then(|| name.to_owned())
+}
+
 fn first_nonempty_line(text: &str) -> Option<String> {
     text.lines()
         .map(str::trim)
@@ -588,6 +638,34 @@ mod tests {
             best_mount_free_space([] as [(&Path, u64); 0], Path::new("/")),
             None
         );
+    }
+
+    #[test]
+    fn tasklist_rows_give_the_image_name_and_info_lines_give_none() {
+        assert_eq!(
+            parse_tasklist_csv(
+                "\r\n\"llama-server.exe\",\"12345\",\"Console\",\"1\",\"1,234,567 K\"\r\n"
+            )
+            .as_deref(),
+            Some("llama-server.exe")
+        );
+        assert_eq!(
+            parse_tasklist_csv(
+                "INFO: No tasks are running which match the specified criteria.\r\n"
+            ),
+            None
+        );
+        assert_eq!(parse_tasklist_csv(""), None);
+    }
+
+    #[test]
+    fn process_image_names_this_test_binary_and_nothing_for_a_free_pid() {
+        let own = process_image(std::process::id()).expect("this process is running");
+        let exe = std::env::current_exe().expect("current exe");
+        let expected = exe.file_name().expect("file name").to_string_lossy();
+        assert!(own.eq_ignore_ascii_case(&expected), "{own} vs {expected}");
+        // The highest PID a record may hold is almost never in use.
+        assert_eq!(process_image(i32::MAX as u32 - 1), None);
     }
 
     #[test]
