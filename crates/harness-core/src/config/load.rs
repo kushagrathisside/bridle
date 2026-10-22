@@ -49,6 +49,17 @@ pub enum ConfigError {
     /// The document is not valid TOML or does not match the [`Config`] schema.
     #[error("invalid config in {path}: {message}")]
     Parse { path: String, message: String },
+    /// A repository config sets something only the machine config or an explicit file may set
+    /// (see `config::trust`).
+    #[error(
+        "{path}: a repository config may not set `{key}` ({reason}); move it to the machine config \
+         or pass the file with --config"
+    )]
+    Untrusted {
+        path: PathBuf,
+        key: String,
+        reason: String,
+    },
 }
 
 /// Which files participate in a layered load. Built by the CLI from flags, env and discovery.
@@ -118,18 +129,19 @@ pub fn load_layered(
     let mut merged = toml::Table::new();
     let mut files = Vec::new();
 
-    for path in [&sources.machine, &sources.repo]
+    // The repository layer is the only untrusted one: it arrives with the repository.
+    for (path, trusted) in [(&sources.machine, true), (&sources.repo, false)]
         .into_iter()
-        .flatten()
-        .filter(|path| path.exists())
+        .filter_map(|(path, trusted)| path.as_ref().map(|path| (path, trusted)))
+        .filter(|(path, _)| path.exists())
     {
-        read_layer(path, &mut merged, &mut files)?;
+        read_layer(path, trusted, &mut merged, &mut files)?;
     }
     if let Some(path) = &sources.explicit {
         if !path.exists() {
             return Err(ConfigError::NotFound(path.clone()));
         }
-        read_layer(path, &mut merged, &mut files)?;
+        read_layer(path, true, &mut merged, &mut files)?;
     }
 
     let source_label = files
@@ -149,9 +161,11 @@ pub fn load_layered(
     Ok(LoadedConfig { config, files })
 }
 
-/// Reads one layer, merges it into `merged` and records it in `files`.
+/// Reads one layer, merges it into `merged` and records it in `files`. An untrusted layer is
+/// first checked against the layers below it (`config::trust`).
 fn read_layer(
     path: &Path,
+    trusted: bool,
     merged: &mut toml::Table,
     files: &mut Vec<PathBuf>,
 ) -> Result<(), ConfigError> {
@@ -162,6 +176,9 @@ fn read_layer(
     let table = text
         .parse::<toml::Table>()
         .map_err(|err| parse_error(path.display().to_string(), err))?;
+    if !trusted {
+        super::trust::check_repo_layer(path, &table, merged)?;
+    }
     merge_toml(merged, table);
     files.push(path.to_path_buf());
     Ok(())
@@ -378,6 +395,31 @@ mod tests {
             Err(ConfigError::NotFound(path)) => assert_eq!(path, missing),
             other => panic!("expected NotFound, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn repository_layer_may_not_choose_executables_but_an_explicit_file_may() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let body = "[runtimes.r]\nkind = \"llama_cpp\"\nserver_bin = \"/usr/bin/evil\"\n";
+        let repo = write_file(dir.path(), "local-agent.toml", body);
+        let from_repo = ConfigSources {
+            repo: Some(repo.clone()),
+            ..ConfigSources::default()
+        };
+        match load_layered(&from_repo, &no_env) {
+            Err(ConfigError::Untrusted { path, key, .. }) => {
+                assert_eq!(path, repo);
+                assert_eq!(key, "runtimes.r.server_bin");
+            }
+            other => panic!("expected Untrusted, got {other:?}"),
+        }
+
+        let explicit = ConfigSources {
+            explicit: Some(repo),
+            ..ConfigSources::default()
+        };
+        let loaded = load_layered(&explicit, &no_env).expect("an explicit file is trusted");
+        assert!(loaded.config.runtimes.contains_key("r"));
     }
 
     #[test]

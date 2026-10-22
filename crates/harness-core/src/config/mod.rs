@@ -11,6 +11,7 @@
 
 mod load;
 mod schema;
+mod trust;
 mod validate;
 
 pub use load::{
@@ -45,6 +46,46 @@ fn resolve_against(path: &Path, base: Option<&Path>) -> Option<PathBuf> {
     } else {
         base.map(|b| b.join(path))
     }
+}
+
+/// `llama-server` flags that `launch.extra_args` may not contain (rule V22): the ones the launcher
+/// sets itself (listener, model, alias, context), and the ones that fetch a model, require a
+/// key, serve files, or write files anywhere on disk.
+pub const RESERVED_LAUNCH_FLAGS: &[&str] = &[
+    "--host",
+    "--port",
+    "-m",
+    "--model",
+    "-mu",
+    "--model-url",
+    "-hf",
+    "-hfr",
+    "--hf-repo",
+    "-hff",
+    "--hf-file",
+    "-hft",
+    "--hf-token",
+    "-dr",
+    "--docker-repo",
+    "-a",
+    "--alias",
+    "-c",
+    "--ctx-size",
+    "--api-key",
+    "--api-key-file",
+    "--path",
+    "--ssl-key-file",
+    "--ssl-cert-file",
+    "--log-file",
+    "--slot-save-path",
+];
+
+/// The first entry of `extra_args` that is a reserved flag, as `--flag` or `--flag=value`.
+pub fn reserved_launch_flag(extra_args: &[String]) -> Option<&str> {
+    extra_args.iter().map(String::as_str).find(|arg| {
+        let flag = arg.split_once('=').map_or(*arg, |(flag, _)| flag);
+        RESERVED_LAUNCH_FLAGS.contains(&flag)
+    })
 }
 
 /// `Path::is_absolute` is platform-specific; config files written on Windows (`D:\models`) must

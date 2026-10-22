@@ -374,6 +374,25 @@ fn http_400_is_not_retried() -> TestResult {
 }
 
 #[test]
+fn oversized_sse_line_is_an_invalid_response_not_a_buffer() -> TestResult {
+    // One "data:" line of 1.5 MiB, past the 1 MiB per-line cap.
+    let huge = format!("data: {}\n\ndata: [DONE]\n\n", "x".repeat(1536 * 1024));
+    let server = FakeServer::start(vec![Reply::sse(&huge)])?;
+    let provider = openai(server.port, 0)?;
+
+    let err = provider
+        .chat_stream(&user_request("hello"), &mut |_: &str| {})
+        .err()
+        .ok_or("expected an error")?;
+
+    assert!(
+        matches!(&err, ProviderError::InvalidResponse(message) if message.contains("exceeds")),
+        "got {err:?}"
+    );
+    Ok(())
+}
+
+#[test]
 fn connection_refused_maps_to_unreachable() -> TestResult {
     // Take a free port and release it, so nothing is listening there.
     let port = TcpListener::bind("127.0.0.1:0")?.local_addr()?.port();

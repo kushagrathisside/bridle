@@ -36,7 +36,7 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use harness_core::config::{LaunchConfig, LoadMode, ModelConfig};
+use harness_core::config::{LaunchConfig, LoadMode, ModelConfig, reserved_launch_flag};
 use thiserror::Error;
 
 /// `CREATE_NO_WINDOW`: stops a console-subsystem server from opening its own console window.
@@ -55,6 +55,10 @@ pub enum LaunchError {
     /// The endpoint names a non-loopback host and the caller did not allow remote binding.
     #[error("refusing to bind a model server to non-loopback host {0}")]
     NonLoopbackBind(String),
+    /// `launch.extra_args` holds a flag the launcher owns or one that rebinds or redirects the
+    /// server (config rule V22). Checked here too, so a bypassed validation cannot rebind it.
+    #[error("launch.extra_args may not contain {0}")]
+    ReservedFlag(String),
     /// The inference server executable does not exist.
     #[error("inference server binary not found: {}", .0.display())]
     MissingBinary(PathBuf),
@@ -82,6 +86,9 @@ pub fn server_args(
     let (host, port) = parse_endpoint(&model.endpoint)?;
     if !allow_remote_bind && !is_loopback(&host) {
         return Err(LaunchError::NonLoopbackBind(host));
+    }
+    if let Some(flag) = reserved_launch_flag(&launch.extra_args) {
+        return Err(LaunchError::ReservedFlag(flag.to_owned()));
     }
 
     let mut args = Vec::new();
@@ -306,6 +313,24 @@ mod tests {
         ));
         let allowed = server_args(&model(endpoint), &launch(), Path::new("m.gguf"), true);
         assert!(allowed.is_ok());
+    }
+
+    #[test]
+    fn extra_args_cannot_rebind_the_server_even_without_validation() {
+        let endpoint = "http://127.0.0.1:8001/v1";
+        for extra in [
+            ["--host", "0.0.0.0"],
+            ["--port=9", "x"],
+            ["--log-file", "x"],
+        ] {
+            let mut launch = launch();
+            launch.extra_args = extra.iter().map(|a| (*a).to_owned()).collect();
+            let refused = server_args(&model(endpoint), &launch, Path::new("m.gguf"), false);
+            assert!(
+                matches!(refused, Err(LaunchError::ReservedFlag(_))),
+                "{extra:?}: {refused:?}"
+            );
+        }
     }
 
     #[test]

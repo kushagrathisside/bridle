@@ -242,14 +242,49 @@ impl ModelProvider for OpenAiCompatProvider {
         // would repeat output.
         let mut resp = self.with_retries(|| self.post_json("/chat/completions", &body))?;
         let mut acc = StreamAccumulator::new(started);
-        for line in BufReader::new(resp.body_mut().as_reader()).lines() {
-            let line = line.map_err(|e| transport_error(ureq::Error::from(e), self.timeout))?;
-            if acc.feed_line(&line, on_delta)? {
+        let mut reader = BufReader::new(resp.body_mut().as_reader());
+        let mut raw = Vec::new();
+        while read_sse_line(&mut reader, &mut raw)
+            .map_err(|e| transport_error(ureq::Error::from(e), self.timeout))?
+        {
+            let line = std::str::from_utf8(&raw)
+                .map_err(|_| ProviderError::InvalidResponse("SSE line is not UTF-8".to_owned()))?;
+            if acc.feed_line(line, on_delta)? {
                 break;
             }
         }
         Ok(acc.finish(&self.model_id))
     }
+}
+
+/// The longest SSE line accepted. A delta line is a few hundred bytes and a usage chunk a few
+/// kilobytes; a longer line means a broken or hostile server, and is not buffered.
+const MAX_SSE_LINE_BYTES: usize = 1024 * 1024;
+
+/// Reads one line into `line` without its `\n` or `\r\n`. Returns `Ok(false)` at end of stream,
+/// and an `InvalidData` error for a line longer than [`MAX_SSE_LINE_BYTES`].
+fn read_sse_line(reader: &mut impl BufRead, line: &mut Vec<u8>) -> io::Result<bool> {
+    line.clear();
+    let limit = MAX_SSE_LINE_BYTES + 1;
+    let read = reader
+        .by_ref()
+        .take(u64::try_from(limit).unwrap_or(u64::MAX))
+        .read_until(b'\n', line)?;
+    if read == 0 {
+        return Ok(false);
+    }
+    if line.last() == Some(&b'\n') {
+        line.pop();
+        if line.last() == Some(&b'\r') {
+            line.pop();
+        }
+    } else if read == limit {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("SSE line exceeds {MAX_SSE_LINE_BYTES} bytes"),
+        ));
+    }
+    Ok(true)
 }
 
 /// Status and body of a reply whose status the caller interprets.
