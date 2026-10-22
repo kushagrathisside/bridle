@@ -5,13 +5,13 @@
 //! command it runs) and then ask [`ToolPolicy::evaluate`]. The policy inspects the real arguments;
 //! a model cannot talk its way past it (R-25.2, R-59).
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use super::ToolClass;
 use super::command_risk::{CommandAssessment, ShellKind, argument_words, assess_command};
-use super::path_guard::PathGuard;
+use super::path_guard::{PathGuard, PathViolation, has_percent_expansion, is_unresolvable};
 use super::redact::is_secret_file;
 use crate::config::{SecuritySection, Verdict};
 
@@ -82,6 +82,19 @@ impl PolicyDecision {
 
 /// Harness MCP tools that only read state.
 const READ_ONLY_HARNESS_TOOLS: &[&str] = &["git_status", "git_diff", "harness_info"];
+/// Harness and host control files, relative to the workspace root (lowercase). The harness reads
+/// its profile, and the host its config, on every call, so the agent must not change them.
+const PROTECTED_ROOT_ENTRIES: &[&str] = &[
+    "local-agent.toml",
+    "opencode.json",
+    "opencode.jsonc",
+    ".opencode",
+    ".local-agent",
+    GIT_DIR,
+];
+/// The git metadata name. `core.fsmonitor` and hooks in it run code on later git calls, so it is
+/// protected at any depth, not only at the root.
+const GIT_DIR: &str = ".git";
 /// Harness MCP tools that execute configured commands; each command is policy-checked inside the
 /// tool itself, so the call is classed EXECUTE_SAFE here.
 const EXECUTING_HARNESS_TOOLS: &[&str] = &["run_verification"];
@@ -146,26 +159,91 @@ impl ToolPolicy {
     /// or a path outside the authorised roots. Returns `None` when every argument passes.
     fn shell_argument_violation(&self, command: &str, base: &Path) -> Option<PolicyDecision> {
         for word in argument_words(command) {
-            if is_null_device(&word) {
-                continue;
+            // A word too large to expand is left to `unresolved_argument`.
+            for candidate in argument_candidates(&word).unwrap_or_default() {
+                if let Some(decision) = self.argument_violation(&candidate, base) {
+                    return Some(decision);
+                }
             }
-            if is_secret_file(Path::new(&word)) || glob_may_match_secret(&word) {
-                return Some(PolicyDecision::new(
-                    Verdict::Deny,
-                    ToolClass::ReadOnly,
-                    "secret_file",
-                    format!("`{word}` may name credentials; shell access to it is denied"),
-                ));
-            }
-            if looks_like_path(&word)
-                && let Err(v) = self.guard.check(Path::new(&word), base)
+        }
+        None
+    }
+
+    /// The secret and path checks for one argument text (see [`argument_candidates`]).
+    fn argument_violation(&self, word: &str, base: &Path) -> Option<PolicyDecision> {
+        if is_null_device(word) {
+            return None;
+        }
+        if is_secret_file(Path::new(word)) || glob_may_match_secret(word) {
+            return Some(PolicyDecision::new(
+                Verdict::Deny,
+                ToolClass::ReadOnly,
+                "secret_file",
+                format!("`{word}` may name credentials; shell access to it is denied"),
+            ));
+        }
+        if looks_like_path(word)
+            && let Err(v) = self.guard.check(Path::new(word), base)
+        {
+            return Some(guard_denial(word, &v));
+        }
+        None
+    }
+
+    /// Denies a shell argument that only the shell can resolve at run time (`~`, `$HOME`, `$(...)`,
+    /// a backtick, `%NAME%` in a path). Such a word is checked only when the command would
+    /// otherwise run: a command already classed Ask or Deny keeps its own rule.
+    fn unresolved_argument(&self, command: &str) -> Option<PolicyDecision> {
+        for word in argument_words(command) {
+            let Some(candidates) = argument_candidates(&word) else {
+                return Some(unresolved_denial(&word));
+            };
+            if let Some(candidate) = candidates
+                .iter()
+                .find(|c| !is_null_device(c) && is_unresolved_argument(c))
             {
-                return Some(PolicyDecision::new(
-                    Verdict::Deny,
-                    ToolClass::Privileged,
-                    "path_guard",
-                    format!("{word}: {v}"),
-                ));
+                return Some(unresolved_denial(candidate));
+            }
+        }
+        None
+    }
+
+    /// Whether a resolved path is a harness or host control file: a root-level entry from
+    /// [`PROTECTED_ROOT_ENTRIES`] inside the workspace, or any `.git` file or directory below it.
+    fn is_protected(&self, resolved: &Path) -> bool {
+        let Ok(relative) = resolved.strip_prefix(&self.workspace) else {
+            return false;
+        };
+        let fold = |name: &str| {
+            if self.guard.windows_rules() {
+                name.to_ascii_lowercase()
+            } else {
+                name.to_owned()
+            }
+        };
+        let names: Vec<String> = relative
+            .components()
+            .filter_map(|c| match c {
+                Component::Normal(name) => name.to_str().map(fold),
+                _ => None,
+            })
+            .collect();
+        let root_entry = names
+            .first()
+            .is_some_and(|first| PROTECTED_ROOT_ENTRIES.contains(&first.as_str()));
+        root_entry || names.iter().any(|name| name == GIT_DIR)
+    }
+
+    /// The first argument or redirect target of `command` that names a protected control file,
+    /// resolved against `base` the way the shell would resolve it.
+    fn shell_touches_protected(&self, command: &str, base: &Path) -> Option<String> {
+        for word in argument_words(command) {
+            for candidate in argument_candidates(&word).unwrap_or_default() {
+                if let Ok(resolved) = self.guard.check(Path::new(&candidate), base)
+                    && self.is_protected(&resolved)
+                {
+                    return Some(candidate);
+                }
             }
         }
         None
@@ -180,7 +258,7 @@ impl ToolPolicy {
                     return PolicyDecision::new(
                         Verdict::Deny,
                         ToolClass::Privileged,
-                        "path_guard",
+                        path_rule(&v),
                         format!("working directory rejected: {v}"),
                     );
                 }
@@ -188,13 +266,15 @@ impl ToolPolicy {
             None => self.workspace.clone(),
         };
         for p in &req.paths {
-            if let Err(v) = self.guard.check(Path::new(p), &base) {
-                return PolicyDecision::new(
-                    Verdict::Deny,
-                    ToolClass::Privileged,
-                    "path_guard",
-                    format!("{p}: {v}"),
-                );
+            match self.guard.check(Path::new(p), &base) {
+                Err(v) => return guard_denial(p, &v),
+                Ok(resolved) => {
+                    if matches!(req.kind, ToolKind::Edit | ToolKind::Write | ToolKind::Patch)
+                        && self.is_protected(&resolved)
+                    {
+                        return protected_denial(p);
+                    }
+                }
             }
         }
 
@@ -274,8 +354,23 @@ impl ToolPolicy {
                     return decision;
                 }
                 let a = self.assess(cmd);
+                // Reads of a control file are fine; a command that can change something is not.
+                if a.class > ToolClass::ReadOnly {
+                    if self.is_protected(&base) {
+                        return protected_denial(&base.display().to_string());
+                    }
+                    if let Some(word) = self.shell_touches_protected(cmd, &base) {
+                        return protected_denial(&word);
+                    }
+                }
+                let verdict = self.class_verdict(a.class);
+                if verdict == Verdict::Allow
+                    && let Some(decision) = self.unresolved_argument(cmd)
+                {
+                    return decision;
+                }
                 PolicyDecision {
-                    verdict: self.class_verdict(a.class),
+                    verdict,
                     class: a.class,
                     rule: "command_risk".to_owned(),
                     reasons: a.reasons,
@@ -307,12 +402,126 @@ impl ToolPolicy {
     }
 }
 
+/// The denial for a path the guard refused. An unresolvable path gets its own rule name.
+fn guard_denial(word: &str, violation: &PathViolation) -> PolicyDecision {
+    PolicyDecision::new(
+        Verdict::Deny,
+        ToolClass::Privileged,
+        path_rule(violation),
+        format!("{word}: {violation}"),
+    )
+}
+
+fn protected_denial(word: &str) -> PolicyDecision {
+    PolicyDecision::new(
+        Verdict::Deny,
+        ToolClass::Write,
+        "protected_path",
+        format!("{word}: harness and host control files are changed by the user, not the agent"),
+    )
+}
+
+fn path_rule(violation: &PathViolation) -> &'static str {
+    match violation {
+        PathViolation::Unresolved => "unresolved_path",
+        _ => "path_guard",
+    }
+}
+
+/// Words the command resolves at run time. `command_risk` replaces `$(...)`, backticks and
+/// `<(...)` with the `<subst>` marker, so a substitution is caught here as well.
+fn is_unresolved_argument(word: &str) -> bool {
+    is_unresolvable(word)
+        || word.contains("<subst>")
+        || (looks_like_path(word) && has_percent_expansion(word))
+}
+
 /// Null devices may be written to by shell redirection; they are not paths inside the workspace.
 fn is_null_device(word: &str) -> bool {
     matches!(
         word,
         "/dev/null" | "NUL" | "nul" | "$null" | "$Null" | "$NULL"
     )
+}
+
+fn unresolved_denial(word: &str) -> PolicyDecision {
+    PolicyDecision::new(
+        Verdict::Deny,
+        ToolClass::Privileged,
+        "unresolved_path",
+        format!("`{word}` cannot be resolved statically; shell access to it is denied"),
+    )
+}
+
+/// The texts an argument can stand for. The word is brace-expanded (`.{env,netrc}`), and a
+/// `--opt=value` option also contributes its value after the first `=`, which is a path when the
+/// option names one (`--git-dir=/x/.git`). `None` when the expansion is too large to check.
+fn argument_candidates(word: &str) -> Option<Vec<String>> {
+    let mut texts = vec![word.to_owned()];
+    if word.starts_with('-')
+        && let Some((_, value)) = word.split_once('=')
+        && !value.is_empty()
+    {
+        texts.push(value.to_owned());
+    }
+    let mut out = Vec::new();
+    for text in texts {
+        out.extend(expand_braces(&text)?);
+    }
+    Some(out)
+}
+
+/// Expands bash brace alternatives into every word they name: `.{env,netrc}` gives `.env` and
+/// `.netrc`. A group without a top-level comma is literal, as in the shell. `None` when the result
+/// would be too large to check, which the caller treats as unresolvable.
+fn expand_braces(word: &str) -> Option<Vec<String>> {
+    const MAX_EXPANSIONS: usize = 256;
+    let chars: Vec<char> = word.chars().collect();
+    for open in (0..chars.len()).filter(|&i| chars[i] == '{') {
+        let Some((close, commas)) = brace_group(&chars, open) else {
+            continue;
+        };
+        if commas.is_empty() {
+            continue;
+        }
+        let prefix: String = chars[..open].iter().collect();
+        let suffix: String = chars[close + 1..].iter().collect();
+        let mut out = Vec::new();
+        let mut start = open + 1;
+        for end in commas.iter().copied().chain(std::iter::once(close)) {
+            let alternative: String = chars[start..end].iter().collect();
+            // Expanding the result again handles later groups, including those in `suffix`.
+            for expanded in expand_braces(&format!("{prefix}{alternative}{suffix}"))? {
+                out.push(expanded);
+                if out.len() > MAX_EXPANSIONS {
+                    return None;
+                }
+            }
+            start = end + 1;
+        }
+        return Some(out);
+    }
+    Some(vec![word.to_owned()])
+}
+
+/// The `}` closing the `{` at `open`, and the commas that separate its top-level alternatives.
+fn brace_group(chars: &[char], open: usize) -> Option<(usize, Vec<usize>)> {
+    let mut depth = 0usize;
+    let mut commas = Vec::new();
+    for (k, &c) in chars.iter().enumerate().skip(open) {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some((k, commas));
+                }
+            }
+            ',' if depth == 1 => commas.push(k),
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Heuristic: an argument that could name a file system location.
@@ -338,53 +547,157 @@ fn is_url(word: &str) -> bool {
         && !rest.is_empty()
 }
 
-/// Representative secret names. A glob argument is denied when it could match any of them,
-/// because the shell expands `.e*` to `.env` before the program runs.
+/// One representative of every name rule in `is_secret_file`: exact names, suffixes, `.env.*`, and
+/// the `.aws` and `.ssh` directory rules. A glob word is denied when it could match one, because
+/// the shell expands `.e*` to `.env` and `.git-cred*` to `.git-credentials` before the program runs.
+/// Each entry must be a secret by `is_secret_file`; `glob_prefixes_of_every_secret_name_are_denied`
+/// checks that. The rule lists are private to `redact.rs`, so this mirror is maintained by hand.
 const SECRET_SAMPLES: &[&str] = &[
-    ".env",
-    ".env.local",
     ".netrc",
+    "_netrc",
     ".npmrc",
+    ".pypirc",
+    ".git-credentials",
     "id_rsa",
+    "id_dsa",
+    "id_ecdsa",
     "id_ed25519",
+    "cookies",
+    "login data",
     "server.pem",
     "server.key",
-    "credentials",
-    "secrets.json",
+    "server.p12",
+    "server.pfx",
+    "store.kdbx",
+    ".env",
+    ".env.local",
+    ".aws/credentials",
+    ".ssh/id_rsa",
 ];
 
+/// Further names the glob check also protects. They are not secret by `is_secret_file`, but a
+/// wildcard that reaches them is refused as it was before the samples were aligned with the rules.
+const SECRET_EXTRA_SAMPLES: &[&str] = &["credentials", "secrets.json"];
+
+/// Whether a word with wildcards could expand to one of the secret names. A word without `*`, `?`
+/// or `[` is a literal, and `is_secret_file` judges it instead.
 fn glob_may_match_secret(word: &str) -> bool {
-    if !word.contains(['*', '?']) {
+    if !word.contains(['*', '?', '[']) {
         return false;
     }
+    let pattern = parse_glob(word);
+    // Name rules hold in any directory, so the last component of the word is matched against the
+    // last component of each sample too (`keys/*.pem` against `server.pem`).
+    let name = parse_glob(last_component(word));
     SECRET_SAMPLES
         .iter()
-        .any(|sample| wildcard_matches(word, sample))
+        .chain(SECRET_EXTRA_SAMPLES)
+        .any(|sample| glob_matches(&pattern, sample) || glob_matches(&name, last_component(sample)))
 }
 
-/// Shell-style `*` and `?` matching over whole strings.
-fn wildcard_matches(pattern: &str, text: &str) -> bool {
-    let p: Vec<char> = pattern.chars().collect();
-    let t: Vec<char> = text.chars().collect();
-    let (mut pi, mut ti) = (0usize, 0usize);
-    let (mut star, mut mark) = (None::<usize>, 0usize);
-    while ti < t.len() {
-        if pi < p.len() && (p[pi] == '?' || p[pi] == t[ti]) {
-            pi += 1;
-            ti += 1;
-        } else if pi < p.len() && p[pi] == '*' {
-            star = Some(pi);
-            mark = ti;
-            pi += 1;
-        } else if let Some(s) = star {
-            pi = s + 1;
-            mark += 1;
-            ti = mark;
-        } else {
-            return false;
+/// The part of a path after its last separator, for either separator style.
+fn last_component(path: &str) -> &str {
+    path.rsplit(['/', '\\']).next().unwrap_or(path)
+}
+
+/// One token of a shell glob.
+#[derive(Debug, PartialEq, Eq)]
+enum GlobToken {
+    /// A literal character.
+    Literal(char),
+    /// `?`: any one character.
+    AnyChar,
+    /// `*`: any run of characters, including none.
+    AnyRun,
+    /// `[...]` or `[!...]`: one character from the inclusive ranges, or outside them if negated.
+    Class {
+        negated: bool,
+        ranges: Vec<(char, char)>,
+    },
+}
+
+impl GlobToken {
+    /// Whether this single-character token matches `c`, ignoring ASCII case like the secret rules.
+    /// `AnyRun` spans several characters, so [`glob_matches`] handles it instead.
+    fn matches(&self, c: char) -> bool {
+        match self {
+            Self::Literal(literal) => literal.eq_ignore_ascii_case(&c),
+            Self::AnyChar => true,
+            Self::AnyRun => false,
+            Self::Class { negated, ranges } => {
+                let hit = [c, c.to_ascii_lowercase(), c.to_ascii_uppercase()]
+                    .into_iter()
+                    .any(|x| ranges.iter().any(|&(lo, hi)| lo <= x && x <= hi));
+                hit != *negated
+            }
         }
     }
-    p[pi..].iter().all(|&c| c == '*')
+}
+
+fn parse_glob(pattern: &str) -> Vec<GlobToken> {
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut tokens = Vec::with_capacity(chars.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let (token, next) = match chars[i] {
+            '*' => (GlobToken::AnyRun, i + 1),
+            '?' => (GlobToken::AnyChar, i + 1),
+            '[' => parse_class(&chars, i).unwrap_or((GlobToken::Literal('['), i + 1)),
+            c => (GlobToken::Literal(c), i + 1),
+        };
+        tokens.push(token);
+        i = next;
+    }
+    tokens
+}
+
+/// Parses the bracket expression opening at `open`. Returns it with the index after its `]`, or
+/// `None` when it is never closed, in which case the `[` is an ordinary character as in the shell.
+fn parse_class(chars: &[char], open: usize) -> Option<(GlobToken, usize)> {
+    let mut k = open + 1;
+    let negated = matches!(chars.get(k), Some('!' | '^'));
+    if negated {
+        k += 1;
+    }
+    let mut ranges = Vec::new();
+    let mut first = true;
+    loop {
+        let c = *chars.get(k)?;
+        // A `]` straight after the opening bracket (or its `!`) is a member, not the end.
+        if c == ']' && !first {
+            return Some((GlobToken::Class { negated, ranges }, k + 1));
+        }
+        first = false;
+        match (chars.get(k + 1), chars.get(k + 2)) {
+            (Some('-'), Some(&hi)) if hi != ']' => {
+                ranges.push((c, hi));
+                k += 3;
+            }
+            _ => {
+                ranges.push((c, c));
+                k += 1;
+            }
+        }
+    }
+}
+
+/// Matches a parsed glob against `text` over whole strings. Dynamic programming over (token,
+/// character) pairs keeps this linear in the pattern times the text, however many `*` appear.
+fn glob_matches(pattern: &[GlobToken], text: &str) -> bool {
+    let text: Vec<char> = text.chars().collect();
+    let (n, m) = (pattern.len(), text.len());
+    // `reach[i][j]`: pattern token `i` onwards matches the text from character `j` onwards.
+    let mut reach = vec![vec![false; m + 1]; n + 1];
+    reach[n][m] = true;
+    for i in (0..n).rev() {
+        for j in (0..=m).rev() {
+            reach[i][j] = match pattern[i] {
+                GlobToken::AnyRun => reach[i + 1][j] || (j < m && reach[i][j + 1]),
+                _ => j < m && pattern[i].matches(text[j]) && reach[i + 1][j + 1],
+            };
+        }
+    }
+    reach[0][0]
 }
 
 #[cfg(test)]
@@ -477,5 +790,226 @@ mod tests {
         let d = p.evaluate(&read(".env"));
         assert_eq!(d.verdict, Verdict::Deny);
         assert_eq!(d.rule, "secret_file");
+    }
+
+    /// Item 13: `~` and `$VAR` are not expanded by the guard, so a word that starts with them (or
+    /// contains a substitution) cannot be shown to stay in the workspace.
+    #[test]
+    fn tilde_and_variable_words_are_unresolved_not_joined_under_the_workspace() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        for cmd in [
+            "cat ~/.bashrc",
+            "cat $HOME/notes.txt",
+            "cat ${HOME}/x",
+            "cd ~ && cat .bashrc",
+            "echo x >> ~/.bashrc",
+            "grep -r BEGIN ~",
+            "cat $FILE",
+            "cat \"$(printf '\\056env')\"",
+            "cat $(printf '\\056env')",
+            "cat %USERPROFILE%/.bashrc",
+        ] {
+            let d = p.evaluate(&shell(cmd));
+            assert_eq!(d.verdict, Verdict::Deny, "{cmd}");
+            assert_eq!(d.rule, "unresolved_path", "{cmd}");
+        }
+    }
+
+    /// Punctuation that is not an expansion stays allowed: a regex anchor, a `%Y%m%d` date format.
+    #[test]
+    fn words_without_an_expansion_are_not_unresolved() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        assert_eq!(
+            p.evaluate(&shell("grep 'end$' README.md")).verdict,
+            Verdict::Allow
+        );
+        assert_ne!(p.evaluate(&shell("date +%Y%m%d")).rule, "unresolved_path");
+    }
+
+    /// Item 13: a `cd` target is an argument like any other, so it is path-checked.
+    #[test]
+    fn cd_targets_are_path_checked() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        let d = p.evaluate(&shell("cd /tmp && cat x"));
+        assert_eq!(d.verdict, Verdict::Deny);
+        assert_eq!(d.rule, "path_guard");
+    }
+
+    /// Item 14: `--opt=value` carries a path after the `=`, so the value is checked too.
+    #[test]
+    fn dash_options_with_an_equals_value_are_path_checked() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        for (cmd, rule) in [
+            ("git --git-dir=/home/user/x/.git log", "path_guard"),
+            ("git diff --output=/home/user/.bashrc", "path_guard"),
+            ("python -c x --log-file=../../outside", "path_guard"),
+            ("cat --file=.env", "secret_file"),
+        ] {
+            let d = p.evaluate(&shell(cmd));
+            assert_eq!(d.verdict, Verdict::Deny, "{cmd}");
+            assert_eq!(d.rule, rule, "{cmd}");
+        }
+        assert_ne!(
+            p.evaluate(&shell("git --git-dir=.git log")).rule,
+            "path_guard",
+            "a workspace-relative value stays allowed"
+        );
+        assert_eq!(
+            p.evaluate(&shell("git log --format=%h")).verdict,
+            Verdict::Allow
+        );
+    }
+
+    /// Item 15: bracket classes and brace alternatives name files too, so they are checked the
+    /// same way `*` and `?` are.
+    #[test]
+    fn bracket_and_brace_patterns_are_checked_as_secret_names() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        for cmd in ["cat .[e]nv", "cat .{env,netrc}", "cat .{x,env}"] {
+            let d = p.evaluate(&shell(cmd));
+            assert_eq!(d.verdict, Verdict::Deny, "{cmd}");
+            assert_eq!(d.rule, "secret_file", "{cmd}");
+        }
+        assert_eq!(
+            p.evaluate(&shell("cat .{README,notes}")).verdict,
+            Verdict::Allow
+        );
+    }
+
+    #[test]
+    fn brace_and_bracket_expansion_edge_cases() {
+        let words = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            expand_braces("a{b,c}d{e,f}"),
+            Some(words(&["abde", "abdf", "acde", "acdf"]))
+        );
+        // Without a top-level comma the braces are literal, as in the shell.
+        assert_eq!(expand_braces("{x}"), Some(words(&["{x}"])));
+        assert_eq!(expand_braces("{a,b}"), Some(words(&["a", "b"])));
+        // Too many alternatives to check: the caller treats the word as unresolvable.
+        assert_eq!(expand_braces(&"{a,b}".repeat(9)), None);
+        // `]` first in a class is a member; an unclosed `[` is an ordinary character.
+        assert!(glob_matches(&parse_glob("[]x]"), "]"));
+        assert!(!glob_may_match_secret("[.env"));
+        assert!(glob_may_match_secret("[!x]env"));
+    }
+
+    /// Item 16: every name rule of `is_secret_file` must be reachable through a glob, so each
+    /// sample is a secret and each of its prefixes followed by `*` is denied.
+    #[test]
+    fn glob_prefixes_of_every_secret_name_are_denied() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        for sample in SECRET_SAMPLES {
+            assert!(
+                is_secret_file(Path::new(sample)),
+                "{sample} is a secret name"
+            );
+            for end in (1..=sample.len()).filter(|&n| sample.is_char_boundary(n)) {
+                let glob = format!("{}*", &sample[..end]);
+                assert!(glob_may_match_secret(&glob), "{glob} may name {sample}");
+            }
+        }
+        for cmd in ["cat .git-cred*", "cat keys/*.pem", "cat .aws/cred*"] {
+            let d = p.evaluate(&shell(cmd));
+            assert_eq!(d.verdict, Verdict::Deny, "{cmd}");
+            assert_eq!(d.rule, "secret_file", "{cmd}");
+        }
+        assert!(
+            glob_may_match_secret("*.PEM"),
+            "matching is case-insensitive"
+        );
+    }
+
+    fn write(kind: ToolKind, path: &str) -> ToolRequest {
+        let mut req = ToolRequest::new(kind);
+        req.paths = vec![path.to_owned()];
+        req
+    }
+
+    /// Item 17: the harness reads its profile and the host reads its config from these files on
+    /// every call, so the agent must not write them, whatever path spelling it uses.
+    #[test]
+    fn harness_and_host_control_files_cannot_be_written_by_the_agent() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        for path in [
+            "local-agent.toml",
+            "opencode.json",
+            "opencode.jsonc",
+            ".opencode/plugin.ts",
+            ".local-agent/state.db",
+            ".git/config",
+            ".git",
+            "sub/../local-agent.toml",
+            "sub/.git/hooks/pre-commit",
+        ] {
+            for kind in [ToolKind::Edit, ToolKind::Write, ToolKind::Patch] {
+                let d = p.evaluate(&write(kind, path));
+                assert_eq!(d.verdict, Verdict::Deny, "{path}");
+                assert_eq!(d.rule, "protected_path", "{path}");
+            }
+        }
+    }
+
+    /// Item 17: under Windows naming rules the protected names are matched case-insensitively.
+    #[test]
+    fn protected_control_names_match_case_insensitively_under_windows_rules() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p =
+            ToolPolicy::with_rules(dir.path(), &SecuritySection::default(), true).expect("policy");
+        for path in ["LOCAL-AGENT.TOML", ".GIT/config", "Opencode.JSON"] {
+            let d = p.evaluate(&write(ToolKind::Write, path));
+            assert_eq!(d.verdict, Verdict::Deny, "{path}");
+            assert_eq!(d.rule, "protected_path", "{path}");
+        }
+        assert_eq!(
+            p.evaluate(&write(ToolKind::Write, ".github/workflows/x.yml"))
+                .verdict,
+            Verdict::Allow
+        );
+    }
+
+    /// Item 17: protection covers writes only. Reading the files and writing other files still
+    /// works, including `.github`, which is not the `.git` directory.
+    #[test]
+    fn protected_files_stay_readable_and_other_files_stay_writable() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        assert_eq!(p.evaluate(&read("opencode.json")).verdict, Verdict::Allow);
+        for path in [".github/workflows/x.yml", "src/main.rs"] {
+            assert_eq!(
+                p.evaluate(&write(ToolKind::Write, path)).verdict,
+                Verdict::Allow,
+                "{path}"
+            );
+        }
+        assert_eq!(
+            p.evaluate(&shell("cat opencode.json")).verdict,
+            Verdict::Allow
+        );
+        assert_eq!(p.evaluate(&shell("git log")).verdict, Verdict::Allow);
+    }
+
+    /// Item 17: a shell argument or redirect target that names a control file is a deny when the
+    /// command can change something.
+    #[test]
+    fn shell_writes_to_protected_control_files_are_denied() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        for cmd in [
+            "echo x >> local-agent.toml",
+            "sed -i s/a/b/ opencode.json",
+            "cp x .git/hooks/pre-commit",
+        ] {
+            let d = p.evaluate(&shell(cmd));
+            assert_eq!(d.verdict, Verdict::Deny, "{cmd}");
+            assert_eq!(d.rule, "protected_path", "{cmd}");
+        }
     }
 }
