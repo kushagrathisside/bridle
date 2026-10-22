@@ -102,7 +102,7 @@ Where the work happens now (user decision: postpone WSL use; no subagents):
   `D:\cargo-target\wgate.bat` (fmt, clippy `-D warnings`, tests), `wcargo.bat <args>`, `wgit.bat <args>`,
   4 build jobs, vendored crates, target dir `D:\cargo-target\harness`. The WSL repo is behind; fetch from
   `D:` before using it again.
-- Why: three AI session restarts while four or five agents were building in WSL. WSL kept about 8 GB as
+- Why: three session restarts while four or five agents were building in WSL. WSL kept about 8 GB as
   file cache, and Windows (15.7 GB) fell to 0.6 GB free. WSL logged no out-of-memory kills and its VM did not
   reboot. `.wslconfig` now sets `memory=8GB` and `autoMemoryReclaim=dropCache` (backup `.wslconfig.bak-2026-10-22`).
   It applies after `wsl --shutdown`.
@@ -132,8 +132,8 @@ Then fixed in the main session, each with tests, Windows gate green after each (
   shim; `tsc` not run, no Node on Windows).
 - `a8fe97d` event-log top-level text redacted, with file read-back tests; `init` minors.
 - Deferred to release 2: a process group for launched servers on Unix.
-- Found: a machine config written by a process the AI desktop app started lands in the app's MSIX
-  storage (`%LOCALAPPDATA%\Packages\AI_pzs8sxrjxfjjc\LocalCache\Roaming\local-agent\config.toml`), not in
+- Found: a machine config written by a process the desktop app started lands in the app's MSIX
+  storage (`%LOCALAPPDATA%\Packages\<app>_<id>\LocalCache\Roaming\local-agent\config.toml`), not in
   `%APPDATA%`. Programs started outside the app do not see it. Documented in cli-commands.md.
 
 Docs (`32d8d97`): module pages for security and MCP written; the other five pages, `security.md` and
@@ -240,7 +240,7 @@ Fix work started 2026-10-22, four Haiku agents in worktrees (high effort): class
 policy (`tool_policy.rs`, `path_guard.rs`), MCP (`mcp/`), redaction (`redact.rs`, hook message, `config validate`).
 Queued for the next free slot: config trust and launcher/models/init/doctor fixes.
 
-Restarts: AI Code restarts kill background agents and long foreground commands. Run long commands detached
+Restarts: session restarts kill background agents and long foreground commands. Run long commands detached
 (`nohup ... &`) with a log file, and commit after each verified step.
 
 
@@ -315,7 +315,7 @@ Known gaps:
 ## 2026-10-21: planning
 
 - Four read-only audits (core, OpenCode host, inference runtime, delivery) and an Opus review of the plan. Plan approved after the review and the decisions in its section 9.
-- Plan and decisions are in `~/.ai/plans/make-a-plan-first-humble-robin.md` (outside the repo).
+- Plan and decisions are in `plans/make-a-plan-first-humble-robin.md` in the user's home folder (outside the repo).
 
 ## 2026-10-21: baseline
 

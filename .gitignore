@@ -39,6 +39,3 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 .idea/
-
-# --- Agent worktrees (AI Code subagents) ---
-.ai/worktrees/
