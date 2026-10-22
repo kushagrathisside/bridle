@@ -1,0 +1,5 @@
+[toolchain]
+# Installed on both the Windows host (MSVC) and WSL; see docs/adr/0001.
+channel = "1.95.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

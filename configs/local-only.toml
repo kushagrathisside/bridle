@@ -1,0 +1,211 @@
+# local-only profile (§36): Qwen + LFM + Bonsai on this machine, deterministic tools, no network.
+#
+# Machine-specific locations (where weights and runtimes live) are NOT set here. Put them in the
+# machine config with:
+#   agent init --machine --models-dir D:\models --runtimes-dir D:\runtimes --opencode-bin <path>
+# Relative model_file / server_bin paths below resolve against those directories.
+#
+# Numeric values marked DEF are initial engineering defaults to be tuned by benchmark (§3, §17).
+
+profile = "local-only"
+
+[agent]
+default_model = "main"
+max_iterations = 8              # DEF
+max_implementation_retries = 3  # DEF
+max_same_failure = 2            # DEF
+max_deep_escalations = 1        # DEF
+max_command_retries = 1         # DEF
+
+[runtimes.llama_cpp]
+kind = "llama_cpp"
+server_bin = "llama.cpp/b11756-cuda12.4/llama-server.exe"
+build = "b11756"
+
+[runtimes.prism]
+kind = "prism_llama_cpp"
+server_bin = "llama.cpp-prism/prism-b10787-cuda12.4/llama-server.exe"
+build = "prism-b10787-73bfe6c"
+
+# --- MAIN ENGINEER (§2.1) -------------------------------------------------------------------
+[models.main]
+provider = "llama_cpp"
+id = "qwen3.5-9b"
+display_name = "Qwen3.5-9B Q4_K_M"
+role = "engineer"
+endpoint = "http://127.0.0.1:8001/v1"
+context = 16384                 # DEF
+max_output_tokens = 4096
+kv_cache = "q8_0"
+mtp = "auto"                    # optional, detected (R-2.7)
+timeout_ms = 600000
+retries = 1
+hardware = "gpu"
+
+[models.main.sampling]          # Qwen3.5 non-thinking recommendation; DEF
+temperature = 0.7
+top_p = 0.8
+top_k = 20
+
+[models.main.reasoning]         # thinking off for iteration speed (audit K-8); benchmark both
+enabled = false
+
+[models.main.capabilities]
+tool_calling = true
+vision = false                  # projector not loaded
+reasoning = true
+structured_output = true
+streaming = true
+long_context = true
+local = true
+gpu = true
+
+[models.main.launch]
+load_mode = "mmap"
+cache_ram_mib = 1024
+parallel = 1
+runtime = "llama_cpp"
+model_file = "Qwen3.5-9B/Qwen3.5-9B-Q4_K_M.gguf"
+gpu_layers = 99
+flash_attn = true
+
+[models.main.source]
+repo = "unsloth/Qwen3.5-9B-GGUF"
+revision = "3885219b6810b007914f3a7950a8d1b469d598a5"
+file = "Qwen3.5-9B-Q4_K_M.gguf"
+sha256 = "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8"
+quantization = "Q4_K_M"
+license = "Apache-2.0"
+
+# --- MICRO-ORCHESTRATOR (§4) — CPU-resident, used from M4 -----------------------------------
+[models.micro]
+provider = "llama_cpp"
+id = "lfm2.5-1.2b-thinking"
+display_name = "LFM2.5-1.2B-Thinking Q4_K_M"
+role = "decision"
+endpoint = "http://127.0.0.1:8002/v1"
+context = 8192
+max_output_tokens = 1024
+timeout_ms = 120000
+retries = 1
+hardware = "cpu"
+
+[models.micro.sampling]         # Liquid's documented low-temperature settings (§4)
+temperature = 0.05
+top_k = 50
+repeat_penalty = 1.05
+
+[models.micro.reasoning]
+enabled = true
+budget_tokens = 512             # DEF
+
+[models.micro.capabilities]
+tool_calling = true
+reasoning = true
+structured_output = true
+streaming = true
+local = true
+gpu = false
+
+[models.micro.launch]
+runtime = "llama_cpp"
+model_file = "LFM2.5-1.2B-Thinking/LFM2.5-1.2B-Thinking-Q4_K_M.gguf"
+gpu_layers = 0
+threads = 8                     # DEF
+
+[models.micro.source]
+repo = "LiquidAI/LFM2.5-1.2B-Thinking-GGUF"
+revision = "9584426effbfa44b677e925793a12188a36b44ce"
+file = "LFM2.5-1.2B-Thinking-Q4_K_M.gguf"
+sha256 = "7223a2202405b02e8e1e6c5baa543c43dc98c1d9741a5c2a0ee1583212e1231b"
+quantization = "Q4_K_M"
+license = "lfm1.0"
+
+# --- DEEP REASONER (§3) — loaded on demand, never alongside main (§45), used from M5 ---------
+[models.deep]
+provider = "prism_bonsai"
+id = "bonsai-2-27b"
+display_name = "Ternary Bonsai 2 27B PTQ1_0"
+role = "deep_reasoning"
+endpoint = "http://127.0.0.1:8003/v1"
+context = 16384                 # DEF: 16K-24K "normal deep task"; start low on 8 GB (audit K-4)
+max_output_tokens = 8192
+kv_cache = "q8_0"
+timeout_ms = 1800000
+retries = 0
+hardware = "gpu"
+
+[models.deep.sampling]          # PrismML thinking-mode recommendation
+temperature = 1.0
+top_p = 0.95
+top_k = 20
+min_p = 0.05
+
+[models.deep.reasoning]
+enabled = true
+budget_tokens = 4096            # DEF
+
+[models.deep.capabilities]
+tool_calling = true
+vision = false                  # projector not loaded
+reasoning = true
+structured_output = true
+streaming = true
+long_context = true
+local = true
+gpu = true
+
+[models.deep.launch]
+runtime = "prism"
+model_file = "Ternary-Bonsai-2-27B/Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+gpu_layers = 99
+flash_attn = true
+
+[models.deep.source]
+repo = "prism-ml/Ternary-Bonsai-2-27B-gguf"
+revision = "b072e1d3b35a0a630cece372c2127528e0994386"
+file = "Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+sha256 = "53107f530aa52eb00912263ab1ee29bd199261c87cd7b4ad4ca1318c1fe33ee3"
+quantization = "PTQ1_0"
+license = "Apache-2.0"
+
+# --- Orchestration: Phase 1 has no routing (§57) ---------------------------------------------
+[routing]
+enable_micro_decisions = false
+enable_deep_escalation = false
+escalation_threshold = 0.75     # DEF
+
+[decisions]
+provider = "rules"
+fallback = "rules"
+
+[context]
+target_tokens = 16000           # DEF
+hard_limit = 16384             # equals main model context (V21)
+compact_tool_outputs = true
+
+[security]
+require_worktree = true
+network = "ask"
+destructive_commands = "ask"
+privileged_commands = "deny"
+risky_commands = "ask"
+secrets_redaction = true
+
+# Add the repository's checks here, e.g.
+# [[verification.steps]]
+# name = "unit tests"
+# command = "python -m pytest -q"
+[verification]
+enabled = true
+required_for_done = true
+
+[telemetry]
+enabled = true
+destination = "local"
+
+[external.jev]
+enabled = false
+
+[external.cloud_models]
+enabled = false

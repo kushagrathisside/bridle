@@ -11,8 +11,9 @@ node_modules/
 .worktrees/
 
 # --- Model weights & runtimes: never committed (R-42.1, D-2) ---
-models/
-runtimes/
+# Anchored to the repo root so source directories named `models/` are not ignored.
+/models/
+/runtimes/
 *.gguf
 *.safetensors
 *.onnx
@@ -38,3 +39,6 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+# --- Agent worktrees (AI Code subagents) ---
+.ai/worktrees/
