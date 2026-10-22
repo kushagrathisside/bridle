@@ -724,13 +724,23 @@ fn shell_c_argument(args: &[String]) -> Option<String> {
 /// A configured prefix only upgrades a result that would otherwise be EXECUTE_RISKY (for example
 /// `make test`). It can never lower a WRITE, NETWORK, DESTRUCTIVE or PRIVILEGED result, and it does
 /// not relabel READ_ONLY commands, so the logged class stays accurate.
+///
+/// A program named by a path (`bin/pytest`, `/usr/bin/ls`) is not necessarily the built-in tool of
+/// that name, so it is at least EXECUTE_RISKY before the safe-prefix upgrade is considered.
 fn classify_program(
     program: &str,
     args: &[String],
     in_xargs: bool,
     extra_safe: &[String],
+    path_qualified: bool,
 ) -> Verdict {
-    match classify_builtin(program, args, in_xargs) {
+    let verdict = match classify_builtin(program, args, in_xargs) {
+        Verdict::Leaf(class, _) if path_qualified && class < ToolClass::ExecuteRisky => {
+            leaf(ToolClass::ExecuteRisky, "runs a program by path")
+        }
+        other => other,
+    };
+    match verdict {
         Verdict::Leaf(ToolClass::ExecuteRisky, _)
             if extra_safe.iter().any(|p| prefix_matches(p, program, args)) =>
         {
@@ -738,6 +748,28 @@ fn classify_program(
         }
         other => other,
     }
+}
+
+/// Whether a flag word names an output file: `-o FILE` (`-oFILE`), `--output=FILE`, or tree's
+/// `-R`. Used so that such flags are WRITE, not READ_ONLY.
+fn output_flag(arg: &str) -> bool {
+    arg == "--output" || arg.starts_with("--output=") || has_short(arg, 'o') || arg.starts_with("-o")
+}
+
+/// Values carried inside a flag word, which the policy must see as paths: `--output=FILE` and
+/// `-oFILE`.
+fn attached_values(args: &[String]) -> Vec<String> {
+    args.iter()
+        .filter_map(|a| {
+            if let Some(long) = a.strip_prefix("--") {
+                long.split_once('=').map(|(_, value)| value.to_owned())
+            } else {
+                a.strip_prefix("-o")
+                    .filter(|rest| !rest.is_empty())
+                    .map(str::to_owned)
+            }
+        })
+        .collect()
 }
 
 /// Flags that make a tool which would otherwise be EXECUTE_SAFE run a helper program or load
@@ -882,6 +914,12 @@ fn classify_builtin(program: &str, args: &[String], in_xargs: bool) -> Verdict {
             )
         }) {
             return leaf(Destructive, "find with -delete or -exec");
+        }
+        if lower
+            .iter()
+            .any(|a| matches!(a.as_str(), "-fprint" | "-fprint0" | "-fprintf" | "-fls"))
+        {
+            return leaf(Write, "find -fprint or -fls writes a listing file");
         }
         return leaf(ReadOnly, "find lists files");
     }
@@ -1048,7 +1086,15 @@ fn classify_builtin(program: &str, args: &[String], in_xargs: bool) -> Verdict {
         return leaf(ExecuteRisky, "docker run starts a container");
     }
 
+    // rg --pre runs the given program on every file it searches.
+    if program == "rg" && lower.iter().any(|a| a == "--pre" || a.starts_with("--pre=")) {
+        return leaf(ExecuteRisky, "rg --pre runs a preprocessor program");
+    }
+
     // WRITE
+    if program == "tree" && args.iter().any(|a| output_flag(a) || has_short(a, 'R')) {
+        return leaf(Write, "tree -o or -R writes files");
+    }
     if matches!(
         program,
         "mkdir"
@@ -1075,6 +1121,7 @@ fn classify_builtin(program: &str, args: &[String], in_xargs: bool) -> Verdict {
     if matches!(
         program,
         "ls" | "dir"
+            | "tree"
             | "cat"
             | "type"
             | "head"
@@ -1230,8 +1277,10 @@ fn analyse_segment(pieces: &[Piece], extra_safe: &[String], depth: usize) -> Vec
     let raw_program = stripped.words[0].as_str();
     let args: Vec<String> = stripped.words[1..].to_vec();
     let mut arg_words = args.clone();
+    arg_words.extend(attached_values(&args));
     arg_words.extend(redirect_targets.iter().cloned());
 
+    let path_qualified = raw_program.contains(['/', '\\']);
     let verdict = if raw_program.starts_with("./")
         || raw_program.starts_with("../")
         || raw_program.starts_with(".\\")
@@ -1242,13 +1291,22 @@ fn analyse_segment(pieces: &[Piece], extra_safe: &[String], depth: usize) -> Vec
             format!("runs local script {raw_program}"),
         )
     } else {
-        classify_program(&program, &args, stripped.in_xargs, extra_safe)
+        classify_program(
+            &program,
+            &args,
+            stripped.in_xargs,
+            extra_safe,
+            path_qualified,
+        )
     };
 
     match verdict {
         Verdict::Nested(inner, inner_shell) => {
             let mut out = Vec::new();
-            if let Some(reason) = floor {
+            // The wrapper program itself is not judged by its inner string alone.
+            let wrapper_floor =
+                floor.or_else(|| path_qualified.then(|| "runs a program by path".to_owned()));
+            if let Some(reason) = wrapper_floor {
                 out.push(Analysed {
                     segment: SegmentAssessment {
                         text: text.clone(),
@@ -1379,6 +1437,55 @@ fn is_assignment(word: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
+/// `env -S` / `--split-string`, in any of its spellings: `-S STR`, `-SSTR`, `--split-string=STR`.
+fn is_split_string_option(opt: &str) -> bool {
+    if let Some(long) = opt.strip_prefix("--") {
+        return long == "split-string" || long.starts_with("split-string=");
+    }
+    opt.starts_with('-') && opt.contains('S')
+}
+
+/// The string an `env -S` option carries: inline after `S` or `=`, or else the next word.
+fn split_string_value(opt: &str, words: &mut Vec<String>) -> String {
+    let next = |words: &mut Vec<String>| {
+        if words.is_empty() {
+            String::new()
+        } else {
+            words.remove(0)
+        }
+    };
+    if let Some(value) = opt.strip_prefix("--split-string=") {
+        return value.to_owned();
+    }
+    if opt.starts_with("--") {
+        return next(words);
+    }
+    match opt.find('S') {
+        Some(pos) if pos + 1 < opt.len() => opt[pos + 1..].to_owned(),
+        _ => next(words),
+    }
+}
+
+/// The words `env -S` would run. `$` and backslash escapes are interpreted by env itself, so they
+/// (and any shell operator, substitution or unbalanced quote) return `None` and fail closed.
+fn split_env_string(value: &str) -> Option<Vec<String>> {
+    if value.contains(['$', '\\']) {
+        return None;
+    }
+    let lexed = lex(value, ShellKind::Posix);
+    if lexed.unparseable || !lexed.nested.is_empty() {
+        return None;
+    }
+    lexed
+        .pieces
+        .into_iter()
+        .map(|piece| match piece {
+            Piece::Word(w) => Some(w.text),
+            Piece::Break | Piece::Redirect { .. } => None,
+        })
+        .collect()
+}
+
 /// Remove leading assignments and wrapper commands. Returns `None` when no program remains.
 /// A bare `env` or `printenv` with nothing after it is kept as the program, since it only prints.
 fn strip_wrappers(mut words: Vec<String>) -> Option<Stripped> {
@@ -1393,7 +1500,7 @@ fn strip_wrappers(mut words: Vec<String>) -> Option<Stripped> {
         }
         let name = normalise_program(&first);
         let skip_value_opts: &[&str] = match name.as_str() {
-            "env" => &["-u", "-C", "-S"],
+            "env" => &["-u", "-C"],
             "time" | "nohup" | "command" | "exec" => &["-a"],
             "nice" => &["-n"],
             "stdbuf" => &["-o", "-e", "-i"],
@@ -1408,7 +1515,23 @@ fn strip_wrappers(mut words: Vec<String>) -> Option<Stripped> {
         }
         // Skip the wrapper's own options, including those that take a value.
         while let Some(opt) = words.first().cloned() {
-            if skip_value_opts.contains(&opt.as_str()) {
+            if name == "env" && is_split_string_option(&opt) {
+                // `env -S 'cmd args'` runs `cmd args`: splice its words in and keep stripping.
+                words.remove(0);
+                let value = split_string_value(&opt, &mut words);
+                match split_env_string(&value) {
+                    Some(split) => {
+                        let rest = std::mem::take(&mut words);
+                        words = split;
+                        words.extend(rest);
+                    }
+                    None => {
+                        floor = floor.or_else(|| {
+                            Some("env -S string cannot be split safely".to_owned())
+                        });
+                    }
+                }
+            } else if skip_value_opts.contains(&opt.as_str()) {
                 words.remove(0);
                 if !words.is_empty() {
                     words.remove(0);
