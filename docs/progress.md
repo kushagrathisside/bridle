@@ -1,5 +1,13 @@
 # Progress log
 
+## 2026-10-22 (night): M2 complete (steps 0 to 9)
+
+- Step 9: end-to-end with Qwen3.5-9B through OpenCode on Windows. The model used `symbol_search` and
+  `find_references`, fixed `calc.py` (`add` subtracted), and ran `run_tests` with targets (`test_calc.py`), which
+  the policy allowed. The event log has no secret values. Details: [milestones/m2-tools.md](milestones/m2-tools.md).
+- Two errors in the first run were my own config and naming mistakes (`targets = false`, a non-existent step name).
+  The tool messages named the fix and the model recovered.
+
 ## 2026-10-22 (end of day): M2 steps 7 and 8 done
 
 - Step 7: `inspect_artifact` (JSON shape, JSONL and CSV statistics, text tail), `summarize_experiment` (files,

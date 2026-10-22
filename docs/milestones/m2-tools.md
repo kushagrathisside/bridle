@@ -1,6 +1,6 @@
 # M2: deterministic tools
 
-Status: in progress (branch `m2-tools`, started 2026-10-22). Steps 0 to 8 done; step 9 (end-to-end, tag m2) next. Release 1 targets Windows, so every step is built
+Status: done (branch `m2-tools`, 2026-10-22). Steps 0 to 9 complete; end-to-end verified with Qwen3.5-9B through OpenCode. Release 1 targets Windows, so every step is built
 and tested on Windows (`D:\cargo-target\wgate.bat`).
 
 ## Goal
@@ -64,3 +64,21 @@ path guard on every tool, so Qwen can locate code, run checks and read their fai
 7. `inspect_artifact`, `summarize_experiment`, `compare_experiments`.
 8. Adapters; per-tool enable and disable (each tool's schema costs prompt tokens on a 16K-context model).
 9. Hook and policy updates, docs, traceability, end-to-end with Qwen, tag `m2`.
+
+## Result (2026-10-22)
+
+End-to-end on Windows, Qwen3.5-9B through OpenCode 1.19.3, toy repo with a planted bug (`add` subtracts):
+- Run 1: the model called `symbol_search` (found `add` at line 2) and `find_references`, read `calc.py`, edited
+  it, and ran `run_tests`. Its first `run_tests` call named a step that does not exist, and a second one asked for
+  targets on a step that did not allow them (my config mistake: `targets = false`). Both errors were clear and the
+  model recovered without help.
+- Run 2 (`targets = true` in the toy config): the model ran `run_tests` with `targets: ["test_calc.py"]`, which the
+  policy allowed. The fix is in place, and the event log contains no secret values.
+
+Tools delivered: `git_status`, `git_diff`, `git_history`, `git_log_range`, `repo_map`, `file_summary`,
+`symbol_search`, `find_references`, `dependency_search`, `run_verification`, `run_tests`, `run_linter`,
+`run_typechecker`, `parse_test_failure`, `run_command`, `inspect_config`, `inspect_artifact`,
+`summarize_experiment`, `compare_experiments`, `harness_info`, and configured `adapter_<name>` tools.
+
+Deliberately not done in M2: a cached symbol index (M3, state), LSP-grade references (out of scope for release 1),
+CMake and Go/Gradle manifests, and a Haiku-run check of `tsc` (no Node on the Windows host).
