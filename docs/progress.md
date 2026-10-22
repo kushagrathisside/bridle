@@ -86,6 +86,13 @@ Review findings received so far (fix majors before tagging M1):
     suite longer than 10 s fails through OpenCode. Fix: derive the timeout from the verification step timeouts
     plus a margin. `run_verification` has not yet been called through OpenCode.
 
+  - BLOCKER: the model may edit `local-agent.toml`, and every hook process re-reads it, so the model can loosen
+    its own policy at once. It may also edit `.git/config` (`core.fsmonitor` runs on the next `git status`,
+    including MCP `git_status`), `.opencode/` and `opencode.json`. Assigned to the path policy agent: protected
+    control paths. Assigned to the classifier agent: `git config` writes are EXECUTE_RISKY.
+  - Inherent limit, to document: running tests runs code the model wrote. The policy stops obvious harm and
+    secret exposure through tools; it is not a sandbox.
+
 Fix work started 2026-10-22, four Haiku agents in worktrees (high effort): classifier (`command_risk.rs`), path
 policy (`tool_policy.rs`, `path_guard.rs`), MCP (`mcp/`), redaction (`redact.rs`, hook message, `config validate`).
 Queued for the next free slot: config trust and launcher/models/init/doctor fixes.
