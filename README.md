@@ -175,13 +175,14 @@ Weights are not included. Download them yourself and check the SHA-256 values in
 | M2 | Deterministic tools: MCP tools, failure parsing, tree-sitter | Done |
 | M3 | State and loop detection; task journal; refusals; worktree tasks | Done (2026-10-26, verified live) |
 | M4 | The micro model decides stalled loops (LFM2.5, CPU), with rules fallback and an A/B run | Done (2026-10-26) |
+| M4b | The subagent tier: a small model reads a few bounded, redacted files and answers with checked citations | Built (2026-10-27); plugged into the tool list and `agent subagent` |
 | M5 | Deep model on demand (Bonsai); one GPU model at a time | Done (2026-10-26); escalation routing not built |
 | M6 | Context management: compaction of tool results and the state in the system prompt | Done (2026-10-26, verified live) |
 | M7 | Jev decision backend behind the endpoint policy, with TLS | Built (2026-10-27); not live, no Jev service |
 | M8 | LiteLLM gateway as a model provider, behind the policy | Built (2026-10-27); live gateway check pending permission |
 | M9 | Security threat-model tests and egress audit | Built (2026-10-27); 72 of 72 adversarial cases pass; `agent egress` lists the destinations |
-| M10 | Evaluation on a Rust coding benchmark | Planned |
-| M11 | Open-source release: licence, README, CI | Planned |
+| M10 | Evaluation: a task corpus under two conditions, with a runner and a report | Built; live results pending (runs stalled) |
+| M11 | Open-source release: licence (Apache-2.0), notices, policies, CI | Prepared; CI not run; publication pending approval |
 
 The roadmap as a diagram, with status colours, is the page "Roadmap" in
 [docs/diagrams/bridle-stages.drawio](docs/diagrams/bridle-stages.drawio). The file opens in
@@ -212,6 +213,8 @@ crates/harness-cli       the `agent` binary, its commands, and the OpenCode adap
 opencode-plugin/         thin TypeScript shim that forwards hooks to `agent hook`
 configs/                 shipped profiles: local-only.toml, development.toml
 examples/                example project used for the end-to-end runs
+evals/                   the adversarial cases (evals/security), the benchmark corpus (evals/tasks) and conditions
+scripts/                 the third-party licence list generator
 docs/                    guides, concepts, status, reference, decisions, specification
 ```
 
@@ -232,9 +235,13 @@ The toolchain is pinned in `rust-toolchain.toml`. Build output goes to `D:\cargo
 
 ## Licence
 
-No licence has been chosen yet. The project lead has decided on Apache-2.0, but no LICENSE file is in the repository, and
-the workspace `Cargo.toml` still marks the licence as pending. No licence applies until a LICENSE file is added. Model
-weights are not included and keep their own licences ([docs/guide/models.md](docs/guide/models.md)).
+Bridle is licensed under the Apache License, Version 2.0 ([LICENSE](LICENSE)). [NOTICE](NOTICE) gives the copyright
+notice. The Rust crates it links keep their own licences; [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) lists them,
+generated from `Cargo.lock` by `scripts/third_party_licenses.py`. One of them, `webpki-root-certs`, carries the
+CDLA-Permissive-2.0 data licence. Model weights are not part of this repository and keep their own licences
+([docs/guide/models.md](docs/guide/models.md)).
+
+The crates are not published. Publication waits for the maintainer's approval.
 
 ## Authors
 
