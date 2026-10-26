@@ -160,3 +160,11 @@ By design, and documented in [security.md](../../concepts/security.md):
   [cli-host-opencode.md](cli-host-opencode.md), [index](README.md)
 - Concepts: [security.md](../../concepts/security.md), [architecture.md](../../concepts/architecture.md)
 - Decisions: [docs/decisions/](../../decisions/)
+
+## M9 additions
+
+`tool_policy.rs` judges, in order: the secret names first (`may_name_secret`: the secret names, Windows short names with
+`~` and a digit, and glob patterns that could name a secret), then the path guard, then the environment dump check
+(`dumps_environment`, rule `secret_env`), then the shell arguments. A shell word is also judged with its backslash escapes
+removed (`unescape_shell_word`). The adversarial suite (`harness-cli/tests/adversarial.rs`) runs every case in
+`evals/security/cases.json` through the real hook.

@@ -5,7 +5,7 @@ dated and ordered newest first. Every "verified" line names the evidence. It is 
 other pages must agree with it.
 
 > **Status:** M2 (deterministic tools) is done and tagged `m2` on 2026-10-22; M1 is tagged `m1`. On 2026-10-23 the
-> history was rewritten and every hash in this log was updated. M0 to M6 are done and committed; M7 (Jev) and M8 (LiteLLM) are built and tested, not live. Release 1 is native Windows,
+> history was rewritten and every hash in this log was updated. M0 to M6 are done and committed; M7 (Jev) and M8 (LiteLLM) are built and tested, not live; M9 is built and tested. Release 1 is native Windows,
 > verified on one machine.
 
 ## Milestones
@@ -21,11 +21,22 @@ other pages must agree with it.
 | M6 | Context management: per-request compaction and the task state in the system prompt | Done (`977a56f`) | [2026-10-26: M6 done](#2026-10-26-m6-done-and-committed-as-977a56f-context-policy-and-per-request-transforms) |
 | M7 | Jev decision backend behind the endpoint policy, with TLS | Built, not live (`6ad8861`) | [2026-10-27: M7 built](#2026-10-27-m7-built-and-tested-jev-backend-endpoint-policy-tls-not-live) |
 | M8 | LiteLLM gateway as a model provider, behind the policy | Built, not live (`0854f62`, `a3a6940`) | [2026-10-27: M8 built](#2026-10-27-m8-built-and-tested-with-a-mock-the-live-gateway-check-is-not-run) |
-| M9 | Security threat-model tests and egress audit | Planned | None yet |
+| M9 | Security threat-model tests and egress audit | Built (`5bef0f9`) | [2026-10-27: M9 built](#2026-10-27-m9-built-security-review-fixes-adversarial-suite-egress-audit) |
 | M10 | Evaluation on a Rust coding benchmark | Planned | None yet |
 | M11 | Open-source release: licence, README, CI | Planned | None yet |
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
+
+## 2026-10-27: M9 built: security review fixes, adversarial suite, egress audit
+
+- Built: 70 hostile tool calls through the real hook, now `evals/security/cases.json` and a test (72 cases with the two
+  network tools). Five gaps fixed: shell escapes, Windows short names, glob patterns, environment dumps, and the order of the
+  secret check and the path guard. One usability defect fixed: validation messages hidden by the redactor. `agent egress`
+  lists every outbound destination. Committed as `5bef0f9`; the result and the residual are in
+  [milestones/m9-security.md](milestones/m9-security.md).
+- Gate: `wgate` passes (fmt, clippy with warnings denied, 669 tests; 3 ignored).
+- Residual: a recursive grep over the workspace can read a secret file without naming it. It is kept, with the redaction of
+  output as the protection.
 
 ## 2026-10-27: M8 built and tested with a mock; the live gateway check is not run
 
