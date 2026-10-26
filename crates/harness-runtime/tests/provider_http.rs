@@ -532,3 +532,28 @@ fn llama_props_200_returns_the_document() -> TestResult {
     assert_eq!(props["build_info"], "b11756");
     Ok(())
 }
+
+#[test]
+fn a_litellm_slot_sends_its_route_name_and_the_gateway_key_from_its_variable() -> TestResult {
+    let server = FakeServer::start(vec![Reply::ok_json(COMPLETION)])?;
+    let mut config = model("litellm", server.port, 0)?;
+    config.id = "local-qwen".to_owned();
+    config.api_key_env = Some("BRIDLE_GATEWAY_KEY".to_owned());
+    let provider = harness_runtime::providers::provider_for(&config, &|name| {
+        (name == "BRIDLE_GATEWAY_KEY").then(|| "sk-gateway".to_owned())
+    })?;
+
+    provider.chat(&user_request("hello"))?;
+
+    let sent = server.next_request()?;
+    assert!(sent.request_line.starts_with("POST /v1/chat/completions "));
+    assert!(
+        sent.headers
+            .to_ascii_lowercase()
+            .contains("authorization: bearer sk-gateway"),
+        "the gateway key is sent as a bearer token"
+    );
+    let body: Value = serde_json::from_str(&sent.body)?;
+    assert_eq!(body["model"], "local-qwen", "the route name is the model");
+    Ok(())
+}
