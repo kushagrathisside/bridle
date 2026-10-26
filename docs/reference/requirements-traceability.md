@@ -267,16 +267,16 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-23.1 | REQ | `ContextManager`: history policy, tool-output compaction, repo retrieval, state injection, summary generation, context budget, relevance filtering | M6 | open |
-| R-23.2 | REQ | Retain the current task, plan, diff, recent failures, relevant files, and current test result. Drop or compact unrelated old tool results, repeated logs, stale listings, and old attempts. | M6 | open |
-| R-23.3 | REQ | Keep semantic state separate from the raw transcript. The transcript is not long-term memory. | M3, M6 | partial: the task state is kept apart from the transcript (journal, cache); compaction is M6 |
+| R-23.1 | REQ | `ContextManager`: history policy, tool-output compaction, repo retrieval, state injection, summary generation, context budget, relevance filtering | M6 | partial: the ContextManager rules, the per-request transform and the task block are built. Repository retrieval stays with the M2 code tools; no summaries are made (R-24.2). |
+| R-23.2 | REQ | Retain the current task, plan, diff, recent failures, relevant files, and current test result. Drop or compact unrelated old tool results, repeated logs, stale listings, and old attempts. | M6 | partial: the rules keep the three most recent results and the task state, and compact or drop old, large or read-only results (live run). Stale listings and repeated logs are not identified separately. |
+| R-23.3 | REQ | Keep semantic state separate from the raw transcript. The transcript is not long-term memory. | M3, M6 | done: the task state is kept apart from the transcript (journal and cache). The transform is a per-request view and the stored session is never edited (ADR-0006). |
 
 ## §24 Optional Jev context compaction
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-24.1 | REQ | Tool result → ContextManager → DecisionEngine → KEEP / COMPACT / DROP | M6 (rules), M7 (Jev) | open |
-| R-24.2 | CON | Not mandatory for the MVP. Start with deterministic age/type rules, then LFM/Jev for ambiguous cases. | M6 | open |
+| R-24.1 | REQ | Tool result → ContextManager → DecisionEngine → KEEP / COMPACT / DROP | M6 (rules), M7 (Jev) | done (rules): each completed tool result gets KEEP, COMPACT or DROP from `context::plan`. Jev (M7) is not built. |
+| R-24.2 | CON | Not mandatory for the MVP. Start with deterministic age/type rules, then LFM/Jev for ambiguous cases. | M6 | done: the M6 decisions are deterministic rules; no model decides (ADR-0006). |
 
 ## §25 Tool policy
 
@@ -349,7 +349,7 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-33.1 | REQ | Request pipeline: inspect → apply context policy → remove irrelevant tools → inject structured state → model-specific guidance → send | M6 | open |
+| R-33.1 | REQ | Request pipeline: inspect → apply context policy → remove irrelevant tools → inject structured state → model-specific guidance → send | M6 | partial: the context policy and the state block are applied per request. Removing irrelevant tools and adding model-specific guidance are not built. |
 | R-33.2 | CON | The rest of the codebase must not depend directly on OpenCode internals | all | open |
 
 ## §34 Tool-execution interception
@@ -537,7 +537,7 @@ the ADR is linked.
 | R-57.3 | M3 State | Task state, plan, event log, failure fingerprints | Session resumes after interruption without transcript reconstruction | done: resume by task id (`agent task resume`); status by `agent task status` and the `task_status` tool, without the transcript |
 | R-57.4 | M4 LFM | Failure classification, loop detection, next-action decision, context relevance | Measured reduction in latency/tokens/failed actions (not assumed) | open |
 | R-57.5 | M5 Bonsai | Stalled-task escalation, deep reasoning, senior review (PTQ1_0) | Benchmark of Qwen alone vs Qwen + Bonsai escalation | open |
-| R-57.6 | M6 Context | History filtering, tool-result compaction, repo retrieval, state injection, token budgeting | Measured task success, prompt tokens, latency, memory | open |
+| R-57.6 | M6 Context | History filtering, tool-result compaction, repo retrieval, state injection, token budgeting | Measured task success, prompt tokens, latency, memory | partial: bytes before and after each request are recorded in `events.jsonl` (live run, 2026-10-26). Prompt tokens, latency and task success are not measured by M6. |
 | R-57.7 | M7 Jev | JevDecisionEngine behind the same interface. No orchestration rewrite. | A/B rules vs LFM vs Jev. Jev on by default only with evidence. | open |
 | R-57.8 | M8 LiteLLM | Optional gateway: routing, external providers, Jev, logging, aliases, hybrid | Not required for local-only users | open |
 | R-57.9 | M9 Security | Worktrees, path sandbox, secret redaction, risk policy, network policy, destructive-command policy | Adversarial tests pass | open |

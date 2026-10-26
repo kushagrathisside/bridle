@@ -20,11 +20,11 @@ shell and have downloaded the model weights listed in [models.md](models.md).
 | Python | 3.13 on PATH | used by the example project's tests |
 
 The `deep` slot (Ternary Bonsai 2 27B) needs the PrismML llama.cpp fork (`prism-b10787-73bfe6c`, CUDA 12.4). The
-`deep` slot is planned for M5, so you do not need the fork to use the harness today.
+`deep` slot (M5) needs the fork; the harness runs without it, and the deep slot is then unavailable.
 
 ## Directory layout
 
-Place the files as follows. Entries marked M4 or M5 are for slots that are not in use yet.
+Place the files as follows. Entries marked M4 or M5 are for the micro and deep slots, which run only when their weights and runtimes are present and configured.
 
 ```text
 D:\models\Qwen3.5-9B\Qwen3.5-9B-Q4_K_M.gguf
@@ -102,7 +102,7 @@ Expect warnings for anything not set up yet. `doctor` must not panic.
 
 - Release 1 runs on native Windows only. WSL support moves to release 2.
 - Only one machine has been verified (see the status line).
-- The `micro` (M4) and `deep` (M5) slots are planned; their weights and runtimes are listed for completeness.
+- The `micro` (M4) and `deep` (M5) slots are used only when their weights and runtimes are present and configured.
 
 ## Related
 

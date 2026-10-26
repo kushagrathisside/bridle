@@ -4,8 +4,8 @@ This page describes how Bridle is built: its layers, the path a tool call takes,
 MCP tools it serves. It is for engineers who want to know which component decides what before they trust the
 system with a repository. It assumes you know what OpenCode is and what an MCP server does.
 
-> **Status:** release 1 (native Windows). Milestones M0 to M3 are done and verified on one machine; M3 was run live
-> with the local model on 2026-10-26 (see [progress.md](../status/progress.md)). Everything under
+> **Status:** release 1 (native Windows). Milestones M0 to M6 are done and verified on one machine; M3 to M5 were run live
+> with the local models on 2026-10-26; M6 (context management) is built and verified live (see [progress.md](../status/progress.md)). Everything under
 > [Planned components](#planned-components) is not built yet.
 
 ## Overview
@@ -19,7 +19,7 @@ The project has three layers:
 | Layer | State | What it covers |
 |---|---|---|
 | Harness | Built (M0 to M2) | Policy on every tool call, deterministic tools, redaction, decision log; runs inside OpenCode 1.19.3 |
-| Orchestrator | Built (M3, M4): task state, loop detection, rules decisions, and the micro model for stalled loops. Routing is planned (see [Planned components](#planned-components)) |
+| Orchestrator | Built (M3 to M5): task state, loop detection, rules decisions, the micro model for stalled loops, and the deep model on demand. Routing is planned (see [Planned components](#planned-components)) |
 | Local-first application | Goal | A full application on the developer's machine, using local models |
 
 Model slots:
@@ -27,8 +27,8 @@ Model slots:
 | Slot | Model | State |
 |---|---|---|
 | `main` | Qwen3.5-9B | In use |
-| `micro` | LFM2.5-1.2B | Planned, M4 |
-| `deep` | Ternary Bonsai 2 27B | Planned, M5 |
+| `micro` | LFM2.5-1.2B | Built (M4): stalled-loop decisions on CPU |
+| `deep` | Ternary Bonsai 2 27B | Built (M5): on demand, one GPU model at a time |
 
 ## Components
 
@@ -62,6 +62,10 @@ Boundaries:
    the call is also recorded in the task's journal, and a loop rule can refuse it (see below).
 
 Policy hooks fail closed. If `agent hook` cannot answer (bad config, missing binary), the shim blocks the call.
+
+Two more hooks run before each model request, not around a tool call. `messages-transform` may shorten old tool results in
+that request only, and `system-transform` adds the task state to the system prompt. Both fail open, and neither changes a
+verdict. See [M6](../status/milestones/m6-context.md).
 
 The rules applied in step 3 are listed in [security.md](security.md) and, at code level, in
 [core-security.md](../reference/modules/core-security.md). The hook protocol is in
@@ -108,8 +112,7 @@ Details are in [m2-tools.md](../status/milestones/m2-tools.md).
 |---|---|
 | Cached symbol index; plan and summary files for tasks | later (M3 uses the code index on demand) |
 | Routing between model slots (R-29.1); LFM classification and summarising | M4 partly, later |
-| Bonsai deep path (slot `deep`) | M5 |
-| Context management | M6 |
+| Escalation routing to the deep model (R-3.6, R-29.1) | later |
 | Jev and LiteLLM | M7, M8 |
 | WSL runtime | Release 2 ([ADR-0002](../decisions/0002-runtime-os-repo-location-and-deviation.md)) |
 

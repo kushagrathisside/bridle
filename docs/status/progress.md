@@ -5,7 +5,7 @@ dated and ordered newest first. Every "verified" line names the evidence. It is 
 other pages must agree with it.
 
 > **Status:** M2 (deterministic tools) is done and tagged `m2` on 2026-10-22; M1 is tagged `m1`. On 2026-10-23 the
-> history was rewritten and every hash in this log was updated. M3 (state) is next. Release 1 is native Windows,
+> history was rewritten and every hash in this log was updated. M0 to M6 are done and committed. Release 1 is native Windows,
 > verified on one machine.
 
 ## Milestones
@@ -15,10 +15,10 @@ other pages must agree with it.
 | M0 | Audit and architecture | Done | [2026-10-21: baseline](#2026-10-21-baseline) |
 | M1 | Basic OpenCode integration on Windows: policy, hook, runtime | Done | [2026-10-21: Wave 0 and the POC](#2026-10-21-wave-0-and-the-poc) |
 | M2 | Deterministic tools: MCP tools, failure parsing, tree-sitter | Done | [2026-10-22 (night): M2 started, steps 0 to 3 done](#2026-10-22-night-m2-started-steps-0-to-3-done) |
-| M3 | State and loop detection; event log in a state directory | Next | None yet |
-| M4 | `micro` model as classifier or summariser (LFM) | Planned | None yet |
-| M5 | `deep` model on demand (Bonsai); one GPU model at a time | Planned | None yet |
-| M6 | Context management | Planned | None yet |
+| M3 | State and loop detection; task journal; refusals; worktree tasks | Done (`736fea3`) | [2026-10-26: M3 done](#2026-10-26-m3-done-and-committed-as-736fea3-state-loop-detection-decisions-worktrees-live-runs) |
+| M4 | `micro` model decides stalled loops (LFM2.5, CPU), with rules fallback and an A/B run | Done (`49f74d9`) | [2026-10-26: M4 done](#2026-10-26-m4-done-and-committed-as-49f74d9-micro-model-decides-stalled-loops-ab-run) |
+| M5 | `deep` model on demand (Bonsai); one GPU model at a time | Done (`53724d4`) | [2026-10-26: M5 done](#2026-10-26-m5-done-and-committed-as-53724d4-deep-model-on-demand-one-gpu-model-at-a-time) |
+| M6 | Context management: per-request compaction and the task state in the system prompt | Done (`977a56f`) | [2026-10-26: M6 done](#2026-10-26-m6-done-and-committed-as-977a56f-context-policy-and-per-request-transforms) |
 | M7 | Jev integration: TLS and endpoint policy | Planned | None yet |
 | M8 | LiteLLM for external providers, behind the policy | Planned | None yet |
 | M9 | Security threat-model tests and egress audit | Planned | None yet |
@@ -27,7 +27,23 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
-## 2026-10-26: M5 done in the working tree (deep model on demand; one GPU model at a time)
+## 2026-10-26: M6 done and committed as `977a56f` (context policy and per-request transforms)
+
+- Built: the pure policy (`harness-core/src/context.rs`), the `messages-transform` and `system-transform` hooks, the task
+  block for the system prompt, and the shim that forwards both hooks. The rules, the live run, the deviations and the
+  limits are in [milestones/m6-context.md](milestones/m6-context.md).
+- Gate: `wgate` passes (fmt, clippy with warnings denied, 642 tests). Committed as `977a56f`.
+- Live run with Qwen3.5-9B through OpenCode 1.19.3 on the toy repository, 2026-10-26:
+  - run A: a request of 20082 tokens was rejected by the server, because the three recent results were kept whole;
+  - run B, after the rule for large recent results: a 30255-byte request became 2935 bytes, and the run completed with
+    no context or template error in the OpenCode log.
+- Found and fixed while testing: a second system message made the Qwen chat template fail, so the block now joins the
+  first system entry. Recent results alone can exceed the budget, so the largest are compacted when the context would
+  not fit.
+- Not observed live: compaction of an old verification result (unit tested). The bytes-per-token estimate is low for
+  numbered output (see the limits in the M6 page).
+
+## 2026-10-26: M5 done and committed as `53724d4` (deep model on demand; one GPU model at a time)
 
 - The deep model (Ternary Bonsai 2 27B, PTQ1_0, PrismML fork) loads in 27.8 s and uses 6552 MiB of GPU memory. The
   main model was stopped to load it; `agent models serve` now refuses a second GPU server while one runs (live refusal).
@@ -36,7 +52,7 @@ M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
   model (5 of 16, p50 3.2 s). Escalation routing to the deep model is not built. See [milestones/m5-bonsai.md](milestones/m5-bonsai.md).
 - Gate: green (fmt, clippy with warnings denied, 627 tests).
 
-## 2026-10-26: M4 done in the working tree (micro model decides stalled loops; A/B run)
+## 2026-10-26: M4 done and committed as `49f74d9` (micro model decides stalled loops; A/B run)
 
 - The micro model (LFM2.5-1.2B, CPU) decides stalled loops when `decisions.provider = "local_lfm"`: ESCALATE, ASK_USER or
   REPLAN, checked against that set; anything else falls back to the rules. See [milestones/m4-lfm.md](milestones/m4-lfm.md)
@@ -47,14 +63,13 @@ M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
   the model's reason. A black-box test covers an unreachable model (fallback to the rules).
 - Gate: green (fmt, clippy with warnings denied, 627 tests). The timeout test in `mcp/tools` was made robust under load.
 
-## 2026-10-26: M3 done in the working tree (state, loop detection, decisions, worktrees, live runs)
+## 2026-10-26: M3 done and committed as `736fea3` (state, loop detection, decisions, worktrees, live runs)
 
 - Built and tested: the state store (`harness-runtime/src/state/`), the task model, fingerprints, the loop detector
   and the rules engine (`harness-core`), the hook and MCP wiring and the `agent task`, `explain` and `trace` commands
   (`harness-cli`), worktree mode, and the `task_status` tool (off by default). The step-by-step result, the deviations
   from the plan and the limits are in [milestones/m3-state.md](milestones/m3-state.md#result-2026-10-26).
-- Gate: `wgate` passes (fmt, clippy with warnings denied, 614 tests). Not committed yet; M3 is committed as one change
-  when reviewed.
+- Gate: `wgate` passes (fmt, clippy with warnings denied, 614 tests). Committed as `736fea3`.
 - Live runs with Qwen3.5-9B through OpenCode 1.19.3 on the toy repository (`D:\e2e\toy`), 2026-10-26:
   - run 1 (`task-0001`): the model removed a contradictory assertion instead of fixing the code. Verifications were
     recorded from MCP results (failed, then passed).

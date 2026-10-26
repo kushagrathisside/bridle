@@ -4,7 +4,7 @@ The orchestrator keeps a record of each task, detects loops in the model's calls
 run. It spans three crates: the pure rules in `harness-core`, the storage in `harness-runtime`, and the hook and
 command glue in `harness-cli`.
 
-> **Status:** Built (M3, 2026-10-26). Rules engine only; the LFM engine (M4) and Jev (M7) are not built.
+> **Status:** Built (M3 to M5). The rules decide every call. The micro model decides stalled loops (M4). The deep model is served on demand (M5). The context policy and the task block for the system prompt (M6) are in [context.md](context.md). Jev (M7) is not built.
 
 ## Responsibilities
 
@@ -21,6 +21,10 @@ command glue in `harness-cli`.
 | `harness-runtime/src/mcp/tools/task.rs` | `TaskStatusTool` | The `task_status` tool, off by default |
 | `harness-cli/src/workflow.rs` | `before`, `after`, `refusal_message` | Maps hook payloads to records; applies the rules before an allowed call |
 | `harness-cli/src/commands/task.rs` | `TaskAction`, `explain`, `trace` | The `agent task`, `agent explain` and `agent trace` commands |
+| `harness-core/src/lfm.rs` | `CHOICES`, `parse_choice`, `is_stalled` | The contract of the micro model's answers: ESCALATE, ASK_USER or REPLAN; a strict check (M4) |
+| `harness-runtime/src/decision.rs` | `LfmEngine` | The micro model for stalled loops, with fallback to the rules; the request holds no prompt text (M4) |
+| `harness-cli/src/commands/eval.rs` | `run` | `agent eval-decisions`: the A/B run of the rules and a model on recorded cases (M4, M5) |
+| `harness-cli/src/commands/models.rs` | `check_one_gpu_model` | `agent models serve` refuses a second GPU server while one runs (M5) |
 
 ## Behaviour
 

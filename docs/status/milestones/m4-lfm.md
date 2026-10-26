@@ -4,7 +4,7 @@ M4 puts the micro model into the decision path for stalled loops. The rules stil
 decide every call. The model answers one of three questions when a loop has stalled: stop and report (ESCALATE), ask the
 person (ASK_USER), or plan again (REPLAN). The design is in [ADR-0005](../../decisions/0005-micro-model-decides-stalled-loops-only.md).
 
-> **Status:** Done in the working tree (2026-10-26), not yet committed. Gate green (627 tests); live runs recorded below.
+> **Status:** Done and committed as `49f74d9` (2026-10-26). Gate green (627 tests); live runs recorded below.
 
 ## Goal and scope
 

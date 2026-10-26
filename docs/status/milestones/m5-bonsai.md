@@ -4,7 +4,7 @@ M5 makes the deep model usable without giving it the main model's place. It load
 the main model on the GPU, its reasoning budget is raised, and it is checked and measured like the other slots.
 Its escalation routing (R-3.6, R-29.1) is not built.
 
-> **Status:** Done for the gate in the working tree (2026-10-26), not yet committed. Gate green (627 tests). Live results below.
+> **Status:** Done and committed as `53724d4` (2026-10-26). Gate green (627 tests). Live results below.
 
 ## Gate and what was checked
 

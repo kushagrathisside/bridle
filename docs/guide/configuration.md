@@ -4,7 +4,7 @@ This page describes the files that configure the Bridle harness, the keys you ar
 file may set what, and the validation rules. It is for an engineer setting up or tuning a project. It assumes you
 have installed the `agent` binary as described in [installation.md](installation.md).
 
-> **Status:** Release 1 (native Windows), harness milestones M0 to M2 complete. Behaviour described here is
+> **Status:** Release 1 (native Windows), harness milestones M0 to M6 complete. Behaviour described here is
 > implemented and verified on the target machine as of 2026-10-22.
 
 ## Configuration files
@@ -173,6 +173,24 @@ failure to reach the micro slot falls back to the rules. The model answers only 
 A repository may enable the workflow or tune these values; it cannot switch the workflow off. The rule is enforced in
 `config/trust.rs`. Read-only calls are never refused by a loop rule. See
 [the M3 plan](../status/milestones/m3-state.md#fingerprints-and-loop-rules) for what each rule detects.
+
+## Context budget (M6)
+
+The `[context]` section sets the budget for tool results in each model request. The rules are in
+[M6](../status/milestones/m6-context.md#rules).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `context.target_tokens` | 16000 | Older results are compacted until the messages are under this size. |
+| `context.hard_limit` | 24000 in code; 16384 in the shipped profile | Older read-only results are dropped above this size, then large results are compacted. Must not exceed the default model's context (rule V21). |
+| `context.compact_tool_outputs` | true | `false` turns compaction and dropping off. Requests are still measured. |
+
+Sizes are estimated as bytes divided by four, over the messages of a request only. The system prompt and the tool
+definitions are not counted, so leave room for them: one live request of 30,284 bytes of messages was 20,082 tokens.
+Use a lower `hard_limit` for numbered or repetitive output.
+
+Each request writes one `context` record to `.local-agent/events.jsonl`, with `tool_results`, `changed`, `bytes_before`,
+`bytes_after`, `target_bytes` and `hard_bytes`.
 
 ## Limits
 
