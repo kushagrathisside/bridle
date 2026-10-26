@@ -193,10 +193,54 @@ pub fn provider_for(
         None => None,
     };
     Ok(match model.provider {
-        ProviderKind::OpenaiCompatible => Box::new(OpenAiCompatProvider::new(model, api_key)),
+        ProviderKind::OpenaiCompatible | ProviderKind::Litellm => {
+            Box::new(OpenAiCompatProvider::new(model, api_key))
+        }
         ProviderKind::LlamaCpp | ProviderKind::PrismBonsai => {
             Box::new(LlamaCppProvider::new(model, api_key))
         }
         ProviderKind::Mock => Box::new(MockProvider::echo(&model.id)),
     })
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod gateway_tests {
+    use super::*;
+    use harness_core::config::Config;
+
+    const HYBRID: &str = include_str!("../../../../configs/hybrid.toml");
+
+    /// A live check of the gateway path: a LiteLLM gateway in front of a running local model. The gateway's address
+    /// comes from `BRIDLE_GATEWAY_URL` (default: the hybrid profile's endpoint), and its key from `BRIDLE_GATEWAY_KEY`.
+    /// Run with `--ignored` while the gateway and the model are up.
+    #[test]
+    #[ignore = "needs a running LiteLLM gateway"]
+    fn a_gateway_slot_completes_a_request() {
+        let mut config: Config = toml::from_str(HYBRID).unwrap();
+        let slot = config
+            .models
+            .get_mut("gateway")
+            .expect("the hybrid profile has a gateway slot");
+        if let Ok(url) = std::env::var("BRIDLE_GATEWAY_URL") {
+            slot.endpoint = url;
+        }
+        let model = slot.clone();
+        let provider = provider_for(&model, &|name| std::env::var(name).ok())
+            .expect("the gateway slot builds a provider");
+        let response = provider
+            .chat(&ChatRequest {
+                messages: vec![ChatMessage::user("Reply with the single word: ok")],
+                max_tokens: Some(16),
+                ..ChatRequest::default()
+            })
+            .expect("the gateway answers");
+        assert!(
+            response
+                .content
+                .as_deref()
+                .is_some_and(|c| !c.trim().is_empty()),
+            "the gateway gave no text"
+        );
+    }
 }

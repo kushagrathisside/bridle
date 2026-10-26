@@ -54,7 +54,12 @@ impl OpenAiCompatProvider {
     /// counts as no key.
     pub fn new(model: &ModelConfig, api_key: Option<String>) -> Self {
         let timeout = Duration::from_millis(model.timeout_ms);
-        let agent = crate::http::local_agent(timeout);
+        // A loopback endpoint never goes through a proxy; any other host uses the environment's proxy and TLS (M7, M8).
+        let agent = if harness_core::config::endpoint_is_loopback(&model.endpoint) {
+            crate::http::local_agent(timeout)
+        } else {
+            crate::http::remote_agent(timeout)
+        };
         Self {
             model_id: model.id.clone(),
             base_url: model.endpoint.trim_end_matches('/').to_owned(),

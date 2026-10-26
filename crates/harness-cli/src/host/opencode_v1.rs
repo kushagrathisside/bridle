@@ -497,6 +497,16 @@ pub fn model_ref(slot: &str, model: &ModelConfig) -> String {
     format!("{}/{}", provider_id(slot), model.id)
 }
 
+/// The key OpenCode sends to a slot's endpoint. A slot with `api_key_env` reads the key from that variable when OpenCode
+/// starts, so the key is never written into the generated file. Other slots get a placeholder: llama-server ignores
+/// the key, and the AI SDK needs a non-empty value.
+fn api_key_reference(m: &ModelConfig) -> String {
+    match &m.api_key_env {
+        Some(var) => format!("{{env:{var}}}"),
+        None => "unused".to_owned(),
+    }
+}
+
 fn provider_entry(slot: &str, m: &ModelConfig) -> Value {
     let name = m.display_name.clone().unwrap_or_else(|| m.id.clone());
     json!({
@@ -504,8 +514,7 @@ fn provider_entry(slot: &str, m: &ModelConfig) -> Value {
         "name": format!("{} {slot} ({name})", identity::PRODUCT_ID),
         "options": {
             "baseURL": m.endpoint,
-            // llama-server ignores the key; the AI SDK requires a non-empty value.
-            "apiKey": "unused",
+            "apiKey": api_key_reference(m),
             "timeout": m.timeout_ms,
         },
         "models": {

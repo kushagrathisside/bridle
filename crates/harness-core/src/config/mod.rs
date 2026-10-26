@@ -19,7 +19,9 @@ pub use load::{
     machine_config_path, merge_toml,
 };
 pub use schema::*;
-pub use validate::{ConfigIssue, Severity, ValidationEnv, validate, validate_with};
+pub use validate::{
+    ConfigIssue, Severity, ValidationEnv, endpoint_is_loopback, validate, validate_with,
+};
 
 use std::path::{Path, PathBuf};
 

@@ -186,6 +186,9 @@ pub enum ProviderKind {
     LlamaCpp,
     /// PrismML llama.cpp fork serving Bonsai. Same protocol as `llama_cpp`.
     PrismBonsai,
+    /// A LiteLLM gateway (M8). It speaks the OpenAI-compatible protocol, and `id` is the route the gateway serves.
+    /// The gateway holds its own provider keys; this config holds only the gateway's key name.
+    Litellm,
     /// Scripted responses for tests; never touches the network.
     Mock,
 }
