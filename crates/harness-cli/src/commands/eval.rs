@@ -58,13 +58,13 @@ struct Report {
     rows: Vec<Row>,
 }
 
-pub fn run(app: &App, cases_path: &Path, out: Option<&Path>) -> Result<ExitCode> {
+pub fn run(app: &App, slot: &str, cases_path: &Path, out: Option<&Path>) -> Result<ExitCode> {
     let text = std::fs::read_to_string(cases_path)
         .with_context(|| format!("cannot read {}", cases_path.display()))?;
     let cases: Vec<Case> =
         serde_json::from_str(&text).context("the cases file is not valid JSON")?;
-    let Some(model) = app.config.models.get("micro") else {
-        bail!("no micro model slot is configured");
+    let Some(model) = app.config.models.get(slot) else {
+        bail!("no model slot `{slot}` is configured");
     };
     let provider = provider_for(model, &|name| std::env::var(name).ok())
         .map_err(|error| anyhow::anyhow!("cannot build the micro provider: {error}"))?;

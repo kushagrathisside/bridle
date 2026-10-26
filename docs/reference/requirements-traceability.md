@@ -89,13 +89,13 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-3.1 | STRAT | Deep/escalation model: Ternary Bonsai 2 27B, PTQ1_0, PrismML llama.cpp fork, CUDA. It is not the default model. | M5 | open |
+| R-3.1 | STRAT | Deep/escalation model: Ternary Bonsai 2 27B, PTQ1_0, PrismML llama.cpp fork, CUDA. It is not the default model. | M5 | partial: Bonsai is served, health-checked and used for the A/B; escalation from the loop rules is not routed to it yet |
 | R-3.2 | CLAIM | PTQ1_0 is 5.95 GB and PQ2_0 is 7.21 GB. PTQ1_0 decodes faster on Ada. The PrismML fork is required. | M0 | verified (PrismML artifact table also lists 5.93 / 7.25 GB) |
-| R-3.3 | DEF | PTQ1_0 is the default on 8 GB cards. Do not default to PQ2_0. | M5 | open |
-| R-3.4 | CON | Do not use the full 262K context by default | M5 | open |
-| R-3.5 | DEF | Operating modes: normal deep 16K–24K, large deep 24K–32K, very large repo = retrieval + summaries. Benchmark them. | M5, M10 | open |
+| R-3.3 | DEF | PTQ1_0 is the default on 8 GB cards. Do not default to PQ2_0. | M5 | done: the PTQ1_0 file is the one in use |
+| R-3.4 | CON | Do not use the full 262K context by default | M5 | done: context 16384 (normal deep); the 262K context is not used |
+| R-3.5 | DEF | Operating modes: normal deep 16K–24K, large deep 24K–32K, very large repo = retrieval + summaries. Benchmark them. | M5, M10 | partial: normal deep (16K) measured; large deep not benchmarked |
 | R-3.6 | REQ | Invoke Bonsai for: persistent debugging failure, hard architecture, research methodology, hard algorithms, cross-module causal analysis, high-impact refactoring, repeated local-model failure, user-marked "deep", policy-predicted worth-the-latency | M5 | open |
-| R-3.7 | CON | Bonsai must not automatically replace Qwen for every task | M5 | open |
+| R-3.7 | CON | Bonsai must not automatically replace Qwen for every task | M5 | done: the deep model is not a default; it answers only the A/B cases |
 
 ## §4 Micro-model: LFM2.5-1.2B-Thinking
 
@@ -129,7 +129,7 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-7.1 | CON | Never hard-code the harness against one model server | all | open |
-| R-7.2 | REQ | `ModelProvider` with adapters: OpenAICompatible, LlamaCpp, PrismBonsai, LiteLLM, JevDecision, Mock | M1 (OpenAICompatible, LlamaCpp, Mock), M5, M7, M8 | in-progress (OpenAI-compatible and llama.cpp done; PrismBonsai, LiteLLM, Jev, Mock pending) |
+| R-7.2 | REQ | `ModelProvider` with adapters: OpenAICompatible, LlamaCpp, PrismBonsai, LiteLLM, JevDecision, Mock | M1 (OpenAICompatible, LlamaCpp, Mock), M5, M7, M8 | partial: the PrismBonsai provider uses the llama.cpp client; live health and completion pass |
 | R-7.3 | REQ | Primary LLM calls flow ModelRegistry → ModelRouter → ModelProvider | M1, M4 | open |
 | R-7.4 | REQ | Declarative model-registry config. The format is negotiable; the separation is not. | M1 | done (TOML, ADR-0001; layered machine/repo/explicit config with repository trust rules; docs/configuration.md) |
 | R-7.5 | REQ | Per-model config: name, endpoint, API-key *source*, context, temperature, max output, reasoning budget, MTP, KV-cache mode, timeout, retries, role, capabilities, hardware profile | M1 | done (`ModelConfig`: endpoint, `api_key_env`, context, sampling, max output, reasoning budget, MTP, KV cache, timeout, retries, role, capabilities, hardware; V1-V23) |
@@ -170,7 +170,7 @@ the ADR is linked.
 | R-11.2 | REQ | `build`: Qwen3.5-9B. read=allow, edit=allow, bash=ask/policy-mediated. Covers implementation, debugging, tests, Git, controlled autonomous loops. | M1 | done (generated `build` agent: edit allow, read rules with secrets denied, bash `ask` plus allow list, every call through the `tool-before` policy) |
 | R-11.3 | REQ | `explore`: LFM2.5-1.2B. read=allow, edit=deny, bash=restricted. Covers repo mapping, dependency tracing, symbol discovery, targeted inspection, concise evidence. | M1 (on Qwen, see audit C-2), M4 (LFM A/B) | open |
 | R-11.4 | REQ | `review`: LFM2.5-1.2B or optional Qwen 2B/4B. Covers inspecting diffs, classifying failures, finding regressions and missing tests, challenging the implementation. | M4 | open |
-| R-11.5 | REQ | `deep`: Bonsai 2 27B. Covers hard architecture, persistent failure, research reasoning, escalation, senior review. | M5 | open |
+| R-11.5 | REQ | `deep`: Bonsai 2 27B. Covers hard architecture, persistent failure, research reasoning, escalation, senior review. | M5 | partial: the deep model is measured on the stalled-loop cases; escalation routing is not built |
 | R-11.6 | CON | Build on OpenCode's allow/ask/deny permission system. Do not invent a parallel one. | M1 | done (permissions are generated into `opencode.json`; the plugin hooks only answer allow or deny inside OpenCode's own flow) |
 
 ## §12 No multi-agent swarm
@@ -229,7 +229,7 @@ the ADR is linked.
 | R-18.1 | REQ | Default Qwen → Qwen → Qwen. On stall, LFM classifies the state. Persistent or high-complexity failure goes to Bonsai. | M4, M5 | open |
 | R-18.2 | REQ | Triggers: same normalised failure ≥ 2, different patches with the same failure, high architecture uncertainty, cross-module behaviour, research-methodology question, explicit user request, high-impact change | M5 | open |
 | R-18.3 | REQ | Bonsai analyses and proposes. Qwen implements and tests. | M5 | open |
-| R-18.4 | CON | Bonsai must not mutate code automatically in the first implementation stage | M5 | open |
+| R-18.4 | CON | Bonsai must not mutate code automatically in the first implementation stage | M5 | done: the deep model has no path that edits code |
 
 ## §19 Failure normalisation
 
@@ -433,16 +433,16 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-44.1 | REQ | Each provider has `GET /health` or equivalent, plus functional tests: simple completion, tool capability, streaming, context, structured output, latency | M1 | done (`agent health`: health, models, completion, streaming, tool call, structured output, context, MTP; all pass for Qwen on Windows) |
-| R-44.2 | REQ | Model-specific checks: Qwen tool call. LFM classification and structured JSON. Bonsai reasoning and tool call. | M1, M4, M5 | open |
+| R-44.2 | REQ | Model-specific checks: Qwen tool call. LFM classification and structured JSON. Bonsai reasoning and tool call. | M1, M4, M5 | partial: Bonsai reasoning and tool call checks pass (8 of 8); LFM structured output checked in the A/B |
 | R-44.3 | CON | HTTP 200 does not imply compatibility | M1 | done (health runs functional checks; HTTP 200 alone never passes) |
 
 ## §45 Model unloading and memory
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-45.1 | CON | Do not assume Qwen 9B and Bonsai 27B coexist in VRAM | M5 | open |
-| R-45.2 | REQ | Lifecycle states: loaded, warming, ready, idle, unloading, unloaded, error | M5 | open |
-| R-45.3 | REQ | Configurable lifecycle (keep Qwen loaded, LFM CPU-resident, Bonsai on demand; unload Qwen before Bonsai if needed) | M5 | open |
+| R-45.1 | CON | Do not assume Qwen 9B and Bonsai 27B coexist in VRAM | M5 | done: `agent models serve` refuses a second GPU server while one runs (live refusal) |
+| R-45.2 | REQ | Lifecycle states: loaded, warming, ready, idle, unloading, unloaded, error | M5 | partial: running or stopped, recorded by PID; the full lifecycle states are not built |
+| R-45.3 | REQ | Configurable lifecycle (keep Qwen loaded, LFM CPU-resident, Bonsai on demand; unload Qwen before Bonsai if needed) | M5 | partial: the deep slot loads and unloads on demand; keeping Qwen loaded and unloading it automatically are not built |
 
 ## §46 CPU-resident LFM
 
@@ -568,8 +568,8 @@ the ADR is linked.
 | AC-B1 | Basic | OpenCode loads the extension | M1 | done (OpenCode 1.19.3 loads the shim and the MCP server; every tool call is logged by the hooks; Windows run 2026-10-22) |
 | AC-B2 | Basic | Qwen works locally | M1 | done (Qwen3.5-9B serves locally on the RTX 4060; `agent health` passes; Windows runs 2026-10-21 and 2026-10-22) |
 | AC-B3 | Basic | LFM works locally | M4 | done: LFM served and used locally (health 8 of 8; live refusal decided by the model) |
-| AC-B4 | Basic | Bonsai works locally | M5 | open |
-| AC-B5 | Basic | Models are independently testable | M1, M4, M5 | open |
+| AC-B4 | Basic | Bonsai works locally | M5 | done: Bonsai works locally (health 8 of 8; the A/B run) |
+| AC-B5 | Basic | Models are independently testable | M1, M4, M5 | partial: each slot is checked with `agent health` and measured with the A/B command |
 | AC-B6 | Basic | Configuration is declarative | M1 | done (TOML config with validation V1-V23 and `agent config validate`) |
 | AC-A1 | Agent | Main coding loop works | M1 | done (toy repo: read, edit, test, verify through OpenCode with the policy on every call; Windows run 2026-10-22) |
 | AC-A2 | Agent | Subagent invocation works | M1, M4 | open |

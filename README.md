@@ -160,7 +160,7 @@ Weights are not included. Download them yourself and check the SHA-256 values in
 |---|---|---|
 | `main` | Qwen3.5-9B, Q4_K_M, on llama.cpp b11756 | In use (release 1) |
 | `micro` | LFM2.5-1.2B-Thinking, Q4_K_M, CPU | Decides stalled loops when `decisions.provider = "local_lfm"` (M4). Research use under the LFM Open License v1.0 |
-| `deep` | Ternary Bonsai 2 27B, PTQ1_0 | Planned for M5; needs the PrismML llama.cpp fork |
+| `deep` | Ternary Bonsai 2 27B, PTQ1_0, PrismML llama.cpp fork | Loads on demand, never beside the main model on the GPU (M5). Health 8 of 8; A/B run; escalation routing not built |
 
 ## Roadmap
 
@@ -171,7 +171,7 @@ Weights are not included. Download them yourself and check the SHA-256 values in
 | M2 | Deterministic tools: MCP tools, failure parsing, tree-sitter | Done |
 | M3 | State and loop detection; task journal; refusals; worktree tasks | Done (2026-10-26, verified live) |
 | M4 | The micro model decides stalled loops (LFM2.5, CPU), with rules fallback and an A/B run | Done (2026-10-26) |
-| M5 | Deep model on demand (Bonsai); one GPU model at a time | Planned |
+| M5 | Deep model on demand (Bonsai); one GPU model at a time | Done (2026-10-26); escalation routing not built |
 | M6 | Context management | Planned |
 | M7 | Jev integration: TLS and endpoint policy | Planned |
 | M8 | LiteLLM for external providers, behind the policy | Planned |

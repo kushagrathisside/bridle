@@ -1,0 +1,215 @@
+{
+  "model": "bonsai-2-27b",
+  "summary": {
+    "cases": 20,
+    "stalled": 16,
+    "model_answers": 16,
+    "fallbacks": 0,
+    "answers_allowed": 16,
+    "agreements": 1,
+    "latency_p50_ms": 2108,
+    "latency_p95_ms": 2877
+  },
+  "rows": [
+    {
+      "name": "same failure, guard test, three runs",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "After 3 consecutive failures on the same issue, continuing the same approach is not viable, so the plan must be revised from the current state.",
+      "agrees": false,
+      "latency_ms": 2809
+    },
+    {
+      "name": "same failure, unit test after a fix",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "AskUser",
+      "model_reason": "The loop has stalled for three iterations with the same test failure and one refusal, indicating a need for external input to break the deadlock.",
+      "agrees": false,
+      "latency_ms": 2877
+    },
+    {
+      "name": "same failure, two failures per run",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "Three consecutive verification failures indicate the current approach is stuck, so a new plan is needed.",
+      "agrees": false,
+      "latency_ms": 2147
+    },
+    {
+      "name": "same failure, import error",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "Three consecutive failures on run_tests indicate the current strategy is not working, so a different debugging and testing approach is needed.",
+      "agrees": false,
+      "latency_ms": 2215
+    },
+    {
+      "name": "same failure, lint finding",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "The verification phase has failed three times in a row due to the same linter issue, indicating the current plan needs adjustment.",
+      "agrees": false,
+      "latency_ms": 2258
+    },
+    {
+      "name": "same failure, after two edits",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "After 3 consecutive failures, the loop is stuck and requires human intervention.",
+      "agrees": true,
+      "latency_ms": 2189
+    },
+    {
+      "name": "repeated command, unittest",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "The loop stalled due to repeated execution of the same command without progress.",
+      "agrees": false,
+      "latency_ms": 1852
+    },
+    {
+      "name": "repeated command, build",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "The loop has stalled on a repeated cargo build command, indicating the plan needs to be reassessed.",
+      "agrees": false,
+      "latency_ms": 2087
+    },
+    {
+      "name": "repeated command, install",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "The repeated bash command indicates the loop is stuck and a new plan is needed to proceed.",
+      "agrees": false,
+      "latency_ms": 1915
+    },
+    {
+      "name": "repeated command, make",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "The loop is stalling due to repeated execution of the same command without new context, so a new approach is needed to move forward.",
+      "agrees": false,
+      "latency_ms": 2108
+    },
+    {
+      "name": "repeated command, formatter",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "The loop stalled on a repeated 'cargo fmt' command, indicating the current implementation plan is stuck and needs to be re-evaluated to proceed.",
+      "agrees": false,
+      "latency_ms": 2280
+    },
+    {
+      "name": "repeated edit, calc.py",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "The implementation loop is stalled on repeated edits, indicating a need to reset the plan and take a different approach.",
+      "agrees": false,
+      "latency_ms": 1836
+    },
+    {
+      "name": "repeated edit, README",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "The repeated edit action indicates the loop is stuck; a new plan is needed to break the cycle and advance the implementation.",
+      "agrees": false,
+      "latency_ms": 1972
+    },
+    {
+      "name": "repeated edit, test file",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "The agent has failed twice in a row while repeatedly editing test_calc.py, indicating a flawed implementation strategy that requires a new approach rather than more incremental edits.",
+      "agrees": false,
+      "latency_ms": 2015
+    },
+    {
+      "name": "repeated edit, module",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The agent is stuck in a repetitive editing loop with recent failures and refusals, indicating it cannot progress further on its own.",
+      "agrees": false,
+      "latency_ms": 2117
+    },
+    {
+      "name": "repeated edit, utilities",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "Repeated edit actions without progress indicate a circular implementation pattern, requiring a fresh approach.",
+      "agrees": false,
+      "latency_ms": 1682
+    },
+    {
+      "name": "iteration limit reached",
+      "stalled": false,
+      "rules": "TaskBlocked",
+      "source": "rules",
+      "model": null,
+      "model_reason": null,
+      "agrees": null,
+      "latency_ms": 0
+    },
+    {
+      "name": "implementation retries exceeded",
+      "stalled": false,
+      "rules": "Escalate",
+      "source": "rules",
+      "model": null,
+      "model_reason": null,
+      "agrees": null,
+      "latency_ms": 0
+    },
+    {
+      "name": "iteration limit with a repeated command",
+      "stalled": false,
+      "rules": "TaskBlocked",
+      "source": "rules",
+      "model": null,
+      "model_reason": null,
+      "agrees": null,
+      "latency_ms": 0
+    },
+    {
+      "name": "retries exceeded with a same failure",
+      "stalled": false,
+      "rules": "Escalate",
+      "source": "rules",
+      "model": null,
+      "model_reason": null,
+      "agrees": null,
+      "latency_ms": 0
+    }
+  ]
+}

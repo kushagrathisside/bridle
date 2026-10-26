@@ -90,6 +90,7 @@ fn serve(app: &App, slot: &str, detach: bool, wait_secs: u64) -> anyhow::Result<
     let plan = plan_serve(&app.config, slot)?;
     let state = app.state_dir();
     let pid_file = pid_path(&state, slot);
+    check_one_gpu_model(app, slot)?;
     if let Some(record) = read_record(&pid_file)? {
         if record_state(&record, &plan.bin) == RecordState::Running {
             bail!(
@@ -149,6 +150,40 @@ fn serve(app: &App, slot: &str, detach: bool, wait_secs: u64) -> anyhow::Result<
     let _ = fs::remove_file(&pid_file);
     println!("· {slot} server exited ({status})");
     Ok(exit_code_for(status))
+}
+
+/// One GPU model at a time (M3 to M5 plan, R-7): a GPU slot may start only when no other GPU slot's server
+/// is running. The person stops the other one first; nothing is stopped automatically.
+fn check_one_gpu_model(app: &App, slot: &str) -> anyhow::Result<()> {
+    let is_gpu = |name: &str| {
+        app.config
+            .models
+            .get(name)
+            .is_some_and(|model| model.hardware == harness_core::config::Hardware::Gpu)
+    };
+    if !is_gpu(slot) {
+        return Ok(());
+    }
+    for other in app
+        .config
+        .models
+        .keys()
+        .filter(|name| name.as_str() != slot && is_gpu(name))
+    {
+        let pid_file = pid_path(&app.state_dir(), other);
+        if let Some(record) = read_record(&pid_file)?
+            && record_state(&record, &expected_server_bin(&app.config, other))
+                == RecordState::Running
+        {
+            bail!(
+                "`{other}` is a GPU server that is running (pid {}); only one GPU model runs at a time. \
+                 Stop it first with `{} models stop {other}`",
+                record.pid,
+                identity::CLI_NAME
+            );
+        }
+    }
+    Ok(())
 }
 
 fn stop(app: &App, slot: &str) -> anyhow::Result<ExitCode> {
