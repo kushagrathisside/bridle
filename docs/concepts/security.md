@@ -105,6 +105,13 @@ Fixed on 2026-10-22, after four code reviews (details in [progress.md](../status
 - Redaction gaps: escaped quotes, `*_KEY`, `-u user:pass`, credential files.
 - `models stop` signalling a reused PID.
 
+### Found by the M9 adversarial run
+
+The hostile run (`evals/security/cases.json`, now a test) found five gaps, all fixed: a shell escape that hid a secret
+name (`.en\v`), a Windows short name (`ENV~1`), a glob that could name a secret (`.env*`), environment dumps (`env`,
+`printenv`, a bare `set`, `export -p`, PowerShell `Env:` listings), and the order of the secret check and the path guard.
+The `agent egress` command lists every outbound destination. See [M9](../status/milestones/m9-security.md).
+
 ## Limits
 
 - The policy is not a sandbox. Running tests runs code the model wrote, and an allowed `python script.py` can do

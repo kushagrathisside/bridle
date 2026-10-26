@@ -148,6 +148,7 @@ policy before it runs. See [docs/guide/configuration.md](docs/guide/configuratio
   overloads. There is no persistent symbol index yet; the M3 orchestrator keeps task state, not a code index.
 - **Partial manifests.** `dependency_search` does not read CMake `find_package`, or Go and Gradle manifests.
 - **Context budget is an estimate.** Bytes divided by four, over the messages only. The system prompt and the tool definitions are not counted. See [M6](docs/status/milestones/m6-context.md).
+- **The LiteLLM gateway is not live.** The mock test passes; the live check waits for permission to start a local gateway.
 - **Jev is not live.** The decision backend is built and tested against its contract with a local mock. No Jev service was
   available, so the contract is unchecked against the real service. See [M7](docs/status/milestones/m7-jev.md).
 - **One machine, one OS.** Only native Windows on the tested machine is verified. OpenCode's own model catalog fetch is a
@@ -177,8 +178,8 @@ Weights are not included. Download them yourself and check the SHA-256 values in
 | M5 | Deep model on demand (Bonsai); one GPU model at a time | Done (2026-10-26); escalation routing not built |
 | M6 | Context management: compaction of tool results and the state in the system prompt | Done (2026-10-26, verified live) |
 | M7 | Jev decision backend behind the endpoint policy, with TLS | Built (2026-10-27); not live, no Jev service |
-| M8 | LiteLLM for external providers, behind the policy | Planned |
-| M9 | Security threat-model tests and egress audit | Planned |
+| M8 | LiteLLM gateway as a model provider, behind the policy | Built (2026-10-27); live gateway check pending permission |
+| M9 | Security threat-model tests and egress audit | Built (2026-10-27); 72 of 72 adversarial cases pass; `agent egress` lists the destinations |
 | M10 | Evaluation on a Rust coding benchmark | Planned |
 | M11 | Open-source release: licence, README, CI | Planned |
 

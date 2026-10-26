@@ -26,6 +26,7 @@ Global options: `--config <file>` (or `LOCAL_AGENT_CONFIG`) adds the highest-pre
 | `agent health [slot] [--quick] [--json]` | Functional checks per slot ([runtime-serving.md](runtime-serving.md)). A slot whose provider cannot be built is one failed check; the other slots still run | Failure if any check fails |
 | `agent config show` | The effective config, redacted, and the files it came from | |
 | `agent config validate` | Rules V1 to V35 | Failure on any error |
+| `agent egress` | Lists every outbound destination of the configuration and the proxy state; sends nothing (M9) | Always succeeds |
 | `agent config paths` | Machine config, repository config, state directory | |
 | `agent init [--profile local-only\|development] [--force]` | Writes `local-agent.toml` (never overwritten), `opencode.json`, `.opencode/plugins/local-agent.ts`, and a `.gitignore` entry | |
 | `agent init --machine --models-dir D:\models --runtimes-dir D:\runtimes --opencode-bin <exe>` | Writes the machine config | |

@@ -299,10 +299,10 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-27.1 | REQ | Path protection: confine operations to the authorised workspace. Block `../` traversal, absolute-path escape, symlink escape, and junction/reparse-point escape. | M1 (baseline), M9 | done (path guard and shell argument checks; tests in harness-core) |
-| R-27.2 | REQ | Never inject API keys, SSH private keys, `.env` secrets, cloud credentials, browser cookies, or Windows credential stores into model context | M1, M9 | in-progress (redactor tests pass; hook and event log redact; secret read denied end to end) |
-| R-27.3 | REQ | Redact API_KEY, TOKEN, PASSWORD, SECRET, AUTHORIZATION, and PRIVATE KEY patterns from telemetry | M1, M9 | open |
-| R-27.4 | REQ | Local-first mode never sends repo content to the network unexpectedly. External providers require explicit configuration. | M1 | done (endpoints must be loopback, V4; a repository config cannot add remote endpoints; webfetch and websearch follow `security.network`, denied in release 1). OpenCode's own catalog fetch: R-36.2 |
+| R-27.1 | REQ | Path protection: confine operations to the authorised workspace. Block `../` traversal, absolute-path escape, symlink escape, and junction/reparse-point escape. | M1 (baseline), M9 | done: the path guard, the shell argument checks, short names and escaped words are judged; tests in the security module and the adversarial suite (M9). |
+| R-27.2 | REQ | Never inject API keys, SSH private keys, `.env` secrets, cloud credentials, browser cookies, or Windows credential stores into model context | M1, M9 | partial: the redactor and the hook keep secret values out of the model's context; a recursive grep can still read a secret file (residual risk 1). |
+| R-27.3 | REQ | Redact API_KEY, TOKEN, PASSWORD, SECRET, AUTHORIZATION, and PRIVATE KEY patterns from telemetry | M1, M9 | done: telemetry redaction covers PEM blocks, authorization headers, bearer tokens, URL passwords and the event log (existing tests). |
+| R-27.4 | REQ | Local-first mode never sends repo content to the network unexpectedly. External providers require explicit configuration. | M1 | done: endpoints must be loopback unless the cloud opt-in and https are set (V4); `agent egress` lists every destination (M9). |
 | R-27.5 | ASM | Optional external/cloud models are supported. The default install is local-only and transmits no repo content. | M1, M8 | partial: optional external models are opt-in: a remote gateway needs cloud_models and a key name (V4, V36). The default install sends nothing. |
 
 ## §28 Observability
@@ -540,7 +540,7 @@ the ADR is linked.
 | R-57.6 | M6 Context | History filtering, tool-result compaction, repo retrieval, state injection, token budgeting | Measured task success, prompt tokens, latency, memory | partial: bytes before and after each request are recorded in `events.jsonl` (live run, 2026-10-26). Prompt tokens, latency and task success are not measured by M6. |
 | R-57.7 | M7 Jev | JevDecisionEngine behind the same interface. No orchestration rewrite. | A/B rules vs LFM vs Jev. Jev on by default only with evidence. | partial: JevDecisionEngine sits behind the same interface, with no orchestration rewrite. The A/B run (rules, LFM, Jev) is not done; it needs a Jev service. |
 | R-57.8 | M8 LiteLLM | Optional gateway: routing, external providers, Jev, logging, aliases, hybrid | Not required for local-only users | partial: gateway slots, the hybrid profile and the key reference are built (M8). Routing, aliases and logging are the gateway's own; the live check is pending. |
-| R-57.9 | M9 Security | Worktrees, path sandbox, secret redaction, risk policy, network policy, destructive-command policy | Adversarial tests pass | open |
+| R-57.9 | M9 Security | Worktrees, path sandbox, secret redaction, risk policy, network policy, destructive-command policy | Adversarial tests pass | partial: the adversarial suite passes 72 of 72 cases (M9); worktrees, path sandbox, redaction, risk and destructive policies are tested. The network policy holds with one known residual. |
 | R-57.10 | M10 Evaluation | Benchmark runner, task corpus, experiment matrix, metrics, reports | Full local suite run | open |
 | R-57.11 | M11 OSS release | README, docs, licence, security policy, contributing, examples, release workflow, publication, versioning, changelog, benchmark report | Docs and security posture match implementation quality | open |
 
