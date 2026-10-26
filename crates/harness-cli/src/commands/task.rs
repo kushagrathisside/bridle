@@ -125,6 +125,9 @@ pub fn explain(app: &App, task: Option<&str>, limit: usize) -> Result<ExitCode> 
         if !signals.is_empty() {
             println!("  signals: {}", signals.join("; "));
         }
+        if let Some(reason) = &record.result.model_reason {
+            println!("  model reason: {}", clean(reason));
+        }
     }
     Ok(ExitCode::SUCCESS)
 }

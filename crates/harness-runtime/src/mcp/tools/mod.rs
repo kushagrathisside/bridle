@@ -1583,15 +1583,16 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.txt\0\
     #[test]
     fn execute_kills_a_step_that_exceeds_its_timeout() {
         let dir = tempfile::tempdir().unwrap();
+        // Long enough that a step left running would miss the bound by a wide margin, even on a busy machine.
         let command = if cfg!(windows) {
-            "ping -n 6 127.0.0.1 > NUL"
+            "ping -n 30 127.0.0.1 > NUL"
         } else {
-            "sleep 5"
+            "sleep 30"
         };
         let started = Instant::now();
         let run = execute(command, dir.path(), Duration::from_millis(100)).unwrap();
         assert!(run.timed_out);
-        assert!(started.elapsed() < Duration::from_secs(4));
+        assert!(started.elapsed() < Duration::from_secs(15));
     }
 
     #[test]

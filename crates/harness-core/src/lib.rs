@@ -12,6 +12,7 @@ pub mod failures;
 pub mod fingerprint;
 pub mod identity;
 pub mod journal;
+pub mod lfm;
 pub mod loops;
 pub mod models;
 pub mod security;

@@ -6,6 +6,7 @@
 //! mapping lives here and in `host::opencode_v1`; the rules and the records live in `harness-core`.
 
 use anyhow::Result;
+use harness_core::config::DecisionProviderKind;
 use harness_core::decision::{
     DecisionEngine, DecisionInput, DecisionResult, ReasonCode, RulesDecisionEngine, refuses,
 };
@@ -13,7 +14,9 @@ use harness_core::failures::parse_failures;
 use harness_core::fingerprint::{Context, args_hash, command_hash, fingerprints};
 use harness_core::journal::{Outcome, Record};
 use harness_core::loops::{Thresholds, detect};
+use harness_runtime::decision::LfmEngine;
 use harness_runtime::mcp::record::is_verification_tool;
+use harness_runtime::providers::provider_for;
 use harness_runtime::state::{DecisionRecord, StateDir};
 use serde_json::Value;
 
@@ -54,10 +57,13 @@ pub fn before(app: &App, input: &Value, read_only: bool) -> Result<Option<String
 
     let thresholds = Thresholds::from_config(&app.config.agent, &app.config.workflow);
     let signals = detect(&journal.ring, &journal.state, &thresholds);
-    let result = RulesDecisionEngine.decide(&DecisionInput {
-        state: &journal.state,
-        signals: &signals,
-    });
+    let result = decide_for(
+        app,
+        &DecisionInput {
+            state: &journal.state,
+            signals: &signals,
+        },
+    );
 
     // Read-only calls are never refused: they cannot repeat a failure, and the model needs them to read it.
     if !read_only
@@ -99,6 +105,25 @@ pub fn before(app: &App, input: &Value, read_only: bool) -> Result<Option<String
         edited_file: edited_file(tool, &args),
     })?;
     Ok(None)
+}
+
+/// The decision for an input. With `decisions.provider = "local_lfm"`, a stalled loop is decided by the micro
+/// slot; every other case, and every failure to reach the model, is decided by the rules (R-30).
+pub fn decide_for(app: &App, input: &DecisionInput<'_>) -> DecisionResult {
+    if let (DecisionProviderKind::LocalLfm, Some(model)) = (
+        app.config.decisions.provider,
+        app.config.models.get("micro"),
+    ) {
+        return match provider_for(model, &|name| std::env::var(name).ok()) {
+            Ok(provider) => LfmEngine::new(provider).decide(input),
+            Err(error) => {
+                let mut result = RulesDecisionEngine.decide(input);
+                result.provider = format!("rules (fallback from local_lfm: {error})");
+                result
+            }
+        };
+    }
+    RulesDecisionEngine.decide(input)
 }
 
 /// Records the outcome of a verification after the call ran. A call that is not a verification is
@@ -170,6 +195,17 @@ pub fn after(app: &App, input: &Value) -> Result<()> {
 
 /// The refusal text: the rule that fired, why, and the next action that is still allowed.
 pub fn refusal_message(result: &DecisionResult) -> String {
+    let mut message = rule_message(result);
+    if let Some(reason) = &result.model_reason {
+        message.push_str(&format!(
+            " The model's reason: {}.",
+            reason.trim_end_matches('.')
+        ));
+    }
+    message
+}
+
+fn rule_message(result: &DecisionResult) -> String {
     let (why, next) = match result.reason_code {
         ReasonCode::IterationLimit => (
             "the task reached its iteration limit",

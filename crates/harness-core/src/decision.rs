@@ -39,6 +39,8 @@ pub enum Decision {
     Escalate,
     /// A person must decide before the task continues.
     AskUser,
+    /// Plan again from the current state (R-20.2 REPLAN). Only a stalled loop can ask for it.
+    Replan,
     /// The task cannot continue within its limits.
     TaskBlocked,
     /// The task reached DONE.
@@ -70,6 +72,9 @@ pub struct DecisionResult {
     pub provider: String,
     /// Time the engine took. Set by the caller; the pure engine reports 0.
     pub latency_ms: u64,
+    /// The short reason a model gave, when the decision came from one. Capped and cleaned by `lfm`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_reason: Option<String>,
 }
 
 /// The input of one decision.
@@ -132,6 +137,7 @@ impl DecisionEngine for RulesDecisionEngine {
             reason_code,
             provider: self.provider().to_owned(),
             latency_ms: 0,
+            model_reason: None,
         }
     }
 }

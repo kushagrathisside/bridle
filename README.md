@@ -13,7 +13,7 @@ repository, under one policy and one event log, on the developer's own hardware,
 | Layer | Status | What it does |
 |---|---|---|
 | Harness | Built (M0 to M2) | Policy on every tool call, deterministic tools, output redaction, decision log |
-| Orchestrator | Built (M3); LFM decisions and routing planned | Task state in a journal, loop detection, refusals with the rule named, worktree tasks. Routing between the `main`, `micro` and `deep` slots comes with M4 and M5 |
+| Orchestrator | Built (M3, M4); routing planned | Task state in a journal, loop detection, refusals with the rule named, the micro model for stalled loops with rules fallback, worktree tasks |
 | Local-first application | Goal | Several agents on one repository under one policy and one event log |
 
 Multi-agent execution and model routing do not work yet. The loop rules and task journal (M3) are built and were run live. The status of each milestone is in
@@ -159,7 +159,7 @@ Weights are not included. Download them yourself and check the SHA-256 values in
 | Slot | Model | Status |
 |---|---|---|
 | `main` | Qwen3.5-9B, Q4_K_M, on llama.cpp b11756 | In use (release 1) |
-| `micro` | LFM2.5-1.2B-Thinking, Q4_K_M | Planned for M4; research use under the LFM Open License v1.0 |
+| `micro` | LFM2.5-1.2B-Thinking, Q4_K_M, CPU | Decides stalled loops when `decisions.provider = "local_lfm"` (M4). Research use under the LFM Open License v1.0 |
 | `deep` | Ternary Bonsai 2 27B, PTQ1_0 | Planned for M5; needs the PrismML llama.cpp fork |
 
 ## Roadmap
@@ -170,7 +170,7 @@ Weights are not included. Download them yourself and check the SHA-256 values in
 | M1 | Basic integration on Windows: policy, hook, runtime, OpenCode | Done |
 | M2 | Deterministic tools: MCP tools, failure parsing, tree-sitter | Done |
 | M3 | State and loop detection; task journal; refusals; worktree tasks | Done (2026-10-26, verified live) |
-| M4 | Micro model as classifier or summariser (LFM2.5) | Planned |
+| M4 | The micro model decides stalled loops (LFM2.5, CPU), with rules fallback and an A/B run | Done (2026-10-26) |
 | M5 | Deep model on demand (Bonsai); one GPU model at a time | Planned |
 | M6 | Context management | Planned |
 | M7 | Jev integration: TLS and endpoint policy | Planned |
