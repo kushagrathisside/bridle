@@ -17,15 +17,27 @@ other pages must agree with it.
 | M2 | Deterministic tools: MCP tools, failure parsing, tree-sitter | Done | [2026-10-22 (night): M2 started, steps 0 to 3 done](#2026-10-22-night-m2-started-steps-0-to-3-done) |
 | M3 | State and loop detection; task journal; refusals; worktree tasks | Done (`736fea3`) | [2026-10-26: M3 done](#2026-10-26-m3-done-and-committed-as-736fea3-state-loop-detection-decisions-worktrees-live-runs) |
 | M4 | `micro` model decides stalled loops (LFM2.5, CPU), with rules fallback and an A/B run | Done (`49f74d9`) | [2026-10-26: M4 done](#2026-10-26-m4-done-and-committed-as-49f74d9-micro-model-decides-stalled-loops-ab-run) |
+| M4b | Subagent tier: a small model reads a few bounded, redacted files and answers with checked citations | Built, plugged (`subagent` tool, `agent subagent`); live quality measured on one question | [2026-10-27: M4b built](milestones/m4b-subagents.md) |
 | M5 | `deep` model on demand (Bonsai); one GPU model at a time | Done (`53724d4`) | [2026-10-26: M5 done](#2026-10-26-m5-done-and-committed-as-53724d4-deep-model-on-demand-one-gpu-model-at-a-time) |
 | M6 | Context management: per-request compaction and the task state in the system prompt | Done (`977a56f`) | [2026-10-26: M6 done](#2026-10-26-m6-done-and-committed-as-977a56f-context-policy-and-per-request-transforms) |
 | M7 | Jev decision backend behind the endpoint policy, with TLS | Built, not live (`6ad8861`) | [2026-10-27: M7 built](#2026-10-27-m7-built-and-tested-jev-backend-endpoint-policy-tls-not-live) |
 | M8 | LiteLLM gateway as a model provider, behind the policy | Built, not live (`0854f62`, `a3a6940`) | [2026-10-27: M8 built](#2026-10-27-m8-built-and-tested-with-a-mock-the-live-gateway-check-is-not-run) |
 | M9 | Security threat-model tests and egress audit | Built (`5bef0f9`) | [2026-10-27: M9 built](#2026-10-27-m9-built-security-review-fixes-adversarial-suite-egress-audit) |
-| M10 | Evaluation on a Rust coding benchmark | Planned | None yet |
-| M11 | Open-source release: licence, README, CI | Planned | None yet |
+| M10 | Evaluation: task corpus, two conditions, runner and report | Built; live results not yet recorded (runs stalled) | [milestones/m10-evaluation.md](milestones/m10-evaluation.md) |
+| M11 | Open-source release: licence, notices, policies, CI | Prepared; CI not run; publication not done | [milestones/m11-release.md](milestones/m11-release.md) |
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
+
+## 2026-10-27: M4b built (subagent tier), the checklist, and the M10 and M11 status
+
+- Built: the subagent tier (`harness-core/src/subagent.rs`, `harness-runtime/src/subagent.rs`), the `subagent` tool offered
+  when `[subagents] enabled = true`, and `agent subagent`. The live check on the micro model gave the right conclusion in 4 of
+  5 runs. Details and the reverted attempt are in [milestones/m4b-subagents.md](milestones/m4b-subagents.md).
+- Checklist: [checklist.md](checklist.md) lists every stage, with the file, the tests and the plug point of each item.
+  `scripts/check_checklist.py` verifies them. It found two unplugged pieces, now fixed: the server build and the context
+  readers (health used its own copies), and the model-role lookup (the decision slot was hard-coded by name).
+- M10 and M11 are prepared but not finished: the live benchmark results are not recorded, and the CI workflow has not run.
+- Gate: fmt and clippy clean; 693 tests pass, 3 ignored.
 
 ## 2026-10-27: M9 built: security review fixes, adversarial suite, egress audit
 
