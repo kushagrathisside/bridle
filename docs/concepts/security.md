@@ -142,6 +142,11 @@ Fixed on 2026-10-22, after four code reviews (details in [progress.md](../status
 10. **Compaction hides parts of a result.** A compacted result keeps its head and tail, and a dropped one becomes a stub.
    The model may act on a partial output. Compaction never changes a verdict, and secrets are redacted before a result is
    stored, so it cannot expose one.
+11. **Jev sees the loop summary, when it is enabled.** For a stalled loop, Jev receives the phase, the counters, the last
+    action (capped at 120 characters) and the names of the loop signals. The last action can contain a command fragment
+    or a path. Leave Jev off unless the last action text may leave the machine. The key is read from the environment,
+    is sent only as a bearer header, and is not written to the event log or to an error. A remote request goes through
+    the proxy the environment names.
 
 ## Related
 

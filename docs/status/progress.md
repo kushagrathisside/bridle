@@ -5,7 +5,7 @@ dated and ordered newest first. Every "verified" line names the evidence. It is 
 other pages must agree with it.
 
 > **Status:** M2 (deterministic tools) is done and tagged `m2` on 2026-10-22; M1 is tagged `m1`. On 2026-10-23 the
-> history was rewritten and every hash in this log was updated. M0 to M6 are done and committed. Release 1 is native Windows,
+> history was rewritten and every hash in this log was updated. M0 to M6 are done and committed; M7 is built and tested, not live. Release 1 is native Windows,
 > verified on one machine.
 
 ## Milestones
@@ -19,13 +19,25 @@ other pages must agree with it.
 | M4 | `micro` model decides stalled loops (LFM2.5, CPU), with rules fallback and an A/B run | Done (`49f74d9`) | [2026-10-26: M4 done](#2026-10-26-m4-done-and-committed-as-49f74d9-micro-model-decides-stalled-loops-ab-run) |
 | M5 | `deep` model on demand (Bonsai); one GPU model at a time | Done (`53724d4`) | [2026-10-26: M5 done](#2026-10-26-m5-done-and-committed-as-53724d4-deep-model-on-demand-one-gpu-model-at-a-time) |
 | M6 | Context management: per-request compaction and the task state in the system prompt | Done (`977a56f`) | [2026-10-26: M6 done](#2026-10-26-m6-done-and-committed-as-977a56f-context-policy-and-per-request-transforms) |
-| M7 | Jev integration: TLS and endpoint policy | Planned | None yet |
+| M7 | Jev decision backend behind the endpoint policy, with TLS | Built, not live (`6ad8861`) | [2026-10-27: M7 built](#2026-10-27-m7-built-and-tested-jev-backend-endpoint-policy-tls-not-live) |
 | M8 | LiteLLM for external providers, behind the policy | Planned | None yet |
 | M9 | Security threat-model tests and egress audit | Planned | None yet |
 | M10 | Evaluation on a Rust coding benchmark | Planned | None yet |
 | M11 | Open-source release: licence, README, CI | Planned | None yet |
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
+
+## 2026-10-27: M7 built and tested (Jev backend, endpoint policy, TLS); not live
+
+- Built: the Jev answer contract (`harness-core/src/jev.rs`), `JevEngine` (`harness-runtime/src/jev.rs`), the endpoint policy
+  V30 to V35, the `local-with-jev` profile and the selection in `decide_for`. Committed as `6ad8861`; the result and the
+  limits are in [milestones/m7-jev.md](milestones/m7-jev.md).
+- Gate: `wgate` passes (fmt, clippy with warnings denied, 657 tests; 2 ignored).
+- Not live: no Jev service or key was available. The contract is tested against a local mock. The A/B run (rules against
+  LFM against Jev) is not done.
+- TLS: the rustls backend stalled in the handshake on the target machine. The remote agent now uses the environment proxy
+  and native-tls, and a live POST to a public host returns an HTTP status (ignored test `tls_handshake_reaches_a_public_host`).
+- Found while testing: the rules give confidence 1.0 for a loop rule, so the fallback keeps that value (a test had assumed none).
 
 ## 2026-10-26: M6 done and committed as `977a56f` (context policy and per-request transforms)
 

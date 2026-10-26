@@ -129,7 +129,7 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-7.1 | CON | Never hard-code the harness against one model server | all | open |
-| R-7.2 | REQ | `ModelProvider` with adapters: OpenAICompatible, LlamaCpp, PrismBonsai, LiteLLM, JevDecision, Mock | M1 (OpenAICompatible, LlamaCpp, Mock), M5, M7, M8 | partial: the PrismBonsai provider uses the llama.cpp client; live health and completion pass |
+| R-7.2 | REQ | `ModelProvider` with adapters: OpenAICompatible, LlamaCpp, PrismBonsai, LiteLLM, JevDecision, Mock | M1 (OpenAICompatible, LlamaCpp, Mock), M5, M7, M8 | partial: the OpenAI-compatible, llama.cpp, Bonsai and mock providers are built; the JevDecision adapter is built (M7); the LiteLLM adapter is open (M8). |
 | R-7.3 | REQ | Primary LLM calls flow ModelRegistry → ModelRouter → ModelProvider | M1, M4 | open |
 | R-7.4 | REQ | Declarative model-registry config. The format is negotiable; the separation is not. | M1 | done (TOML, ADR-0001; layered machine/repo/explicit config with repository trust rules; docs/configuration.md) |
 | R-7.5 | REQ | Per-model config: name, endpoint, API-key *source*, context, temperature, max output, reasoning budget, MTP, KV-cache mode, timeout, retries, role, capabilities, hardware profile | M1 | done (`ModelConfig`: endpoint, `api_key_env`, context, sampling, max output, reasoning budget, MTP, KV cache, timeout, retries, role, capabilities, hardware; V1-V23) |
@@ -147,11 +147,11 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-9.1 | REQ | Jev is an *optional* `DecisionEngine` backend | M7 | open |
+| R-9.1 | REQ | Jev is an *optional* `DecisionEngine` backend | M7 | done: Jev is an optional DecisionEngine backend, off by default and behind the endpoint policy (M7). Tested against the contract with a local mock; not checked against a live Jev service. |
 | R-9.2 | REQ | Backends: RulesDecisionEngine, LFMDecisionEngine, JevDecisionEngine, plus a FutureLearnedDecisionEngine extension point | M3, M4, M7 | partial: LFM backend built (M4, stalled loops); Jev (M7) open |
-| R-9.3 | REQ | The rest of the system does not know which backend is active | M3 | partial: the call site names RulesDecisionEngine; the DecisionEngine trait is in place for M4 and M7 |
+| R-9.3 | REQ | The rest of the system does not know which backend is active | M3 | partial: `decide_for` picks the engine from the config and the rest of the code reads a DecisionResult only. |
 | R-9.4 | REQ | `decide(state, schema) → DecisionResult { decision, confidence, reason_code, provider, latency_ms }` | M3 | done: DecisionResult carries decision, confidence, reason_code, provider, latency_ms (`decision.rs`) |
-| R-9.5 | REQ | Jev preserves probabilistic output. LFM output is strictly structured and validated. Rules give deterministic confidence or `null`. | M3, M4, M7 | done: loop rules give confidence 1.0; a phase default gives none |
+| R-9.5 | REQ | Jev preserves probabilistic output. LFM output is strictly structured and validated. Rules give deterministic confidence or `null`. | M3, M4, M7 | done: Jev's confidence is kept as given and must lie in 0 to 1; rules give 1.0 for a loop rule or none for a phase; the LFM answer is strictly validated. |
 | R-9.6 | STRAT | The host software, not the model, is the authority | all | open |
 
 ## §10 Decision types
@@ -370,9 +370,9 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-36.1 | REQ | Profiles: local-only, local-with-jev, hybrid, development, benchmark | M1 (local-only, development), M7, M8, M10 | open |
+| R-36.1 | REQ | Profiles: local-only, local-with-jev, hybrid, development, benchmark | M1 (local-only, development), M7, M8, M10 | partial: the local-with-jev profile is built (M7); the hybrid and benchmark profiles are not. |
 | R-36.2 | REQ | local-only has no external network dependency except model download during installation | M1 | in-progress (harness makes no external calls; OpenCode fetches its model catalog unless disabled) |
-| R-36.3 | ASM | The user may accept an external Jev dependency while the coding models stay local | M7 | open |
+| R-36.3 | ASM | The user may accept an external Jev dependency while the coding models stay local | M7 | partial: the user opts in with external.jev.enabled. Use has not been checked against a live Jev service. |
 
 ## §37 Optional cloud frontier escalation
 
@@ -538,7 +538,7 @@ the ADR is linked.
 | R-57.4 | M4 LFM | Failure classification, loop detection, next-action decision, context relevance | Measured reduction in latency/tokens/failed actions (not assumed) | open |
 | R-57.5 | M5 Bonsai | Stalled-task escalation, deep reasoning, senior review (PTQ1_0) | Benchmark of Qwen alone vs Qwen + Bonsai escalation | open |
 | R-57.6 | M6 Context | History filtering, tool-result compaction, repo retrieval, state injection, token budgeting | Measured task success, prompt tokens, latency, memory | partial: bytes before and after each request are recorded in `events.jsonl` (live run, 2026-10-26). Prompt tokens, latency and task success are not measured by M6. |
-| R-57.7 | M7 Jev | JevDecisionEngine behind the same interface. No orchestration rewrite. | A/B rules vs LFM vs Jev. Jev on by default only with evidence. | open |
+| R-57.7 | M7 Jev | JevDecisionEngine behind the same interface. No orchestration rewrite. | A/B rules vs LFM vs Jev. Jev on by default only with evidence. | partial: JevDecisionEngine sits behind the same interface, with no orchestration rewrite. The A/B run (rules, LFM, Jev) is not done; it needs a Jev service. |
 | R-57.8 | M8 LiteLLM | Optional gateway: routing, external providers, Jev, logging, aliases, hybrid | Not required for local-only users | open |
 | R-57.9 | M9 Security | Worktrees, path sandbox, secret redaction, risk policy, network policy, destructive-command policy | Adversarial tests pass | open |
 | R-57.10 | M10 Evaluation | Benchmark runner, task corpus, experiment matrix, metrics, reports | Full local suite run | open |
@@ -581,7 +581,7 @@ the ADR is linked.
 | AC-O2 | Orchestration | Escalation works | M5 | open |
 | AC-O3 | Orchestration | Deterministic decision fallback works | M3, M4 | done: the rules engine is the only engine in M3 and its refusal and cap are tested |
 | AC-O4 | Orchestration | LFM decision backend works | M4 | done: the LFM decision backend answers stalled loops (16 of 16 valid in the A/B; fallback tested) |
-| AC-O5 | Orchestration | Jev backend works when configured | M7 | open |
+| AC-O5 | Orchestration | Jev backend works when configured | M7 | partial: the Jev backend works against its contract in tests; live use is pending a Jev service. |
 | AC-O6 | Orchestration | No external service required for local-only mode | M1+ | open |
 | AC-S1 | Safety | Dangerous commands are governed | M1 (baseline), M9 | open |
 | AC-S2 | Safety | Worktree mode works | M3, M9 | done: a worktree task leaves the primary tree unchanged and its session is bound (black-box test) |

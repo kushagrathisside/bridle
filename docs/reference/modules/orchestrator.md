@@ -57,3 +57,10 @@ command glue in `harness-cli`.
 - [M3 plan and result](../../status/milestones/m3-state.md)
 - [ADR-0004](../../decisions/0004-orchestrator-observes-and-steers.md): how the orchestrator relates to OpenCode's loop
 - [Security](../../concepts/security.md): residual risks 6 to 9
+
+## Jev decision backend (M7)
+
+`harness-core/src/jev.rs` checks the answer of the Jev service: one of the three stalled-loop choices, with a confidence
+from 0 to 1 that is kept. `harness-runtime/src/jev.rs` holds `JevEngine`, which asks the service only for stalled loops,
+and falls back to the rules on any failure. `harness-cli/src/workflow.rs` selects it in `decide_for`. The endpoint policy
+is rules V30 to V35. Result and limits: [M7](../../status/milestones/m7-jev.md); design: [ADR-0007](../../decisions/0007-jev-is-an-optional-decision-backend.md).

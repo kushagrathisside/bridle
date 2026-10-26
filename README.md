@@ -13,7 +13,7 @@ repository, under one policy and one event log, on the developer's own hardware,
 | Layer | Status | What it does |
 |---|---|---|
 | Harness | Built (M0 to M2) | Policy on every tool call, deterministic tools, output redaction, decision log |
-| Orchestrator | Built (M3 to M6); routing planned | Task state in a journal, loop detection, refusals with the rule named, the micro model for stalled loops with rules fallback, worktree tasks, per-request context compaction |
+| Orchestrator | Built (M3 to M7); routing planned | Task state in a journal, loop detection, refusals with the rule named, the micro model for stalled loops with rules fallback, worktree tasks, per-request context compaction |
 | Local-first application | Goal | Several agents on one repository under one policy and one event log |
 
 Multi-agent execution and model routing do not work yet. The loop rules and task journal (M3), the micro model for stalled loops (M4), the deep model on demand (M5) and the context compaction (M6) are built and were run live. The status of each milestone is in
@@ -62,8 +62,8 @@ Tested on Windows 11, an RTX 4060 Laptop GPU with 8 GB of VRAM, and 16 GB of RAM
 | Main model (Qwen3.5-9B, Q4_K_M) ready after start | about 11 s | [docs/guide/models.md](docs/guide/models.md) |
 | VRAM in use with the main model loaded | 5443 MiB of 8188 MiB | [docs/guide/models.md](docs/guide/models.md) |
 | Generation speed in the server log | about 42 tokens/s | [docs/guide/models.md](docs/guide/models.md) |
-| Test functions in the source | 654 | `#[test]` count across `crates/`, 2026-10-26 |
-| Rust source | 3 crates, 32,586 lines | `crates/`, 2026-10-26 |
+| Test functions in the source | 670 | `#[test]` count across `crates/`, 2026-10-26 |
+| Rust source | 3 crates, 33,318 lines | `crates/`, 2026-10-26 |
 
 The main and deep models together are estimated at about 12.9 GiB of VRAM, so they cannot run at the same time on 8 GB.
 This figure comes from the GGUF headers and is not measured.
@@ -148,6 +148,8 @@ policy before it runs. See [docs/guide/configuration.md](docs/guide/configuratio
   overloads. There is no persistent symbol index yet; the M3 orchestrator keeps task state, not a code index.
 - **Partial manifests.** `dependency_search` does not read CMake `find_package`, or Go and Gradle manifests.
 - **Context budget is an estimate.** Bytes divided by four, over the messages only. The system prompt and the tool definitions are not counted. See [M6](docs/status/milestones/m6-context.md).
+- **Jev is not live.** The decision backend is built and tested against its contract with a local mock. No Jev service was
+  available, so the contract is unchecked against the real service. See [M7](docs/status/milestones/m7-jev.md).
 - **One machine, one OS.** Only native Windows on the tested machine is verified. OpenCode's own model catalog fetch is a
   known network exception to local-only operation.
 
@@ -174,7 +176,7 @@ Weights are not included. Download them yourself and check the SHA-256 values in
 | M4 | The micro model decides stalled loops (LFM2.5, CPU), with rules fallback and an A/B run | Done (2026-10-26) |
 | M5 | Deep model on demand (Bonsai); one GPU model at a time | Done (2026-10-26); escalation routing not built |
 | M6 | Context management: compaction of tool results and the state in the system prompt | Done (2026-10-26, verified live) |
-| M7 | Jev integration: TLS and endpoint policy | Planned |
+| M7 | Jev decision backend behind the endpoint policy, with TLS | Built (2026-10-27); not live, no Jev service |
 | M8 | LiteLLM for external providers, behind the policy | Planned |
 | M9 | Security threat-model tests and egress audit | Planned |
 | M10 | Evaluation on a Rust coding benchmark | Planned |

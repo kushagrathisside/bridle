@@ -4,7 +4,7 @@ This folder holds the documentation for Bridle, a local-first harness and orches
 grouped by what you need to do: install and run it, understand how it works, check where it stands, look up a
 module, or read why a decision was made.
 
-> **Status:** release 1, native Windows. Milestones M0 to M6 are done and committed. The current status is in
+> **Status:** release 1, native Windows. Milestones M0 to M6 are done and committed; M7 (Jev) is built and tested, not live. The current status is in
 > [status/progress.md](status/progress.md).
 
 ## Where to start
