@@ -106,6 +106,7 @@ const PROTECTED_ROOT_ENTRIES: &[&str] = &[
     "opencode.jsonc",
     ".opencode",
     ".local-agent",
+    ".worktrees",
     GIT_DIR,
 ];
 /// The git metadata name. `core.fsmonitor` and hooks in it run code on later git calls, so it is

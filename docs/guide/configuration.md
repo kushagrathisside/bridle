@@ -132,7 +132,7 @@ The shipped profiles satisfy these rules, so `agent init` output loads as a proj
 ## Validation rules
 
 `agent config validate` reports each issue with its rule id. The rules are in
-`crates/harness-core/src/config/validate.rs` (V1 to V25). The main ones:
+`crates/harness-core/src/config/validate.rs` (V1 to V29). The main ones:
 
 | Rule | Check |
 |---|---|
@@ -146,6 +146,30 @@ The shipped profiles satisfy these rules, so `agent init` output loads as a proj
 | V23 | `timeout_ms` within 1 s to 1 h, `retries` at most 10 |
 | V24 | warning: `targets` on a step whose kind is not `test` |
 | V25 | an adapter has a bad or duplicate name, a non-bare program, non-plain arguments, or no description |
+| V26 | the repeated-command threshold is below 2, or its window is shorter than the count or longer than the 16-call ring |
+| V27 | the repeated-edit threshold is below 2 (one edit is progress, not a loop) |
+| V28 | the refusal cap is below 1 |
+| V29 | `[agent].max_iterations` below 2, or a retry bound below 1: the first step would already block or escalate |
+
+## Workflow and loop limits (M3)
+
+The loop bounds of §17 are in `[agent]`: `max_iterations` (8), `max_implementation_retries` (3),
+`max_same_failure` (2: the third verification with the same failure escalates). The thresholds that are new in M3 are
+in `[workflow]`:
+
+```toml
+[workflow]
+enabled = true              # off by default; only the machine config may set it to false
+repeated_command_count = 3  # identical commands with no edit between that count as a loop
+repeated_command_window = 5 # recent calls in which they are counted (at most 16)
+repeated_edit_count = 4     # edits of one file since the last verification
+refusal_cap = 3             # loop refusals in a row before the harness stops refusing on loop grounds
+task_status = false         # offer the task_status tool to the model
+```
+
+A repository may enable the workflow or tune these values; it cannot switch the workflow off. The rule is enforced in
+`config/trust.rs`. Read-only calls are never refused by a loop rule. See
+[the M3 plan](../status/milestones/m3-state.md#fingerprints-and-loop-rules) for what each rule detects.
 
 ## Limits
 

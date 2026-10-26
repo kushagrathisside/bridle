@@ -33,6 +33,8 @@ pub struct Config {
     /// Project-specific tools (declarative adapters). Machine or explicit config only: a
     /// repository config may not add tools (see `config::trust`).
     pub tools: ToolsSection,
+    /// The workflow switch and loop thresholds (M3). See [`WorkflowSection`].
+    pub workflow: WorkflowSection,
 }
 
 impl Default for Config {
@@ -52,6 +54,7 @@ impl Default for Config {
             telemetry: TelemetrySection::default(),
             external: ExternalSection::default(),
             tools: ToolsSection::default(),
+            workflow: WorkflowSection::default(),
         }
     }
 }
@@ -80,6 +83,42 @@ impl Default for AgentSection {
             max_same_failure: 2,
             max_deep_escalations: 1,
             max_command_retries: 1,
+        }
+    }
+}
+
+/// The workflow switch and the loop thresholds that are not in `[agent]` (M3 step 5).
+///
+/// `enabled` is false until M3 step 10 passes. Only the machine config may set it to false: a
+/// repository may enable the workflow or tune it, but cannot switch it off (`config::trust`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct WorkflowSection {
+    /// Whether loop detection refuses calls. Off by default.
+    pub enabled: bool,
+    /// Identical non-read-only commands, with no edit between, that count as a loop (proposed).
+    pub repeated_command_count: u32,
+    /// The window, in recent calls, in which identical commands are counted (proposed).
+    pub repeated_command_window: u32,
+    /// Edits of one file since the last verification that count as a loop (proposed).
+    pub repeated_edit_count: u32,
+    /// Consecutive loop refusals after which the harness stops refusing on loop grounds and shows
+    /// a notice instead (proposed).
+    pub refusal_cap: u32,
+    /// Whether the `task_status` tool is offered to the model. Off until M3 step 10 passes, because
+    /// every tool schema costs prompt tokens on a 16K-context model.
+    pub task_status: bool,
+}
+
+impl Default for WorkflowSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            repeated_command_count: 3,
+            repeated_command_window: 5,
+            repeated_edit_count: 4,
+            refusal_cap: 3,
+            task_status: false,
         }
     }
 }

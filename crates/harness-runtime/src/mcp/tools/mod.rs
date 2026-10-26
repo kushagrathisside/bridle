@@ -1242,6 +1242,7 @@ pub mod deps;
 pub mod failures;
 pub mod history;
 pub mod run;
+pub mod task;
 pub mod verify;
 
 #[cfg(test)]

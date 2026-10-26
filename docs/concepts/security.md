@@ -128,6 +128,18 @@ Fixed on 2026-10-22, after four code reviews (details in [progress.md](../status
    and only output redaction remains.
 5. **Not a sandbox.** See [Limits](#limits).
 
+6. **The model can weaken a test to make it pass.** Live run 1 (2026-10-26) removed a contradictory assertion from a
+   plain test file. Nothing in the policy prevents an edit of a test file. A test kept under a protected path such as
+   `.opencode/` cannot be edited by the agent.
+7. **OpenCode stops identical consecutive calls first.** Its `doom_loop` permission ended a live run on the third identical
+   `run_tests` call, before the harness could refuse it. The harness's loop rules cover calls that differ, such as an
+   edit and re-test cycle. Identical-call loops are handled by the host.
+8. **Loop rules are heuristics.** A refusal can block a deliberate retry; the refusal names the rule so the person can
+    decide. Read-only calls are never refused by a loop rule, so a model in a loop can still read files.
+9. **Refusals are not notices to the model when the cap is reached.** After the refusal cap the harness stops refusing
+    on loop grounds and records the notice in `agent trace` and `agent explain`. The model does not see it in a tool
+    result.
+
 ## Related
 
 - [architecture.md](architecture.md): components and the path of a tool call.

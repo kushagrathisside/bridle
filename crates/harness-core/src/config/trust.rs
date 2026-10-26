@@ -50,6 +50,16 @@ pub(super) fn check_repo_layer(
             "the host executable is a machine setting",
         ));
     }
+    if table(repo, "workflow")
+        .and_then(|workflow| workflow.get("enabled"))
+        .and_then(Value::as_bool)
+        == Some(false)
+    {
+        return Err(deny(
+            "workflow.enabled".to_owned(),
+            "a repository may enable the workflow but not switch it off; only the machine config may set enabled = false",
+        ));
+    }
     if let Some(profile) = repo.get("profile").and_then(Value::as_str)
         && REMOTE_PROFILES.contains(&profile)
     {
@@ -301,6 +311,20 @@ mod tests {
                 "[models.m]\nendpoint = \"http://[::1]:8001/v1\"\n[external.jev]\nenabled = false",
                 ""
             ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn a_repository_may_enable_the_workflow_but_not_switch_it_off() {
+        let message = rejected_key("[workflow]\nenabled = false");
+        assert!(message.contains("workflow.enabled"), "{message}");
+        assert_eq!(
+            check("[workflow]\nenabled = true\nrefusal_cap = 2", ""),
+            Ok(())
+        );
+        assert_eq!(
+            check("[workflow]\nrefusal_cap = 2", "[workflow]\nenabled = true"),
             Ok(())
         );
     }

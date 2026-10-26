@@ -29,6 +29,9 @@ pub fn run(app: &App) -> anyhow::Result<ExitCode> {
     };
     let mut tools = default_tools();
     tools.extend(adapter_tools(&app.config));
+    if app.config.workflow.task_status {
+        tools.push(Box::new(harness_runtime::mcp::tools::task::TaskStatusTool));
+    }
     let mut server = Server::new(info, tools, ctx);
     let stdin = std::io::stdin().lock();
     let stdout = std::io::stdout().lock();

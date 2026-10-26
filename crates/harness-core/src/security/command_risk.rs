@@ -56,7 +56,7 @@
 //! `eslint`, `rustc --version`, `nvidia-smi`; plus every prefix in `extra_safe` (matched against the
 //! segment text after wrapper stripping, whole-word prefix).
 //!
-//! **WRITE**: `git add|commit|stash (push)|switch|checkout -b|mv|rm --cached|tag|worktree add`, `mkdir`,
+//! **WRITE**: `git add|commit|stash (push)|switch|checkout -b|mv|rm --cached|tag`, `mkdir`,
 //! `touch`, `cp`, `mv`, `ln`, `sed -i`, `tee`, `Set-Content`, `Add-Content`, `New-Item`,
 //! `Out-File`, `Copy-Item`, `Move-Item`, `Rename-Item`. Any segment with an unquoted output
 //! redirection `>`/`>>`/`1>`/`2>` to a file other than `/dev/null`/`NUL`/`$null` is at least WRITE.

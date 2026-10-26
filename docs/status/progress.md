@@ -27,6 +27,28 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-26: M3 done in the working tree (state, loop detection, decisions, worktrees, live runs)
+
+- Built and tested: the state store (`harness-runtime/src/state/`), the task model, fingerprints, the loop detector
+  and the rules engine (`harness-core`), the hook and MCP wiring and the `agent task`, `explain` and `trace` commands
+  (`harness-cli`), worktree mode, and the `task_status` tool (off by default). The step-by-step result, the deviations
+  from the plan and the limits are in [milestones/m3-state.md](milestones/m3-state.md#result-2026-10-26).
+- Gate: `wgate` passes (fmt, clippy with warnings denied, 614 tests). Not committed yet; M3 is committed as one change
+  when reviewed.
+- Live runs with Qwen3.5-9B through OpenCode 1.19.3 on the toy repository (`D:\e2e\toy`), 2026-10-26:
+  - run 1 (`task-0001`): the model removed a contradictory assertion instead of fixing the code. Verifications were
+    recorded from MCP results (failed, then passed).
+  - run 2 (`task-0004`): four identical `run_tests` calls. OpenCode's `doom_loop` permission ended the run on the third
+    identical call, before the harness's refusal could fire.
+  - run 3 (`task-0007`): an edit and re-test cycle on a guard test that cannot pass. The same-failure rule refused the
+    next `run_tests`, `edit` and `run_command` calls with the rule name and the allowed next step; the model then asked
+    for help. The first version also refused `read`; that was fixed.
+  - run 4 (`task-0008`): after the fix, the model read the files and explained the blocker.
+- Changed while testing: loop refusals never apply to read-only calls; the refusal cap resets only on an edit or a
+  passing verification.
+- Not done in M3: a diff at the end of a task (R-49.1 partial), pruning of worktrees, the `plan.json` and summaries
+  files, and a degraded notice inside a tool result.
+
 ## 2026-10-23: history rewritten; commit hashes changed
 
 - The repository history was rewritten to remove every mention of the AI coding tool used to build the project,

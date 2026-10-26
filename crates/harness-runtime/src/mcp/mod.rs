@@ -5,6 +5,7 @@
 //! host (OpenCode today) can load these tools, which keeps them independent of the host.
 
 pub mod protocol;
+pub mod record;
 pub mod tools;
 
 pub use protocol::{PROTOCOL_VERSIONS, Server, ServerInfo};

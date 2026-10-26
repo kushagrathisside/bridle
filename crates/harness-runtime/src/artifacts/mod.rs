@@ -282,7 +282,15 @@ mod tests {
         assert_eq!(summary["numeric"]["loss"]["min"], json!(1.0));
         assert_eq!(summary["numeric"]["loss"]["last"], json!(1.5));
         assert_eq!(summary["numeric"]["loss"]["count"], json!(3));
-        assert_eq!(summary["keys"], json!(["step", "loss", "tag"]));
+        // The order of object keys depends on serde_json's map type, so compare them as a set.
+        let mut keys: Vec<&str> = summary["keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|k| k.as_str().unwrap())
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(keys, ["loss", "step", "tag"]);
     }
 
     #[test]
