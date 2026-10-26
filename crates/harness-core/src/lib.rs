@@ -12,6 +12,7 @@ pub mod decision;
 pub mod failures;
 pub mod fingerprint;
 pub mod identity;
+pub mod jev;
 pub mod journal;
 pub mod lfm;
 pub mod loops;

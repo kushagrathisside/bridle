@@ -6,7 +6,7 @@
 
 mod llama_cpp;
 mod mock;
-mod openai_compat;
+pub(crate) mod openai_compat;
 
 pub use llama_cpp::LlamaCppProvider;
 pub use mock::MockProvider;

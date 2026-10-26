@@ -10,6 +10,7 @@ pub mod decision;
 pub mod event_log;
 pub mod health;
 pub mod http;
+pub mod jev;
 pub mod launcher;
 pub mod manifest;
 pub mod mcp;

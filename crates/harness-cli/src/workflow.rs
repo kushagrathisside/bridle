@@ -16,6 +16,7 @@ use harness_core::journal::{Outcome, Record};
 use harness_core::loops::{Thresholds, detect};
 use harness_core::task::TaskState;
 use harness_runtime::decision::LfmEngine;
+use harness_runtime::jev::JevEngine;
 use harness_runtime::mcp::record::is_verification_tool;
 use harness_runtime::providers::provider_for;
 use harness_runtime::state::{DecisionRecord, StateDir};
@@ -169,20 +170,35 @@ fn short(text: &str, max: usize) -> String {
 /// The decision for an input. With `decisions.provider = "local_lfm"`, a stalled loop is decided by the micro
 /// slot; every other case, and every failure to reach the model, is decided by the rules (R-30).
 pub fn decide_for(app: &App, input: &DecisionInput<'_>) -> DecisionResult {
+    let env = |name: &str| std::env::var(name).ok();
+    if app.config.decisions.provider == DecisionProviderKind::Jev {
+        let engine = if app.config.external.jev.enabled {
+            JevEngine::from_config(&app.config.external.jev, &env)
+        } else {
+            Err("external.jev is not enabled".to_owned())
+        };
+        return match engine {
+            Ok(engine) => engine.decide(input),
+            Err(error) => fallback_to_rules(input, "jev", &error),
+        };
+    }
     if let (DecisionProviderKind::LocalLfm, Some(model)) = (
         app.config.decisions.provider,
         app.config.models.get("micro"),
     ) {
-        return match provider_for(model, &|name| std::env::var(name).ok()) {
+        return match provider_for(model, &env) {
             Ok(provider) => LfmEngine::new(provider).decide(input),
-            Err(error) => {
-                let mut result = RulesDecisionEngine.decide(input);
-                result.provider = format!("rules (fallback from local_lfm: {error})");
-                result
-            }
+            Err(error) => fallback_to_rules(input, "local_lfm", &error.to_string()),
         };
     }
     RulesDecisionEngine.decide(input)
+}
+
+/// The rules' decision, labelled as a fallback from the engine that could not decide.
+fn fallback_to_rules(input: &DecisionInput<'_>, engine: &str, error: &str) -> DecisionResult {
+    let mut result = RulesDecisionEngine.decide(input);
+    result.provider = format!("rules (fallback from {engine}: {error})");
+    result
 }
 
 /// Records the outcome of a verification after the call ran. A call that is not a verification is
@@ -358,6 +374,52 @@ mod tests {
         let input = json!({"sessionID": "ses_none"});
         assert_eq!(system_block(&app, &input).expect("no error"), None);
         assert!(!dir.path().join(".local-agent").join("tasks").exists());
+    }
+
+    #[test]
+    fn a_jev_decision_that_cannot_be_reached_falls_back_to_the_rules() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut app = app(dir.path());
+        app.config.decisions.provider = DecisionProviderKind::Jev;
+        app.config.external.jev.enabled = true;
+        app.config.external.jev.endpoint = Some("http://127.0.0.1:9".to_owned());
+        let state = TaskState::new("task-0001", "repo", "fix");
+        let signals = [harness_core::loops::LoopSignal::SameFailure {
+            fingerprint: "fp_v1:aaaa".to_owned(),
+            count: 3,
+        }];
+        let result = decide_for(
+            &app,
+            &DecisionInput {
+                state: &state,
+                signals: &signals,
+            },
+        );
+        assert!(
+            result.provider.starts_with("rules (fallback from jev:"),
+            "{}",
+            result.provider
+        );
+    }
+
+    #[test]
+    fn jev_that_is_not_enabled_is_not_called() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut app = app(dir.path());
+        app.config.decisions.provider = DecisionProviderKind::Jev;
+        let state = TaskState::new("task-0001", "repo", "fix");
+        let signals = [];
+        let result = decide_for(
+            &app,
+            &DecisionInput {
+                state: &state,
+                signals: &signals,
+            },
+        );
+        assert_eq!(
+            result.provider,
+            "rules (fallback from jev: external.jev is not enabled)"
+        );
     }
 
     fn app(dir: &std::path::Path) -> App {

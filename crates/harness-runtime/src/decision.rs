@@ -120,7 +120,7 @@ impl DecisionEngine for LfmEngine {
 }
 
 /// The name of a loop signal, without its values.
-fn signal_name(signal: &LoopSignal) -> &'static str {
+pub(crate) fn signal_name(signal: &LoopSignal) -> &'static str {
     match signal {
         LoopSignal::RepeatedCommand { .. } => "repeated command",
         LoopSignal::SameFailure { .. } => "same failure",
