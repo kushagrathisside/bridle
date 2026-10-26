@@ -139,6 +139,9 @@ Fixed on 2026-10-22, after four code reviews (details in [progress.md](../status
 9. **Refusals are not notices to the model when the cap is reached.** After the refusal cap the harness stops refusing
     on loop grounds and records the notice in `agent trace` and `agent explain`. The model does not see it in a tool
     result.
+10. **Compaction hides parts of a result.** A compacted result keeps its head and tail, and a dropped one becomes a stub.
+   The model may act on a partial output. Compaction never changes a verdict, and secrets are redacted before a result is
+   stored, so it cannot expose one.
 
 ## Related
 

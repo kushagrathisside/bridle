@@ -19,6 +19,7 @@ pages describe code; they do not set policy. The system view is in [architecture
 | [cli-commands.md](cli-commands.md) | `harness-cli` | The `agent` commands and the `App` context |
 | [cli-host-opencode.md](cli-host-opencode.md) | `harness-cli` | OpenCode adapter, hook protocol, `opencode.json` generation, the TypeScript shim |
 | [orchestrator.md](orchestrator.md) | `harness-core`, `harness-runtime`, `harness-cli` | Task, journal, loops, decisions, state store, hook and `agent task` glue (M3) |
+| [context.md](context.md) | `harness-core`, `harness-cli` | Context policy, the per-request transforms and the task block for the system prompt (M6) |
 
 ## Behaviour
 

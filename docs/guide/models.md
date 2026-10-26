@@ -5,8 +5,9 @@ licences, and the resource use measured on the release 1 target. It is for an en
 the files. Weights are never bundled or committed (decision D-2 and R-42.1): download them yourself into
 `D:\models`.
 
-> **Status:** Release 1. Slot `main` is in use and measured on the target machine. Slots `micro` (M4) and `deep`
-> (M5) are planned. Each file below was downloaded and its SHA-256 checked on 2026-10-21.
+> **Status:** Release 1. Slot `main` is in use and measured on the target machine. Slots `micro` (M4, CPU) and `deep`
+> (M5, GPU, on demand) were run live on 2026-10-26. Each file below was downloaded and its SHA-256 checked on
+> 2026-10-21.
 
 ## Weights
 

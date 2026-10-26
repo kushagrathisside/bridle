@@ -5,7 +5,7 @@ loop, and records every decision with its reason. A session can then be resumed 
 This page holds the plan. Steps will be added to it as they are built, in the same way as
 [M2](m2-tools.md).
 
-> **Status:** Done in the working tree (2026-10-26); steps 0 to 11 complete, not yet committed. Gate green
+> **Status:** Done and committed as `736fea3` (2026-10-26); steps 0 to 11 complete. Gate green
 > (`wgate`: fmt, clippy with warnings denied, 614 tests). Live runs with Qwen3.5-9B found the limits listed under
 > [Result](#result-2026-10-26). The choices are in [Decisions](#decisions).
 
