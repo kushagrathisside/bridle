@@ -5,8 +5,9 @@ loop, and records every decision with its reason. A session can then be resumed 
 This page holds the plan. Steps will be added to it as they are built, in the same way as
 [M2](m2-tools.md).
 
-> **Status:** Planned; decisions accepted (2026-10-26); not started. Starts after M2 (`ae70285` on `main`, CI
-> green). The choices are in [Decisions](#decisions) and are settled in step 0.
+> **Status:** Done in the working tree (2026-10-26); steps 0 to 11 complete, not yet committed. Gate green
+> (`wgate`: fmt, clippy with warnings denied, 614 tests). Live runs with Qwen3.5-9B found the limits listed under
+> [Result](#result-2026-10-26). The choices are in [Decisions](#decisions).
 
 ## Goal
 
@@ -280,6 +281,51 @@ recorded in [ADR-0004](../../decisions/0004-orchestrator-observes-and-steers.md)
    `explain` and `trace` limit 50 (at most 1000); session id cap 128; `max_iterations` 10. Accepted for M3 and tuned
    at step 10.
 
+## Result (2026-10-26)
+
+| Step | Result | Evidence |
+|---|---|---|
+| 0 Plan and ADR | Done | [ADR-0004](../../decisions/0004-orchestrator-observes-and-steers.md) accepted; commit `e6eef64` |
+| 1 State store | Done | `crates/harness-runtime/src/state/`: atomic writes with a Windows rename retry, lock with a timeout, versioned envelopes, torn-line handling; 16 integration tests (`tests/state_store.rs`) including a Windows test that holds the target open |
+| 2 Task model | Done | `harness-core/src/task.rs`: phases, the R-17.1 transition table, shortest-path advance; every pair of phases is checked |
+| 3 Fingerprints | Done | `harness-core/src/fingerprint.rs`: fields of R-19.2 except the stack-trace signature (not in the parsed output); SHA-256, `fp_v1:` prefix |
+| 4 Loop detector | Done | `harness-core/src/loops.rs`: one test per rule and the cases that must not trigger |
+| 5 Decisions and config | Done | `decision.rs` (rules engine, DONE before any loop rule, refusal rule); `[workflow]`; validation V26 to V29; trust rule: a repository cannot set `enabled = false` |
+| 6 Hook wiring | Done | `journal.rs` (records and fold), task store and MCP result recording in `harness-runtime`, hook glue in `harness-cli/src/workflow.rs`; 8 black-box tests in `crates/harness-cli/tests/orchestrator.rs` |
+| 7 `task_status` | Done, off by default | `mcp/tools/task.rs`; offered only when `[workflow].task_status = true` |
+| 8 CLI | Done | `agent task start|status|resume|reset|repair|prune`, `agent explain`, `agent trace` |
+| 9 Worktrees | Done, prune of worktrees not done | `agent task start --worktree` creates `.worktrees/agent-task-NNN`, copies the generated config, binds the next session; the primary tree is unchanged (black-box test); `.worktrees` is a protected root entry; `git worktree add` is EXECUTE_RISKY, as the code already decided |
+| 10 Live runs | Done, with findings | below |
+| 11 Documentation | Done | this page, the progress log, the requirements register, configuration, architecture, security, README |
+
+### Live runs (Qwen3.5-9B through OpenCode 1.19.3, toy repository)
+
+- **Run 1** (`task-0001`): the model made a failing test pass by removing a contradictory assertion from the test
+  file. Nothing stopped the edit; the trace shows the failed and then passed verifications recorded from MCP results.
+- **Run 2** (`task-0004`): four identical `run_tests` calls. OpenCode's own `doom_loop` permission rejected the third
+  identical call before the harness's tool-before hook ran, and the run ended. The harness recorded no refusal for
+  this path. The journal recorded no outcome for the calls OpenCode cancelled, so none was guessed.
+- **Run 3** (`task-0007`): an edit and re-test cycle on a guard test that cannot pass (two contradictory assertions in a
+  protected `.opencode/` file). After three verifications with the same fingerprint, the next `run_tests`, `edit` and
+  `run_command` calls were refused with the rule name and the allowed next step. The model then stopped and asked for
+  help. The first version also refused `read`, which made the advice impossible to follow; that was fixed.
+- **Run 4** (`task-0008`, after the fix): the model read the files and explained that the guard test cannot be fixed
+  inside its constraints, and stopped. No refusal was needed.
+
+### Deviations from the plan
+
+- `max_iterations` is 8: the starting value of the brief's §17 in `[agent]`, which already exists. The plan said 10
+  (decision 8); the brief's value is kept.
+- Loop refusals never apply to read-only calls. The plan exempted them from the repeated-command rule only; the live run
+  showed that the same exemption is needed for every loop rule, or the refusal cannot be followed.
+- The refusal cap is reset only by an edit or a passing verification, not by any allowed call. Otherwise the cap
+  restarts after every allowed call.
+- The degraded notice is written to `tool-events.jsonl` and is shown by `agent trace` and `agent explain`. The after-hook
+  cannot change an allowed call's result, so the notice cannot reach the model in the same tool result.
+- No `git diff` at the end of a task (R-49.1 is partial: base commit and dirty-file count only). No pruning of
+  worktrees; `agent task prune` removes task directories only.
+- `plan.json` and the summaries directory of R-16.1 are not written yet.
+
 ## Limits
 
 - The harness cannot stop a model from producing text. It can refuse tool calls, and a refused call is recorded.
@@ -297,6 +343,16 @@ recorded in [ADR-0004](../../decisions/0004-orchestrator-observes-and-steers.md)
   isolate them; worktree mode does.
 - The M2 telemetry logs (`tool-events.jsonl`, `events.jsonl`) are not rotated or locked in M3.
 - No model is used for any decision in M3. Decision quality is limited to the rules.
+
+- OpenCode's `doom_loop` check ends a run of identical consecutive calls before the harness can refuse the third
+  (run 2). Identical-call loops are therefore stopped by the host; the harness rules cover loops in which the calls differ,
+  such as the edit and re-test cycle (run 3).
+- The model can weaken a test to make it pass (run 1). Nothing in M3 prevents it. A protected test location
+  (`.opencode/`) prevents the edit; a plain test file does not.
+- The harness cannot stop the model from producing text, and the refusal is visible only through tool results and the
+  trace. A refused model that does not stop keeps trying until the host or the user stops it.
+- The task lock is a polling lock with no fairness. Under sustained contention a waiter can time out after 2 s, and the
+  hook then degrades to the M2 policy. Hook calls come from separate processes spaced in time, so this is rare in use.
 
 ## Related
 

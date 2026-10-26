@@ -5,6 +5,7 @@ mod app;
 mod commands;
 mod host;
 mod output;
+mod workflow;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -60,6 +61,27 @@ enum Command {
     Hook { event: host::opencode_v1::HookEvent },
     /// Serve the harness tools over MCP on stdio.
     Mcp,
+    /// Start, resume, inspect, reset, repair and prune tasks (M3).
+    Task {
+        #[command(subcommand)]
+        action: commands::task::TaskAction,
+    },
+    /// Explain the recent decisions of a task (R-54.2).
+    Explain {
+        /// Task id (default: the latest task).
+        task: Option<String>,
+        /// How many decisions to show, at most 1000.
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+    },
+    /// Show the ordered record of a task (R-54.3).
+    Trace {
+        /// Task id (default: the latest task).
+        task: Option<String>,
+        /// How many records to show, at most 1000.
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+    },
 }
 
 fn main() -> ExitCode {
@@ -82,6 +104,13 @@ fn main() -> ExitCode {
                 Command::Config { action } => commands::config::run(&app, &action),
                 Command::Models { action } => commands::models::run(&app, &action),
                 Command::Mcp => commands::mcp::run(&app),
+                Command::Task { action } => commands::task::run(&app, &action),
+                Command::Explain { task, limit } => {
+                    commands::task::explain(&app, task.as_deref(), limit)
+                }
+                Command::Trace { task, limit } => {
+                    commands::task::trace(&app, task.as_deref(), limit)
+                }
                 Command::Hook { .. } | Command::Init(_) => unreachable!("handled above"),
             },
             Err(e) => Err(e),

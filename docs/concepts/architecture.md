@@ -4,8 +4,8 @@ This page describes how Bridle is built: its layers, the path a tool call takes,
 MCP tools it serves. It is for engineers who want to know which component decides what before they trust the
 system with a repository. It assumes you know what OpenCode is and what an MCP server does.
 
-> **Status:** release 1 (native Windows). Milestones M0 to M2 are done and verified on one machine; M2 was verified
-> end to end on 2026-10-22 (see [progress.md](../status/progress.md)). Everything under
+> **Status:** release 1 (native Windows). Milestones M0 to M3 are done and verified on one machine; M3 was run live
+> with the local model on 2026-10-26 (see [progress.md](../status/progress.md)). Everything under
 > [Planned components](#planned-components) is not built yet.
 
 ## Overview
@@ -19,7 +19,7 @@ The project has three layers:
 | Layer | State | What it covers |
 |---|---|---|
 | Harness | Built (M0 to M2) | Policy on every tool call, deterministic tools, redaction, decision log; runs inside OpenCode 1.19.3 |
-| Orchestrator | Planned, from M3 | Starts with the state machine and loop detection (see [Planned components](#planned-components)) |
+| Orchestrator | Built (M3): task state, loop detection, rules decisions. Planned: LFM decisions, routing (see [Planned components](#planned-components)) |
 | Local-first application | Goal | A full application on the developer's machine, using local models |
 
 Model slots:
@@ -58,7 +58,8 @@ Boundaries:
    to the model.
 5. After the tool runs, `tool.execute.after` redacts secret values from the output before the model sees it. MCP
    results are redacted by the MCP server itself, because OpenCode does not pass MCP output to this hook.
-6. Every decision is written to `.local-agent/tool-events.jsonl`, with secret values kept out.
+6. Every decision is written to `.local-agent/tool-events.jsonl`, with secret values kept out. With the workflow enabled,
+   the call is also recorded in the task's journal, and a loop rule can refuse it (see below).
 
 Policy hooks fail closed. If `agent hook` cannot answer (bad config, missing binary), the shim blocks the call.
 
@@ -72,6 +73,10 @@ The rules applied in step 3 are listed in [security.md](security.md) and, at cod
 |---|---|
 | The repository | `local-agent.toml` (project config), `opencode.json` (generated), `.opencode/plugins/local-agent.ts` (shim copy) |
 | The repository's `.local-agent/` (gitignored) | `tool-events.jsonl`, `events.jsonl`, `generated.json` (hashes of generated files), `logs/` (server logs), `servers/` (PID records) |
+| `.local-agent/state.json` | Session-to-task index, next task number, pending task, worktrees, claimed MCP results (M3) |
+| `.local-agent/mcp-results.jsonl` | Verification results recorded by the MCP server, claimed by the after-hook (M3) |
+| `.local-agent/tasks/<task_id>/` | `task-events.jsonl` (the journal, the source of truth), `task.json` (a cache of the folded state), `decisions.jsonl`, `lock` (M3) |
+| `.worktrees/agent-task-NNN/` | Worktree of a task started with `agent task start --worktree`, with its own `.local-agent/` (M3) |
 | The machine | `%APPDATA%\local-agent\config.toml` (model and runtime locations; written by `agent init --machine`) |
 | Drive `D:` | Model weights and runtimes, only (decision D-2). Nothing large is written to `C:`. |
 
@@ -101,7 +106,7 @@ Details are in [m2-tools.md](../status/milestones/m2-tools.md).
 
 | Component | Milestone |
 |---|---|
-| State machine, loop detection, cached symbol index | M3 |
+| Cached symbol index; plan and summary files for tasks | later (M3 uses the code index on demand) |
 | LFM decision engine (slot `micro`) | M4 |
 | Bonsai deep path (slot `deep`) | M5 |
 | Context management | M6 |

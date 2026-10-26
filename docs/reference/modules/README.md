@@ -18,6 +18,7 @@ pages describe code; they do not set policy. The system view is in [architecture
 | [runtime-mcp.md](runtime-mcp.md) | `harness-runtime` | `mcp`: JSON-RPC protocol and the MCP tools (M1 and M2) |
 | [cli-commands.md](cli-commands.md) | `harness-cli` | The `agent` commands and the `App` context |
 | [cli-host-opencode.md](cli-host-opencode.md) | `harness-cli` | OpenCode adapter, hook protocol, `opencode.json` generation, the TypeScript shim |
+| [orchestrator.md](orchestrator.md) | `harness-core`, `harness-runtime`, `harness-cli` | Task, journal, loops, decisions, state store, hook and `agent task` glue (M3) |
 
 ## Behaviour
 

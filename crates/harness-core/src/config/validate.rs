@@ -29,6 +29,10 @@
 //! | V22 | Error | `launch.extra_args` contains a reserved flag ([`super::RESERVED_LAUNCH_FLAGS`]: listener, model, alias, context, key, served or written paths), as `--flag` or `--flag=value` |
 //! | V23 | Error | `timeout_ms` outside `1_000..=3_600_000`, or `retries > 10` |
 //! | V25 | Error | an adapter (`[[tools.adapters]]`) has a bad or duplicate name, a non-bare program, non-plain arguments, or no description |
+//! | V26 | Error | a repeated-command threshold is below 2, or its window is shorter than the count or longer than the call ring |
+//! | V27 | Error | the repeated-edit threshold is below 2 (one edit is progress, not a loop) |
+//! | V28 | Error | the refusal cap is below 1 |
+//! | V29 | Error | an `[agent]` loop bound would block the task at once: `max_iterations` below 2, or a retry bound below 1 |
 //! | V24 | Warning | a verification step sets `targets = true` but its `kind` is not `test` |
 //!
 //! Unit tests: one passing baseline config (no issues) and at least one failing case per rule.
@@ -96,7 +100,7 @@ pub fn validate(cfg: &Config) -> Vec<ConfigIssue> {
     validate_with(cfg, &ValidationEnv::from_process())
 }
 
-/// Runs every rule (V1 to V25) and returns all issues found, in rule order.
+/// Runs every rule (V1 to V29) and returns all issues found, in rule order.
 pub fn validate_with(cfg: &Config, env: &ValidationEnv) -> Vec<ConfigIssue> {
     let mut report = Report::default();
 
@@ -114,6 +118,7 @@ pub fn validate_with(cfg: &Config, env: &ValidationEnv) -> Vec<ConfigIssue> {
     check_hard_limit_against_default_model(cfg, &mut report);
     check_verification(cfg, &mut report);
     check_adapters(cfg, &mut report);
+    check_workflow(cfg, &mut report);
     check_paths(cfg, env, &mut report);
 
     report.0
@@ -145,6 +150,61 @@ impl Report {
             path: path.into(),
             message: message.into(),
         });
+    }
+}
+
+/// V26 to V29: the loop thresholds are in range. A value that would refuse every call, or that
+/// makes a loop rule meaningless, is an error.
+fn check_workflow(cfg: &Config, report: &mut Report) {
+    let workflow = &cfg.workflow;
+    let agent = &cfg.agent;
+    if workflow.repeated_command_count < 2 {
+        report.error(
+            "V26",
+            "workflow.repeated_command_count",
+            "must be at least 2: one identical command is not a loop",
+        );
+    }
+    let ring = u32::try_from(crate::loops::RING_SIZE).unwrap_or(u32::MAX);
+    if workflow.repeated_command_window < workflow.repeated_command_count
+        || workflow.repeated_command_window > ring
+    {
+        report.error(
+            "V26",
+            "workflow.repeated_command_window",
+            format!("must be at least repeated_command_count and at most {ring}, the size of the recent-call ring"),
+        );
+    }
+    if workflow.repeated_edit_count < 2 {
+        report.error(
+            "V27",
+            "workflow.repeated_edit_count",
+            "must be at least 2: one edit of a file is progress, not a loop",
+        );
+    }
+    if workflow.refusal_cap < 1 {
+        report.error("V28", "workflow.refusal_cap", "must be at least 1");
+    }
+    if agent.max_iterations < 2 {
+        report.error(
+            "V29",
+            "agent.max_iterations",
+            "must be at least 2: the task would be blocked at once",
+        );
+    }
+    if agent.max_implementation_retries < 1 {
+        report.error(
+            "V29",
+            "agent.max_implementation_retries",
+            "must be at least 1: the first implementation would escalate",
+        );
+    }
+    if agent.max_same_failure < 1 {
+        report.error(
+            "V29",
+            "agent.max_same_failure",
+            "must be at least 1: the first failure would escalate",
+        );
     }
 }
 
@@ -1264,5 +1324,94 @@ mod tests {
         assert!(!is_loopback_host("192.168.1.1"));
         assert!(!is_loopback_host("[::2]"));
         assert!(!is_loopback_host("example.com"));
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod workflow_rule_tests {
+    use super::*;
+
+    /// The paths of the error issues the rule reports.
+    fn error_paths(cfg: &Config, rule: &str) -> Vec<String> {
+        validate_with(cfg, &ValidationEnv::default())
+            .into_iter()
+            .filter(|issue| issue.rule == rule && issue.severity == Severity::Error)
+            .map(|issue| issue.path)
+            .collect()
+    }
+
+    #[test]
+    fn the_default_loop_thresholds_pass_v26_to_v29() {
+        let cfg = Config::default();
+        for rule in ["V26", "V27", "V28", "V29"] {
+            assert!(
+                error_paths(&cfg, rule).is_empty(),
+                "{rule} fired on the defaults"
+            );
+        }
+    }
+
+    #[test]
+    fn a_command_threshold_of_one_is_rejected() {
+        let mut cfg = Config::default();
+        cfg.workflow.repeated_command_count = 1;
+        assert_eq!(
+            error_paths(&cfg, "V26"),
+            vec!["workflow.repeated_command_count".to_owned()]
+        );
+    }
+
+    #[test]
+    fn a_window_shorter_than_the_count_or_longer_than_the_ring_is_rejected() {
+        let mut short = Config::default();
+        short.workflow.repeated_command_window = 2;
+        assert_eq!(
+            error_paths(&short, "V26"),
+            vec!["workflow.repeated_command_window".to_owned()]
+        );
+
+        let mut long = Config::default();
+        long.workflow.repeated_command_window = 17;
+        assert_eq!(
+            error_paths(&long, "V26"),
+            vec!["workflow.repeated_command_window".to_owned()]
+        );
+    }
+
+    #[test]
+    fn an_edit_threshold_of_one_is_rejected() {
+        let mut cfg = Config::default();
+        cfg.workflow.repeated_edit_count = 1;
+        assert_eq!(
+            error_paths(&cfg, "V27"),
+            vec!["workflow.repeated_edit_count".to_owned()]
+        );
+    }
+
+    #[test]
+    fn a_zero_refusal_cap_is_rejected() {
+        let mut cfg = Config::default();
+        cfg.workflow.refusal_cap = 0;
+        assert_eq!(
+            error_paths(&cfg, "V28"),
+            vec!["workflow.refusal_cap".to_owned()]
+        );
+    }
+
+    #[test]
+    fn bounds_that_would_block_the_first_step_are_rejected() {
+        let mut cfg = Config::default();
+        cfg.agent.max_iterations = 1;
+        cfg.agent.max_implementation_retries = 0;
+        cfg.agent.max_same_failure = 0;
+        assert_eq!(
+            error_paths(&cfg, "V29"),
+            vec![
+                "agent.max_iterations".to_owned(),
+                "agent.max_implementation_retries".to_owned(),
+                "agent.max_same_failure".to_owned(),
+            ]
+        );
     }
 }

@@ -148,19 +148,19 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-9.1 | REQ | Jev is an *optional* `DecisionEngine` backend | M7 | open |
-| R-9.2 | REQ | Backends: RulesDecisionEngine, LFMDecisionEngine, JevDecisionEngine, plus a FutureLearnedDecisionEngine extension point | M3, M4, M7 | open |
-| R-9.3 | REQ | The rest of the system does not know which backend is active | M3 | open |
-| R-9.4 | REQ | `decide(state, schema) → DecisionResult { decision, confidence, reason_code, provider, latency_ms }` | M3 | open |
-| R-9.5 | REQ | Jev preserves probabilistic output. LFM output is strictly structured and validated. Rules give deterministic confidence or `null`. | M3, M4, M7 | open |
+| R-9.2 | REQ | Backends: RulesDecisionEngine, LFMDecisionEngine, JevDecisionEngine, plus a FutureLearnedDecisionEngine extension point | M3, M4, M7 | partial: RulesDecisionEngine only; LFM (M4) and Jev (M7) not built |
+| R-9.3 | REQ | The rest of the system does not know which backend is active | M3 | partial: the call site names RulesDecisionEngine; the DecisionEngine trait is in place for M4 and M7 |
+| R-9.4 | REQ | `decide(state, schema) → DecisionResult { decision, confidence, reason_code, provider, latency_ms }` | M3 | done: DecisionResult carries decision, confidence, reason_code, provider, latency_ms (`decision.rs`) |
+| R-9.5 | REQ | Jev preserves probabilistic output. LFM output is strictly structured and validated. Rules give deterministic confidence or `null`. | M3, M4, M7 | done: loop rules give confidence 1.0; a phase default gives none |
 | R-9.6 | STRAT | The host software, not the model, is the authority | all | open |
 
 ## §10 Decision types
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-10.1 | REQ | Controlled vocabulary: NEXT_ACTION, MODEL_ROUTE, TOOL_ROUTE, SUBAGENT_ROUTE, CONTEXT_RETAIN, CONTEXT_DROP, RETRY, ESCALATE, TASK_COMPLETE, TASK_BLOCKED, FAILURE_CLASS, USER_INTERVENTION_REQUIRED, COMMAND_RISK | M3 | open |
-| R-10.2 | REQ | `MODEL_ROUTE ∈ {MAIN, DEEP, MICRO, EXTERNAL}`; `NEXT_ACTION ∈ {EXPLORE, IMPLEMENT, TEST, REVIEW, DIAGNOSE, SUMMARIZE, ASK_USER, ESCALATE, DONE}` | M3 | open |
-| R-10.3 | CON | No free-form model-generated workflow control where an enum suffices | all | open |
+| R-10.1 | REQ | Controlled vocabulary: NEXT_ACTION, MODEL_ROUTE, TOOL_ROUTE, SUBAGENT_ROUTE, CONTEXT_RETAIN, CONTEXT_DROP, RETRY, ESCALATE, TASK_COMPLETE, TASK_BLOCKED, FAILURE_CLASS, USER_INTERVENTION_REQUIRED, COMMAND_RISK | M3 | partial: the M3 subset of the vocabulary (`decision.rs`); MODEL_ROUTE and the other decisions come with M4 and M5 |
+| R-10.2 | REQ | `MODEL_ROUTE ∈ {MAIN, DEEP, MICRO, EXTERNAL}`; `NEXT_ACTION ∈ {EXPLORE, IMPLEMENT, TEST, REVIEW, DIAGNOSE, SUMMARIZE, ASK_USER, ESCALATE, DONE}` | M3 | partial: NEXT_ACTION values used by the rules; SUMMARIZE and routing come later |
+| R-10.3 | CON | No free-form model-generated workflow control where an enum suffices | all | done: closed enums; every refusal names the rule and the allowed next action |
 
 ## §11 OpenCode agent configuration
 
@@ -209,18 +209,18 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-16.1 | REQ | Local state, separate from OpenCode's, under `.local-agent/`: state.json, task.json, plan.json, repo-map.json, decisions.jsonl, failures.jsonl, tool-events.jsonl, summaries/, benchmarks/ | M3 | open |
+| R-16.1 | REQ | Local state, separate from OpenCode's, under `.local-agent/`: state.json, task.json, plan.json, repo-map.json, decisions.jsonl, failures.jsonl, tool-events.jsonl, summaries/, benchmarks/ | M3 | partial: state.json, task.json, task-events.jsonl, decisions.jsonl, mcp-results.jsonl written; plan.json and summaries/ not yet (M3 step 1 to 6) |
 | R-16.2 | REQ | `.local-agent/` is gitignored by default | M1 | done (`.local-agent/` added by `agent init`; checked in toy repo) |
-| R-16.3 | REQ | State can be reconstructed from Git and logs where possible | M3 | open |
-| R-16.4 | REQ | `TaskState` holds task_id, repository, branch/worktree, original_prompt, current_objective, phase, iteration, active_model, last_action, last_test, failure_class, failure_count, escalation_count, context_version, status | M3 | open |
+| R-16.3 | REQ | State can be reconstructed from Git and logs where possible | M3 | done: `agent task repair` rebuilds the caches from the journal; a missing cache is rebuilt in a test (M3 step 6) |
+| R-16.4 | REQ | `TaskState` holds task_id, repository, branch/worktree, original_prompt, current_objective, phase, iteration, active_model, last_action, last_test, failure_class, failure_count, escalation_count, context_version, status | M3 | done: TaskState carries the listed fields (`harness-core/src/task.rs`, M3 step 2) |
 
 ## §17 Agent state machine
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-17.1 | REQ | Bounded explicit workflow: START → DISCOVER → PLAN → IMPLEMENT → VERIFY → (PASS → REVIEW → DONE \| FAIL → DIAGNOSE → recoverable: IMPLEMENT / unclear: EXPLORE / repeated: ESCALATE) | M3 | open |
-| R-17.2 | REQ | Maximum iteration counts are configurable | M3 | open |
-| R-17.3 | DEF | Implementation retries 3, same-failure retries 2, deep escalations 1, automatic command retries 1. Tune from trajectories. | M3, M10 | open |
+| R-17.1 | REQ | Bounded explicit workflow: START → DISCOVER → PLAN → IMPLEMENT → VERIFY → (PASS → REVIEW → DONE \| FAIL → DIAGNOSE → recoverable: IMPLEMENT / unclear: EXPLORE / repeated: ESCALATE) | M3 | done: the transition table of R-17.1 (`task.rs`); the workflow is enforced through refusals, not by controlling the loop (ADR-0004) |
+| R-17.2 | REQ | Maximum iteration counts are configurable | M3 | done: `[agent].max_iterations` (8, the brief's §17 value) validated by V29 (M3 step 5) |
+| R-17.3 | DEF | Implementation retries 3, same-failure retries 2, deep escalations 1, automatic command retries 1. Tune from trajectories. | M3, M10 | done: defaults in `[agent]` and in the loop rules; tuned from trajectories in M10 |
 
 ## §18 Escalation policy
 
@@ -235,15 +235,15 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-19.1 | REQ | Recognise semantically similar failures, not only exact-string repeats | M3 | open |
-| R-19.2 | REQ | Normalise by exception type, command, test id, source location, key message tokens, stack-trace signature, exit code | M3 | open |
-| R-19.3 | REQ | `FailureFingerprint` with stable hashing | M3 | open |
+| R-19.1 | REQ | Recognise semantically similar failures, not only exact-string repeats | M3 | done: the same failure is recognised across moved lines, addresses, timestamps, paths and values (`fingerprint.rs`) |
+| R-19.2 | REQ | Normalise by exception type, command, test id, source location, key message tokens, stack-trace signature, exit code | M3 | partial: kind, tool, command, test, file, normalised message and exit code; no stack-trace signature, which the parsed output does not carry |
+| R-19.3 | REQ | `FailureFingerprint` with stable hashing | M3 | done: `fp_v1:` prefix, SHA-256, 16 hex characters |
 
 ## §20 Loop detection
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-20.1 | REQ | Detect repeated commands, repeated patches, repeated failures, the same file rewritten repeatedly, no metric progress, the same test failing across attempts | M3, M4 | open |
+| R-20.1 | REQ | Detect repeated commands, repeated patches, repeated failures, the same file rewritten repeatedly, no metric progress, the same test failing across attempts | M3, M4 | partial: repeated command, repeated failure, repeated edit and the same test failing across attempts; 'no metric progress' is not done |
 | R-20.2 | REQ | On a loop, stop and invoke the decision engine. `STALLED` leads to ESCALATE, REPLAN, or ASK_USER. | M4 | open |
 
 ## §21 Verification
@@ -269,7 +269,7 @@ the ADR is linked.
 |---|---|---|---|---|
 | R-23.1 | REQ | `ContextManager`: history policy, tool-output compaction, repo retrieval, state injection, summary generation, context budget, relevance filtering | M6 | open |
 | R-23.2 | REQ | Retain the current task, plan, diff, recent failures, relevant files, and current test result. Drop or compact unrelated old tool results, repeated logs, stale listings, and old attempts. | M6 | open |
-| R-23.3 | REQ | Keep semantic state separate from the raw transcript. The transcript is not long-term memory. | M3, M6 | open |
+| R-23.3 | REQ | Keep semantic state separate from the raw transcript. The transcript is not long-term memory. | M3, M6 | partial: the task state is kept apart from the transcript (journal, cache); compaction is M6 |
 
 ## §24 Optional Jev context compaction
 
@@ -290,10 +290,10 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-26.1 | REQ | Autonomous work happens in a Git worktree (`.worktrees/agent-task-NNN/`) | M3 (see audit C-4), M9 | open |
-| R-26.2 | REQ | The agent never needs permission to destroy the user's primary working tree | M3, M9 | open |
-| R-26.3 | REQ | Flow: create worktree → agent works → tests → review → user accepts/merges | M3, M9 | open |
-| R-26.4 | REQ | Interactive tasks may explicitly allow direct modification. Autonomous tasks default to isolated worktrees. | M3 | open |
+| R-26.1 | REQ | Autonomous work happens in a Git worktree (`.worktrees/agent-task-NNN/`) | M3 (see audit C-4), M9 | partial: `agent task start --worktree` creates `.worktrees/agent-task-NNN`; OpenCode is started in it by the user |
+| R-26.2 | REQ | The agent never needs permission to destroy the user's primary working tree | M3, M9 | partial: `.worktrees` is a protected root entry; the primary tree is unchanged by a worktree task (test) |
+| R-26.3 | REQ | Flow: create worktree → agent works → tests → review → user accepts/merges | M3, M9 | partial: create and record are done; the accept and merge steps stay with the user's Git |
+| R-26.4 | REQ | Interactive tasks may explicitly allow direct modification. Autonomous tasks default to isolated worktrees. | M3 | partial: `--worktree` is explicit; autonomous tasks do not default to a worktree yet |
 
 ## §27 Security requirements
 
@@ -409,7 +409,7 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-41.1 | REQ | Each run stores task ID, git commit, model versions, runtime versions, configuration, prompt, decision policy, hardware, duration, result, test outcome, human intervention | M3 (seed), M10 | open |
+| R-41.1 | REQ | Each run stores task ID, git commit, model versions, runtime versions, configuration, prompt, decision policy, hardware, duration, result, test outcome, human intervention | M3 (seed), M10 | partial: task id and journal seeded; configuration, model versions and hardware are M10 |
 | R-41.2 | REQ | Pin the OpenCode version, plugin version, model revision, quantization, runtime build, OS, and CUDA/driver | M1, M10 | open |
 | R-41.3 | REQ | Report throughput split into cold start, model load, prompt prefill, generation, tool execution, and total wall-clock | M5, M10 | open |
 
@@ -468,8 +468,8 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-49.1 | REQ | Record branch, commit before/after the task, diff, files changed, tests before/after | M3 | open |
-| R-49.2 | REQ | Capture `git status` before autonomous mutation | M3 | open |
+| R-49.1 | REQ | Record branch, commit before/after the task, diff, files changed, tests before/after | M3 | partial: base commit and dirty-file count are recorded; no diff or file list at the end |
+| R-49.2 | REQ | Capture `git status` before autonomous mutation | M3 | partial: the dirty-file count is taken before the first mutation of a worktree task |
 | R-49.3 | REQ | Create a checkpoint before broad refactoring when safe | M3, M9 | open |
 | R-49.4 | CON | Never reset or rewrite history without explicit permission | all | open |
 
@@ -510,8 +510,8 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-54.1 | REQ | Every routing decision is inspectable | M3+ | open |
-| R-54.2 | REQ | `agent explain` shows the task class, main model, micro decision, decision, reason, confidence | M3, M4 | open |
-| R-54.3 | REQ | `agent trace` shows the ordered actor/tool/decision trace | M3 | open |
+| R-54.2 | REQ | `agent explain` shows the task class, main model, micro decision, decision, reason, confidence | M3, M4 | partial: `agent explain` shows the decision, reason, confidence and provider; the micro decision comes with M4 |
+| R-54.3 | REQ | `agent trace` shows the ordered actor/tool/decision trace | M3 | done: `agent trace` prints the ordered journal |
 
 ## §55 Capabilities over names
 
@@ -534,7 +534,7 @@ the ADR is linked.
 | R-57.0 | M0 Audit | Repo inspection report: architecture, reuse, risks, dependency constraints, order | Report delivered; no code | **done** (see `docs/audit/m0-architecture-repository-audit.md`) |
 | R-57.1 | M1 OpenCode integration | OpenCode config, build agent, explore agent, custom tools, local model connectivity, health check, basic logging. No Jev, no Bonsai, no complex routing. | OpenCode → Qwen → inspect repo → edit file → run test → result | open |
 | R-57.2 | M2 Tools | repo_map, symbol_search, git tools, test runner, failure parser, experiment adapter | Main model uses deterministic tools instead of reconstructing repo info | open |
-| R-57.3 | M3 State | Task state, plan, event log, failure fingerprints | Session resumes after interruption without transcript reconstruction | open |
+| R-57.3 | M3 State | Task state, plan, event log, failure fingerprints | Session resumes after interruption without transcript reconstruction | done: resume by task id (`agent task resume`); status by `agent task status` and the `task_status` tool, without the transcript |
 | R-57.4 | M4 LFM | Failure classification, loop detection, next-action decision, context relevance | Measured reduction in latency/tokens/failed actions (not assumed) | open |
 | R-57.5 | M5 Bonsai | Stalled-task escalation, deep reasoning, senior review (PTQ1_0) | Benchmark of Qwen alone vs Qwen + Bonsai escalation | open |
 | R-57.6 | M6 Context | History filtering, tool-result compaction, repo retrieval, state injection, token budgeting | Measured task success, prompt tokens, latency, memory | open |
@@ -576,19 +576,19 @@ the ADR is linked.
 | AC-A3 | Agent | Subagent results can be summarised | M4 | open |
 | AC-A4 | Agent | Tests are automatically executed where configured | M2, M3 | open |
 | AC-A5 | Agent | Failures are parsed | M2 | done (failures parsed: 14 output formats; failed steps and parse_test_failure) |
-| AC-A6 | Agent | Repeated failures are detected | M3 | open |
+| AC-A6 | Agent | Repeated failures are detected | M3 | done: the same failure is refused in a live run (run 3, task-0007) |
 | AC-O1 | Orchestration | Model routing works | M4 | open |
 | AC-O2 | Orchestration | Escalation works | M5 | open |
-| AC-O3 | Orchestration | Deterministic decision fallback works | M3, M4 | open |
+| AC-O3 | Orchestration | Deterministic decision fallback works | M3, M4 | done: the rules engine is the only engine in M3 and its refusal and cap are tested |
 | AC-O4 | Orchestration | LFM decision backend works | M4 | open |
 | AC-O5 | Orchestration | Jev backend works when configured | M7 | open |
 | AC-O6 | Orchestration | No external service required for local-only mode | M1+ | open |
 | AC-S1 | Safety | Dangerous commands are governed | M1 (baseline), M9 | open |
-| AC-S2 | Safety | Worktree mode works | M3, M9 | open |
+| AC-S2 | Safety | Worktree mode works | M3, M9 | done: a worktree task leaves the primary tree unchanged and its session is bound (black-box test) |
 | AC-S3 | Safety | Path escapes are blocked | M1, M9 | open |
 | AC-S4 | Safety | Secrets are not logged | M1, M9 | open |
 | AC-E1 | Evaluation | Benchmark suite can run | M10 | open |
-| AC-E2 | Evaluation | Metrics can be collected | M3, M10 | open |
+| AC-E2 | Evaluation | Metrics can be collected | M3, M10 | partial: calls and decisions are recorded per task; the metrics report is M10 |
 | AC-E3 | Evaluation | Model versions are recorded | M1, M10 | open |
 | AC-E4 | Evaluation | Runs are reproducible | M10 | open |
 | AC-R1 | OSS | Docs are complete | M11 | open |

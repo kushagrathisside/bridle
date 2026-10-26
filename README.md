@@ -13,10 +13,10 @@ repository, under one policy and one event log, on the developer's own hardware,
 | Layer | Status | What it does |
 |---|---|---|
 | Harness | Built (M0 to M2) | Policy on every tool call, deterministic tools, output redaction, decision log |
-| Orchestrator | Planned (from M3) | Task state, loop detection, routing between the `main`, `micro` and `deep` model slots, escalation |
+| Orchestrator | Built (M3); LFM decisions and routing planned | Task state in a journal, loop detection, refusals with the rule named, worktree tasks. Routing between the `main`, `micro` and `deep` slots comes with M4 and M5 |
 | Local-first application | Goal | Several agents on one repository under one policy and one event log |
 
-Orchestration and multi-agent execution do not work yet. The status of each milestone is in
+Multi-agent execution and model routing do not work yet. The loop rules and task journal (M3) are built and were run live. The status of each milestone is in
 [docs/status/progress.md](docs/status/progress.md).
 
 ## What a decision looks like
@@ -145,7 +145,7 @@ policy before it runs. See [docs/guide/configuration.md](docs/guide/configuratio
 - **No approvals.** `ask` is never allowed, so network, destructive and risky commands are denied, not offered for
   confirmation.
 - **Syntactic code index.** `find_references` matches identifiers by spelling. It does not resolve imports, types or
-  overloads. There is no persistent symbol index yet (planned for M3).
+  overloads. There is no persistent symbol index yet; the M3 orchestrator keeps task state, not a code index.
 - **Partial manifests.** `dependency_search` does not read CMake `find_package`, or Go and Gradle manifests.
 - **One machine, one OS.** Only native Windows on the tested machine is verified. OpenCode's own model catalog fetch is a
   known network exception to local-only operation.
@@ -169,7 +169,7 @@ Weights are not included. Download them yourself and check the SHA-256 values in
 | M0 | Audit and architecture | Done |
 | M1 | Basic integration on Windows: policy, hook, runtime, OpenCode | Done |
 | M2 | Deterministic tools: MCP tools, failure parsing, tree-sitter | Done |
-| M3 | State and loop detection; event log in a state directory | Next |
+| M3 | State and loop detection; task journal; refusals; worktree tasks | Done (2026-10-26, verified live) |
 | M4 | Micro model as classifier or summariser (LFM2.5) | Planned |
 | M5 | Deep model on demand (Bonsai); one GPU model at a time | Planned |
 | M6 | Context management | Planned |

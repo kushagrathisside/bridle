@@ -280,6 +280,8 @@ impl Server {
             .cloned()
             .unwrap_or_else(|| json!({}));
         let output = run_tool(tool.as_ref(), &args, &self.ctx);
+        // Verification results are recorded before redaction, so their fingerprints come from the raw output.
+        super::record::record(&self.ctx, name, &args, output.structured.as_ref());
         // Every result leaves the server redacted, whatever the tool returned. The host's
         // after-hook may not see MCP output (observed 2026-10-21), so this is the guarantee.
         let output = redact_output(output, &self.ctx.redactor);

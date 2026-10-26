@@ -13,4 +13,5 @@ pub mod launcher;
 pub mod manifest;
 pub mod mcp;
 pub mod providers;
+pub mod state;
 pub mod sysprobe;
