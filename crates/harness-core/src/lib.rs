@@ -18,6 +18,7 @@ pub mod lfm;
 pub mod loops;
 pub mod models;
 pub mod security;
+pub mod subagent;
 pub mod task;
 pub mod telemetry;
 

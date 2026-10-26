@@ -4,7 +4,7 @@
 //! The API is synchronous on purpose: the CLI and hook processes are short-lived and make one call
 //! at a time, so an async runtime would add weight without benefit.
 
-mod llama_cpp;
+pub(crate) mod llama_cpp;
 mod mock;
 pub(crate) mod openai_compat;
 

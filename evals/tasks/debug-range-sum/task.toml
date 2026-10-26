@@ -1,0 +1,4 @@
+id = "debug-range-sum"
+title = "Fix the off-by-one in range_sum"
+category = "debugging"
+prompt = """range_sum in mathutil.py leaves out its upper bound. Fix it so that both ends are included. Then run python -m unittest -q."""

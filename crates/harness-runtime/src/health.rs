@@ -44,6 +44,7 @@ use harness_core::config::{ModelConfig, MtpMode};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::providers::llama_cpp::{props_build, props_context};
 use crate::providers::{
     ChatMessage, ChatRequest, HealthStatus, ModelProvider, ProviderError, ToolCall, ToolSpec,
 };
@@ -397,22 +398,25 @@ fn check_context(
         Ok(None) => return skipped(CheckKind::Context, "server exposes no props"),
         Err(e) => return skipped(CheckKind::Context, format!("props unavailable: {e}")),
     };
-    let Some(n_ctx) = props_n_ctx(props) else {
+    let Some(n_ctx) = props_context(props) else {
         return skipped(CheckKind::Context, "props do not report n_ctx");
     };
     let configured = u64::from(model.context);
+    let build = props_build(props)
+        .map(|build| format!(", build {build}"))
+        .unwrap_or_default();
     if n_ctx >= configured {
         check(
             CheckKind::Context,
             Status::Pass,
-            format!("server n_ctx {n_ctx} >= configured {configured}"),
+            format!("server n_ctx {n_ctx} >= configured {configured}{build}"),
             Some(props_ms),
         )
     } else {
         check(
             CheckKind::Context,
             Status::Warn,
-            format!("server n_ctx {n_ctx} < configured {configured}"),
+            format!("server n_ctx {n_ctx} < configured {configured}{build}"),
             Some(props_ms),
         )
     }
@@ -535,13 +539,6 @@ fn props_value(props: &Result<Option<Value>, ProviderError>) -> Option<&Value> {
 
 /// Context size reported by llama.cpp props: `default_generation_settings.n_ctx`, falling back
 /// to a top-level `n_ctx`.
-fn props_n_ctx(props: &Value) -> Option<u64> {
-    props
-        .pointer("/default_generation_settings/n_ctx")
-        .or_else(|| props.get("n_ctx"))
-        .and_then(Value::as_u64)
-}
-
 /// Looks for keys that mention speculative or draft decoding anywhere in the props JSON.
 ///
 /// `Some(true)` when such a key holds a truthy value, `Some(false)` when such keys exist but are

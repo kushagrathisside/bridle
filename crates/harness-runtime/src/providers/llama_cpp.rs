@@ -110,7 +110,6 @@ impl ModelProvider for LlamaCppProvider {
 }
 
 /// `default_generation_settings.n_ctx`, falling back to a top-level `n_ctx`.
-#[allow(dead_code)] // Spec helper with no caller in M1; covered by this module's unit tests.
 pub fn props_context(props: &Value) -> Option<u64> {
     props
         .pointer("/default_generation_settings/n_ctx")
@@ -119,67 +118,11 @@ pub fn props_context(props: &Value) -> Option<u64> {
 }
 
 /// The `build_info` string, when the server reports one.
-#[allow(dead_code)] // Spec helper with no caller in M1; covered by this module's unit tests.
 pub fn props_build(props: &Value) -> Option<String> {
     props
         .get("build_info")
         .and_then(Value::as_str)
         .map(str::to_owned)
-}
-
-/// The `model_path` string, when the server reports one.
-#[allow(dead_code)] // Spec helper with no caller in M1; covered by this module's unit tests.
-pub fn props_model_path(props: &Value) -> Option<String> {
-    props
-        .get("model_path")
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-}
-
-/// Whether speculative decoding (a draft model) is enabled.
-///
-/// Looks at every leaf value whose key path mentions `speculative` or `draft`. Returns
-/// `Some(true)` if any such leaf is truthy, `Some(false)` if there are such leaves but all are
-/// falsy, and `None` if the server reports no such key at all.
-#[allow(dead_code)] // Spec helper with no caller in M1; covered by this module's unit tests.
-pub fn props_speculative(props: &Value) -> Option<bool> {
-    let mut found = None;
-    speculative_scan(props, false, &mut found);
-    found
-}
-
-fn speculative_scan(value: &Value, under_draft_key: bool, found: &mut Option<bool>) {
-    match value {
-        Value::Object(map) if !map.is_empty() => {
-            for (key, child) in map {
-                let lowered = key.to_ascii_lowercase();
-                let hit =
-                    under_draft_key || lowered.contains("speculative") || lowered.contains("draft");
-                speculative_scan(child, hit, found);
-            }
-        }
-        Value::Array(items) if !items.is_empty() => {
-            for item in items {
-                speculative_scan(item, under_draft_key, found);
-            }
-        }
-        leaf if under_draft_key => {
-            let truthy = is_truthy(leaf);
-            *found = Some(found.unwrap_or(false) || truthy);
-        }
-        _ => {}
-    }
-}
-
-fn is_truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(flag) => *flag,
-        Value::Number(number) => number.as_f64().is_some_and(|x| x != 0.0),
-        Value::String(text) => !text.is_empty(),
-        Value::Array(items) => !items.is_empty(),
-        Value::Object(map) => !map.is_empty(),
-    }
 }
 
 #[cfg(test)]
@@ -222,41 +165,9 @@ mod tests {
     }
 
     #[test]
-    fn props_build_and_model_path_read_strings_only() {
-        let props = json!({"build_info": "b11756-abc", "model_path": "/models/q.gguf"});
+    fn props_build_reads_a_string_only() {
+        let props = json!({"build_info": "b11756-abc"});
         assert_eq!(props_build(&props).as_deref(), Some("b11756-abc"));
-        assert_eq!(props_model_path(&props).as_deref(), Some("/models/q.gguf"));
         assert_eq!(props_build(&json!({"build_info": 7})), None);
-        assert_eq!(props_model_path(&json!({})), None);
-    }
-
-    #[test]
-    fn props_speculative_is_none_without_such_keys() {
-        assert_eq!(props_speculative(&json!({"n_ctx": 4096})), None);
-        assert_eq!(props_speculative(&json!({})), None);
-    }
-
-    #[test]
-    fn props_speculative_reports_truthy_and_falsy_settings() {
-        assert_eq!(
-            props_speculative(&json!({"speculative": {"n_max": 0}})),
-            Some(false)
-        );
-        assert_eq!(
-            props_speculative(&json!({"speculative": {"n_max": 16}})),
-            Some(true)
-        );
-        assert_eq!(
-            props_speculative(&json!({"draft_model": "small.gguf"})),
-            Some(true)
-        );
-        assert_eq!(
-            props_speculative(&json!({"draft_model": null})),
-            Some(false)
-        );
-        assert_eq!(
-            props_speculative(&json!({"speculative": false, "draft": {"n": 0}})),
-            Some(false)
-        );
     }
 }

@@ -87,6 +87,26 @@ enum Command {
     },
     /// List every outbound destination of this configuration, and the proxy state (M9). Sends nothing.
     Egress,
+    /// Ask the subagent tier (M4b): a small local model reads a few bounded inputs and answers with cited evidence.
+    Subagent {
+        /// `explore` answers a task about the inputs; `summarise` condenses one text.
+        #[arg(long)]
+        role: String,
+        /// The question or the instruction. At most 500 characters.
+        #[arg(long)]
+        task: String,
+        /// A file to read, relative to the workspace. Repeat for more files.
+        #[arg(long = "path")]
+        paths: Vec<String>,
+        /// A literal text to condense, named `text` in the answer.
+        #[arg(long)]
+        text: Option<String>,
+    },
+    /// Run a task corpus under a condition, or summarise the results (M10).
+    Bench {
+        #[command(subcommand)]
+        action: commands::bench::BenchAction,
+    },
     /// Show the ordered record of a task (R-54.3).
     Trace {
         /// Task id (default: the latest task).
@@ -108,6 +128,7 @@ fn main() -> ExitCode {
         Command::Init(args) => {
             commands::init::run(&args, cli.config.as_deref(), cli.workspace.as_deref())
         }
+        Command::Bench { action } => commands::bench::run(&action),
         command => match app::App::load(cli.config.as_deref(), cli.workspace.as_deref()) {
             Ok(app) => match command {
                 Command::Doctor { json } => commands::doctor::run(&app, json),
@@ -125,10 +146,18 @@ fn main() -> ExitCode {
                     commands::task::trace(&app, task.as_deref(), limit)
                 }
                 Command::Egress => commands::egress::run(&app),
+                Command::Subagent {
+                    role,
+                    task,
+                    paths,
+                    text,
+                } => commands::subagent::run(&app, &role, &task, &paths, text.as_deref()),
                 Command::EvalDecisions { cases, slot, out } => {
                     commands::eval::run(&app, &slot, &cases, out.as_deref())
                 }
-                Command::Hook { .. } | Command::Init(_) => unreachable!("handled above"),
+                Command::Hook { .. } | Command::Init(_) | Command::Bench { .. } => {
+                    unreachable!("handled above")
+                }
             },
             Err(e) => Err(e),
         },

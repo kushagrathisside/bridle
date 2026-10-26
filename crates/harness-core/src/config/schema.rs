@@ -35,6 +35,8 @@ pub struct Config {
     pub tools: ToolsSection,
     /// The workflow switch and loop thresholds (M3). See [`WorkflowSection`].
     pub workflow: WorkflowSection,
+    /// The subagent tier: a small local model answers one bounded question (M4b). See [`SubagentsSection`].
+    pub subagents: SubagentsSection,
 }
 
 impl Default for Config {
@@ -55,6 +57,7 @@ impl Default for Config {
             external: ExternalSection::default(),
             tools: ToolsSection::default(),
             workflow: WorkflowSection::default(),
+            subagents: SubagentsSection::default(),
         }
     }
 }
@@ -83,6 +86,32 @@ impl Default for AgentSection {
             max_same_failure: 2,
             max_deep_escalations: 1,
             max_command_retries: 1,
+        }
+    }
+}
+
+/// The subagent tier (M4b, R-12.2, R-12.3, R-13.1, R-13.2). Off by default. When on, the `subagent` tool is offered:
+/// a small local model reads a few bounded, redacted inputs and answers one question with cited evidence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SubagentsSection {
+    /// Whether the `subagent` tool is offered to the model and the `agent subagent` command runs.
+    pub enabled: bool,
+    /// The model slot that answers. It must be defined under `[models]` (V37).
+    pub slot: String,
+    /// Bytes read from each input before the model sees it (V38: 256 to 65536).
+    pub max_input_bytes: usize,
+    /// Inputs per call (V38: 1 to 8).
+    pub max_inputs: usize,
+}
+
+impl Default for SubagentsSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            slot: "micro".to_owned(),
+            max_input_bytes: 4_096,
+            max_inputs: 4,
         }
     }
 }
