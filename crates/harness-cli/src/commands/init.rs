@@ -31,6 +31,10 @@ const PROFILES: &[(&str, &str)] = &[
         "development",
         include_str!("../../../../configs/development.toml"),
     ),
+    (
+        "local-with-jev",
+        include_str!("../../../../configs/local-with-jev.toml"),
+    ),
 ];
 
 /// The OpenCode plugin shim template (`opencode-plugin/local-agent.ts`).

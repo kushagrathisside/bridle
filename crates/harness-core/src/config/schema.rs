@@ -666,12 +666,27 @@ pub struct ExternalSection {
 }
 
 /// Optional hosted decision engine (§9). Off by default; never required (R-60).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct JevSection {
     pub enabled: bool,
+    /// `http://` only for a loopback host; a remote endpoint must use `https://` (V31 to V33).
     pub endpoint: Option<String>,
+    /// The name of the environment variable that holds the key. Never the key itself (V8).
     pub api_key_env: Option<String>,
+    /// Whole-request timeout for one decision, in milliseconds (V34).
+    pub timeout_ms: u64,
+}
+
+impl Default for JevSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            endpoint: None,
+            api_key_env: None,
+            timeout_ms: 5_000,
+        }
+    }
 }
 
 /// Opt-in switch that permits non-local model endpoints (§27, §37).

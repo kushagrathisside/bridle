@@ -1,18 +1,35 @@
-//! HTTP client for the local model servers.
+//! HTTP clients for the model servers (loopback) and for the optional Jev service (remote).
 //!
-//! Every M1 endpoint is loopback-only (config rule V4). A proxy configured in the environment
-//! (`HTTP_PROXY`, as on the target workstation) would intercept localhost traffic and time out,
-//! so the loopback client never uses one. Non-loopback endpoints will need their own policy when
-//! external providers arrive (M7 and M8).
+//! `local_agent` never uses a proxy: a proxy would intercept localhost traffic. `remote_agent` uses the proxy the
+//! environment names (`HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`), as every other program on the machine does, and checks
+//! certificates with the system store through native-tls (SChannel on Windows, OpenSSL elsewhere), so a corporate
+//! root certificate in the store is trusted. The config names the endpoint; the environment names the route. See
+//! ADR-0007.
 
 use std::time::Duration;
 
-/// Builds an agent for loopback model servers with no proxy and the given whole-request timeout.
-pub fn loopback_agent(timeout: Duration) -> ureq::Agent {
+/// Builds an agent for the model servers on loopback: no proxy, the given whole-request timeout, and non-2xx
+/// statuses returned rather than raised.
+pub fn local_agent(timeout: Duration) -> ureq::Agent {
     ureq::Agent::config_builder()
         .timeout_global(Some(timeout))
         .http_status_as_error(false)
         .proxy(None)
+        .build()
+        .into()
+}
+
+/// Builds an agent for a remote endpoint (M7): the environment's proxy, the system certificate store, the given
+/// whole-request timeout, and non-2xx statuses returned rather than raised.
+pub fn remote_agent(timeout: Duration) -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(timeout))
+        .http_status_as_error(false)
+        .tls_config(
+            ureq::tls::TlsConfig::builder()
+                .provider(ureq::tls::TlsProvider::NativeTls)
+                .build(),
+        )
         .build()
         .into()
 }
@@ -22,10 +39,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn loopback_agent_has_no_proxy() {
-        // The agent's config is not exposed for inspection, so this checks the builder is accepted
-        // and that the agent can be cloned; the behavioural check is the end-to-end health run.
-        let agent = loopback_agent(Duration::from_secs(1));
-        let _second = agent.clone();
+    fn both_agents_are_built_and_can_be_cloned() {
+        // The agents' configs are not exposed for inspection; the behavioural checks are the loopback
+        // health runs and the live TLS check of the Jev engine.
+        let local = local_agent(Duration::from_secs(1));
+        let _local_again = local.clone();
+        let remote = remote_agent(Duration::from_secs(1));
+        let _remote_again = remote.clone();
     }
 }

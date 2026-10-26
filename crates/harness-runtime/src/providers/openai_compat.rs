@@ -54,7 +54,7 @@ impl OpenAiCompatProvider {
     /// counts as no key.
     pub fn new(model: &ModelConfig, api_key: Option<String>) -> Self {
         let timeout = Duration::from_millis(model.timeout_ms);
-        let agent = crate::http::loopback_agent(timeout);
+        let agent = crate::http::local_agent(timeout);
         Self {
             model_id: model.id.clone(),
             base_url: model.endpoint.trim_end_matches('/').to_owned(),
@@ -358,7 +358,7 @@ fn expect_success(reply: RawReply) -> Result<String, ProviderError> {
     }
 }
 
-fn read_text(body: &mut ureq::Body, timeout: Duration) -> Result<String, ProviderError> {
+pub(crate) fn read_text(body: &mut ureq::Body, timeout: Duration) -> Result<String, ProviderError> {
     body.read_to_string()
         .map_err(|e| transport_error(e, timeout))
 }

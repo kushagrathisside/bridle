@@ -63,12 +63,8 @@ pub fn parse_choice(text: &str) -> Result<LfmChoice, RejectReason> {
         .get("decision")
         .and_then(Value::as_str)
         .ok_or(RejectReason::MissingDecision)?;
-    let decision = match name {
-        "ESCALATE" => Decision::Escalate,
-        "ASK_USER" => Decision::AskUser,
-        "REPLAN" => Decision::Replan,
-        other => return Err(RejectReason::UnknownDecision(other.to_owned())),
-    };
+    let decision =
+        decision_for_choice(name).ok_or_else(|| RejectReason::UnknownDecision(name.to_owned()))?;
     let reason: String = object
         .get("reason")
         .and_then(Value::as_str)
@@ -80,12 +76,22 @@ pub fn parse_choice(text: &str) -> Result<LfmChoice, RejectReason> {
     Ok(LfmChoice { decision, reason })
 }
 
-fn strip_fence(text: &str) -> &str {
+pub(crate) fn strip_fence(text: &str) -> &str {
     let Some(rest) = text.strip_prefix("```") else {
         return text;
     };
     let rest = rest.strip_prefix("json").unwrap_or(rest);
     rest.trim().strip_suffix("```").map_or(text, str::trim)
+}
+
+/// The decision a choice name stands for, or `None` for a name that is not in `CHOICES`.
+pub fn decision_for_choice(name: &str) -> Option<Decision> {
+    match name {
+        "ESCALATE" => Some(Decision::Escalate),
+        "ASK_USER" => Some(Decision::AskUser),
+        "REPLAN" => Some(Decision::Replan),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

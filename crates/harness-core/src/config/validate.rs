@@ -33,6 +33,12 @@
 //! | V27 | Error | the repeated-edit threshold is below 2 (one edit is progress, not a loop) |
 //! | V28 | Error | the refusal cap is below 1 |
 //! | V29 | Error | an `[agent]` loop bound would block the task at once: `max_iterations` below 2, or a retry bound below 1 |
+//! | V30 | Error | `external.jev.enabled` without an `endpoint` |
+//! | V31 | Error | `external.jev.endpoint` is not an http(s) URL with a host |
+//! | V32 | Error | a non-loopback Jev endpoint over plain `http://` |
+//! | V33 | Error | a non-loopback Jev endpoint without `api_key_env` |
+//! | V34 | Error | `external.jev.timeout_ms` outside 100 to 60000 |
+//! | V35 | Error | credentials in the Jev endpoint URL |
 //! | V24 | Warning | a verification step sets `targets = true` but its `kind` is not `test` |
 //!
 //! Unit tests: one passing baseline config (no issues) and at least one failing case per rule.
@@ -112,6 +118,7 @@ pub fn validate_with(cfg: &Config, env: &ValidationEnv) -> Vec<ConfigIssue> {
     check_runtimes(cfg, &mut report);
     check_profile(cfg, &mut report);
     check_jev(cfg, &mut report);
+    check_jev_endpoint(cfg, &mut report);
     check_decisions(cfg, &mut report);
     check_routing(cfg, &mut report);
     check_context(cfg, &mut report);
@@ -532,6 +539,70 @@ fn check_profile(cfg: &Config, report: &mut Report) {
     }
 }
 
+/// V30 to V35: the Jev endpoint policy. Jev is off by default. When it is on, its endpoint must be reachable only
+/// in a way that cannot leak the key: `https://` for any host but loopback, and no credentials in the URL.
+fn check_jev_endpoint(cfg: &Config, report: &mut Report) {
+    let jev = &cfg.external.jev;
+    if !jev.enabled {
+        return;
+    }
+    let Some(endpoint) = jev.endpoint.as_deref().filter(|e| !e.trim().is_empty()) else {
+        report.error(
+            "V30",
+            "external.jev.endpoint",
+            "external.jev is enabled but no endpoint is set",
+        );
+        return;
+    };
+    match endpoint_host(endpoint).filter(|host| !host.is_empty()) {
+        None => report.error(
+            "V31",
+            "external.jev.endpoint",
+            "endpoint must be an http:// or https:// URL with a non-empty host",
+        ),
+        Some(host) => {
+            if !is_loopback_host(host) {
+                if !is_https(endpoint) {
+                    report.error(
+                        "V32",
+                        "external.jev.endpoint",
+                        format!(
+                            "host `{host}` is not loopback; a remote Jev endpoint must use https://"
+                        ),
+                    );
+                }
+                if jev.api_key_env.is_none() {
+                    report.error(
+                        "V33",
+                        "external.jev.api_key_env",
+                        "a remote Jev endpoint needs api_key_env, the name of the environment variable that holds the key",
+                    );
+                }
+            }
+        }
+    }
+    let authority = endpoint
+        .split_once("://")
+        .map_or("", |(_, rest)| rest)
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("");
+    if authority.contains('@') {
+        report.error(
+            "V35",
+            "external.jev.endpoint",
+            "the endpoint must not contain a user name or password; use api_key_env",
+        );
+    }
+    if !(100..=60_000).contains(&jev.timeout_ms) {
+        report.error(
+            "V34",
+            "external.jev.timeout_ms",
+            "timeout_ms must be between 100 and 60000",
+        );
+    }
+}
+
 /// V8 for the jev credential name.
 fn check_jev(cfg: &Config, report: &mut Report) {
     check_api_key_env(
@@ -876,6 +947,41 @@ mod tests {
         let mut cfg = baseline();
         cfg.agent.default_model = "deep".to_owned();
         assert_issue(&cfg, "V2", Severity::Error, "agent.default_model");
+    }
+
+    #[test]
+    fn v30_to_v35_guard_the_jev_endpoint() {
+        let mut cfg = Config::default();
+        cfg.external.jev.enabled = true;
+        assert_issue(&cfg, "V30", Severity::Error, "external.jev.endpoint");
+
+        cfg.external.jev.endpoint = Some("ftp://jev.example.com".to_owned());
+        assert_issue(&cfg, "V31", Severity::Error, "external.jev.endpoint");
+
+        cfg.external.jev.endpoint = Some("http://jev.example.com".to_owned());
+        assert_issue(&cfg, "V32", Severity::Error, "external.jev.endpoint");
+        assert_issue(&cfg, "V33", Severity::Error, "external.jev.api_key_env");
+
+        cfg.external.jev.endpoint = Some("https://user:pw@jev.example.com".to_owned());
+        cfg.external.jev.api_key_env = Some("JEV_KEY".to_owned());
+        assert_issue(&cfg, "V35", Severity::Error, "external.jev.endpoint");
+        assert_no_rule(&cfg, "V32");
+        assert_no_rule(&cfg, "V33");
+
+        cfg.external.jev.endpoint = Some("https://jev.example.com".to_owned());
+        cfg.external.jev.timeout_ms = 0;
+        assert_no_rule(&cfg, "V35");
+        assert_issue(&cfg, "V34", Severity::Error, "external.jev.timeout_ms");
+    }
+
+    #[test]
+    fn a_loopback_jev_endpoint_may_use_http_without_a_key() {
+        let mut cfg = Config::default();
+        cfg.external.jev.enabled = true;
+        cfg.external.jev.endpoint = Some("http://127.0.0.1:8099".to_owned());
+        assert_no_rule(&cfg, "V32");
+        assert_no_rule(&cfg, "V33");
+        assert_no_rule(&cfg, "V30");
     }
 
     #[test]
