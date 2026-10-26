@@ -113,7 +113,7 @@ the ADR is linked.
 |---|---|---|---|---|
 | R-5.1 | STRAT | Roles: Qwen3.5-9B is the main engineer. LFM2.5-1.2B is the micro-orchestrator, explorer, classifier, summariser, and decision model. Bonsai 2 27B is the deep reasoner and escalation model. Optional Qwen3.5-2B/4B handles secondary review. | M1–M5 | open |
 | R-5.2 | CON | 2B/4B models are optional, not mandatory dependencies for the first release | M11 | open |
-| R-5.3 | REQ | LFM is the first subagent/micro-model to test | M4 | open |
+| R-5.3 | REQ | LFM is the first subagent/micro-model to test | M4 | partial: LFM is the first subagent (M4b) and the micro decision role (M4); its subagent quality is measured on a small sample only. |
 
 ## §6 Native Windows execution
 
@@ -178,15 +178,15 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-12.1 | CON | No free-running, recursive role swarm (architect/researcher/coder/tester/…/manager) | all | open |
-| R-12.2 | REQ | Hierarchical design: main Qwen → (LFM cheap evidence \| deterministic tools \| review subagent \| Bonsai when justified) | M4, M5 | open |
-| R-12.3 | REQ | Subagents return evidence or bounded analysis, not autonomous branches | M4 | open |
+| R-12.2 | REQ | Hierarchical design: main Qwen → (LFM cheap evidence \| deterministic tools \| review subagent \| Bonsai when justified) | M4, M5 | done (M4b): the subagent tier reads bounded, redacted inputs through the policy and is offered as a tool when enabled (`harness-runtime/src/subagent.rs`). |
+| R-12.3 | REQ | Subagents return evidence or bounded analysis, not autonomous branches | M4 | partial (M4b): subagents return checked answers and never edit; their quality is measured on one question only (5 runs, 4 correct). |
 
 ## §13 Subagent output policy
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-13.1 | REQ | Subagent result schema: `{summary, findings[], evidence[], confidence, recommendation, files[], commands[], unresolved[]}` | M4 | open |
-| R-13.2 | REQ | The parent receives the summary, evidence, file/symbol refs, and unresolved items. It never receives the full transcript by default. | M4, M6 | open |
+| R-13.1 | REQ | Subagent result schema: `{summary, findings[], evidence[], confidence, recommendation, files[], commands[], unresolved[]}` | M4 | partial (M4b): the result carries a summary, cited findings, unresolved items, a confidence and a recommendation; the files and commands lists are not part of it. |
+| R-13.2 | REQ | The parent receives the summary, evidence, file/symbol refs, and unresolved items. It never receives the full transcript by default. | M4, M6 | done (M4b): the parent gets a bounded rendering of the checked answer, never the transcript. |
 
 ## §14 Deterministic tools
 
@@ -228,7 +228,7 @@ the ADR is linked.
 |---|---|---|---|---|
 | R-18.1 | REQ | Default Qwen → Qwen → Qwen. On stall, LFM classifies the state. Persistent or high-complexity failure goes to Bonsai. | M4, M5 | open |
 | R-18.2 | REQ | Triggers: same normalised failure ≥ 2, different patches with the same failure, high architecture uncertainty, cross-module behaviour, research-methodology question, explicit user request, high-impact change | M5 | open |
-| R-18.3 | REQ | Bonsai analyses and proposes. Qwen implements and tests. | M5 | open |
+| R-18.3 | REQ | Bonsai analyses and proposes. Qwen implements and tests. | M5 | partial (M4b): the small model analyses and proposes; it never edits. Escalation to the deep model is not routed. |
 | R-18.4 | CON | Bonsai must not mutate code automatically in the first implementation stage | M5 | done: the deep model has no path that edits code |
 
 ## §19 Failure normalisation

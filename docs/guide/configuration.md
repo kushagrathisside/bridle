@@ -192,6 +192,23 @@ Use a lower `hard_limit` for numbered or repetitive output.
 Each request writes one `context` record to `.local-agent/events.jsonl`, with `tool_results`, `changed`, `bytes_before`,
 `bytes_after`, `target_bytes` and `hard_bytes`.
 
+## Subagents: a small model reads a few files (M4b)
+
+The subagent tier lets a small local model read a few files, or condense one text, and answer one question with cited
+evidence. It is off by default. The design is in [ADR-0009](../decisions/0009-subagents-are-bounded-readers.md); the result is in
+[M4b](../status/milestones/m4b-subagents.md).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `subagents.enabled` | false | Offers the `subagent` tool to the model, and makes `agent subagent` run. |
+| `subagents.slot` | `micro` | The model slot that answers. It must be defined under `[models]` (V37). |
+| `subagents.max_input_bytes` | 4096 | Bytes read from each input before the model sees it (V38: 256 to 65536). |
+| `subagents.max_inputs` | 4 | Inputs per call (V38: 1 to 8). |
+
+Inputs go through the tool policy first, so a secret file is refused, and each file is redacted before the model sees it.
+The answer is checked against a fixed shape; references it cannot verify are dropped and counted. Treat an answer as a
+reading, and check the cited lines.
+
 ## Limits
 
 - `ask` verdicts are denied in release 1 (decision D3).
