@@ -5,7 +5,7 @@ trust check on the repository layer, semantic validation, the read-only model re
 types. It reads config files and nothing else: it never opens a network socket, never spawns a process, and knows
 nothing about OpenCode (ADR-0001).
 
-> **Status:** Built and tested. Identity, schema, loading, validation V1 to V23, registry and telemetry types are
+> **Status:** Built and tested. Identity, schema, loading, validation V1 to V35, registry and telemetry types are
 > from M1; the `[tools]` section, rules V24 and V25, and the repository-layer refusal of `tools` were added in M2.
 
 ## Responsibilities

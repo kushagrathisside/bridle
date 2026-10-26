@@ -4,7 +4,7 @@ This page describes the files that configure the Bridle harness, the keys you ar
 file may set what, and the validation rules. It is for an engineer setting up or tuning a project. It assumes you
 have installed the `agent` binary as described in [installation.md](installation.md).
 
-> **Status:** Release 1 (native Windows), harness milestones M0 to M6 complete. Behaviour described here is
+> **Status:** Release 1 (native Windows), harness milestones M0 to M6 complete; M7 (Jev) is built and tested, not live. Behaviour described here is
 > implemented and verified on the target machine as of 2026-10-22.
 
 ## Configuration files
@@ -132,7 +132,7 @@ The shipped profiles satisfy these rules, so `agent init` output loads as a proj
 ## Validation rules
 
 `agent config validate` reports each issue with its rule id. The rules are in
-`crates/harness-core/src/config/validate.rs` (V1 to V29). The main ones:
+`crates/harness-core/src/config/validate.rs` (V1 to V35). The main ones:
 
 | Rule | Check |
 |---|---|
