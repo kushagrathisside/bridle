@@ -20,6 +20,8 @@ pub enum EventKind {
     Verification,
     Mcp,
     Doctor,
+    /// The per-request view of tool results, and the task state put into the system prompt (M6).
+    Context,
 }
 
 /// One telemetry record. Optional fields are omitted from the JSON when unset.

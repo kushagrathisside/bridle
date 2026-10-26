@@ -11,11 +11,15 @@ use std::path::Path;
 
 use clap::ValueEnum;
 use harness_core::config::{Config, ModelConfig, Verdict};
+use harness_core::context::{self, ResultView};
 use harness_core::identity;
 use harness_core::security::redact::{Redactor, is_sensitive_entry};
 use harness_core::security::tool_policy::{PolicyDecision, ToolKind, ToolPolicy, ToolRequest};
 use harness_core::telemetry::{Event, EventKind};
+use harness_runtime::mcp::record::is_verification_tool;
 use serde_json::{Map, Value, json};
+
+use crate::workflow::is_test_command;
 
 /// Hook events the shim forwards. Names are the CLI spelling (`agent hook tool-before`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -25,6 +29,10 @@ pub enum HookEvent {
     Permission,
     ShellEnv,
     Event,
+    /// `experimental.chat.messages.transform`: the per-request view of tool results (M6).
+    MessagesTransform,
+    /// `experimental.chat.system.transform`: the task state for the system prompt (M6).
+    SystemTransform,
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -264,6 +272,8 @@ pub fn handle(event: HookEvent, input: &Value, ctx: &HookContext<'_>) -> (Value,
         HookEvent::Permission => permission(input, ctx),
         HookEvent::ShellEnv => (shell_env(std::env::vars()), None),
         HookEvent::Event => (json!({}), Some(session_event(input))),
+        HookEvent::MessagesTransform => messages_transform(input, ctx),
+        HookEvent::SystemTransform => (json!({}), None),
     }
 }
 
@@ -445,7 +455,10 @@ pub fn failure_answer(event: HookEvent, error: &str) -> Value {
         // Decision D3: an unanswered permission is a deny, never a question `--auto` approves.
         HookEvent::Permission => json!({ "status": "deny", "reason": error }),
         HookEvent::ShellEnv => shell_env(std::env::vars()),
-        HookEvent::ToolAfter | HookEvent::Event => json!({}),
+        HookEvent::ToolAfter
+        | HookEvent::Event
+        | HookEvent::MessagesTransform
+        | HookEvent::SystemTransform => json!({}),
     }
 }
 
@@ -681,6 +694,282 @@ the parent's question using search, read and the local-agent tools. Do not edit 
 a compact JSON object: {\"summary\": str, \"findings\": [str], \"evidence\": [str], \"confidence\": \
 number, \"recommendation\": str, \"files\": [str], \"commands\": [str], \"unresolved\": [str]}. \
 Cite files as path:line. Never paste whole files.";
+
+// ---------------------------------------------------------------------------------------------
+// Context transform (M6): the per-request view of completed tool results
+// ---------------------------------------------------------------------------------------------
+
+/// Built-in OpenCode tools that only read.
+const READ_ONLY_BUILTINS: [&str; 5] = ["read", "list", "glob", "grep", "codesearch"];
+/// Harness tools that only read, by name without the MCP prefix.
+const READ_ONLY_HARNESS: [&str; 15] = [
+    "git_status",
+    "git_diff",
+    "git_history",
+    "git_log_range",
+    "repo_map",
+    "file_summary",
+    "symbol_search",
+    "find_references",
+    "dependency_search",
+    "inspect_config",
+    "harness_info",
+    "inspect_artifact",
+    "summarize_experiment",
+    "compare_experiments",
+    "parse_test_failure",
+];
+
+/// A completed tool result in a request: where it sits, and the output the model would see.
+struct ToolResult {
+    message: usize,
+    part: usize,
+    call_id: String,
+    tool: String,
+    verification: bool,
+    read_only: bool,
+    output: String,
+}
+
+/// The name of a harness tool without its MCP prefix; `None` for a built-in tool.
+fn harness_name(tool: &str) -> Option<&str> {
+    let prefix = format!("{}_", identity::MCP_SERVER_NAME);
+    tool.strip_prefix(prefix.as_str())
+}
+
+/// Whether a tool only reads. Bash is never read-only here: the policy classifies each command, and this rule
+/// only ever drops results that cannot have changed anything.
+fn is_read_only(tool: &str) -> bool {
+    match harness_name(tool) {
+        Some(name) => READ_ONLY_HARNESS.contains(&name),
+        None => READ_ONLY_BUILTINS.contains(&tool),
+    }
+}
+
+/// The completed tool results of a request, oldest first, and the size of its text: text and reasoning parts,
+/// and the input and output of every tool part.
+fn scan_request(messages: &[Value]) -> (Vec<ToolResult>, usize) {
+    let mut results = Vec::new();
+    let mut total = 0;
+    for (message_index, message) in messages.iter().enumerate() {
+        let Some(parts) = message["parts"].as_array() else {
+            continue;
+        };
+        for (part_index, part) in parts.iter().enumerate() {
+            match part["type"].as_str() {
+                Some("text" | "reasoning") => {
+                    total += part["text"].as_str().map_or(0, str::len);
+                }
+                Some("tool") => {
+                    let state = &part["state"];
+                    total += state["input"].to_string().len();
+                    if state["status"] != "completed" {
+                        continue;
+                    }
+                    let output = state["output"].as_str().unwrap_or_default();
+                    total += output.len();
+                    let tool = part["tool"].as_str().unwrap_or_default();
+                    let short = harness_name(tool).unwrap_or(tool);
+                    let command = state["input"]["command"].as_str();
+                    results.push(ToolResult {
+                        message: message_index,
+                        part: part_index,
+                        call_id: part["callID"].as_str().unwrap_or_default().to_owned(),
+                        tool: tool.to_owned(),
+                        verification: is_verification_tool(short)
+                            || (short == "bash" && is_test_command(command)),
+                        read_only: is_read_only(tool),
+                        output: output.to_owned(),
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+    (results, total)
+}
+
+/// `experimental.chat.messages.transform` (M6): decides, for this request only, what each completed tool result
+/// looks like. Returns only the outputs that change, as `{message, part, output}`; the shim applies them to its
+/// copy of the messages. The stored session is not edited, so the next request starts from the full history.
+/// Compaction is not a security control: outputs are redacted in `tool.execute.after`, before they are stored.
+pub fn messages_transform(input: &Value, ctx: &HookContext<'_>) -> (Value, Option<Event>) {
+    let messages = input["messages"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let (results, total) = scan_request(messages);
+    let views: Vec<ResultView> = results
+        .iter()
+        .map(|result| ResultView {
+            call_id: result.call_id.clone(),
+            tool: result.tool.clone(),
+            bytes: result.output.len(),
+            verification: result.verification,
+            read_only: result.read_only,
+        })
+        .collect();
+    let settings = &ctx.config.context;
+    let budget = context::Budget::from_tokens(settings.target_tokens, settings.hard_limit);
+    let actions = if settings.compact_tool_outputs {
+        context::plan(&views, total, budget)
+    } else {
+        vec![context::Action::Keep; views.len()]
+    };
+
+    let mut changes = Vec::new();
+    let mut bytes_after = total;
+    for (result, action) in results.iter().zip(actions) {
+        let replacement = match action {
+            context::Action::Keep => continue,
+            context::Action::Compact if result.verification => {
+                context::compact_verification(&result.output)
+            }
+            context::Action::Compact => context::compact_text(&result.output),
+            context::Action::Drop => {
+                context::stub(harness_name(&result.tool).unwrap_or(result.tool.as_str()))
+            }
+        };
+        if replacement.len() >= result.output.len() {
+            continue;
+        }
+        bytes_after = bytes_after.saturating_sub(result.output.len() - replacement.len());
+        changes.push(json!({
+            "message": result.message,
+            "part": result.part,
+            "output": replacement,
+        }));
+    }
+
+    let mut ev = Event::now(EventKind::Context);
+    ev.status = Some(
+        if changes.is_empty() {
+            "unchanged"
+        } else {
+            "changed"
+        }
+        .to_owned(),
+    );
+    let ev = ev
+        .with("tool_results", results.len())
+        .with("changed", changes.len())
+        .with("bytes_before", total)
+        .with("bytes_after", bytes_after)
+        .with("target_bytes", budget.target_bytes)
+        .with("hard_bytes", budget.hard_bytes);
+    (json!({ "changes": changes }), Some(ev))
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod context_tests {
+    use super::*;
+    use harness_core::config::Config;
+    use harness_core::security::{redact::Redactor, tool_policy::ToolPolicy};
+
+    /// One assistant message with one completed tool part.
+    fn tool_message(tool: &str, command: &str, output: &str) -> Value {
+        json!({
+            "info": { "role": "assistant" },
+            "parts": [{
+                "type": "tool",
+                "callID": "call",
+                "tool": tool,
+                "state": {
+                    "status": "completed",
+                    "input": { "command": command },
+                    "output": output,
+                    "title": "",
+                    "metadata": {},
+                    "time": { "start": 0, "end": 1 }
+                }
+            }]
+        })
+    }
+
+    fn transform(config: &Config, messages: Vec<Value>) -> (Value, Option<Event>) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let policy = ToolPolicy::with_rules(dir.path(), &config.security, false).expect("policy");
+        let redactor = Redactor::new();
+        let ctx = HookContext {
+            config,
+            policy: &policy,
+            redactor: &redactor,
+        };
+        messages_transform(&json!({ "messages": messages }), &ctx)
+    }
+
+    #[test]
+    fn older_reads_are_dropped_over_the_hard_limit_and_the_recent_ones_are_kept() {
+        let mut config = Config::default();
+        config.context.target_tokens = 1_000;
+        config.context.hard_limit = 500;
+        let big = "line of output\n".repeat(400);
+        let messages: Vec<Value> = (0..5).map(|_| tool_message("read", "", &big)).collect();
+
+        let (answer, event) = transform(&config, messages);
+
+        let changes = answer["changes"].as_array().expect("changes");
+        // The two oldest reads are dropped; the recent ones are compacted too, because they would not fit.
+        assert!(changes.len() >= 2, "{answer}");
+        assert_eq!(changes[0]["message"], 0);
+        assert!(
+            changes[0]["output"]
+                .as_str()
+                .unwrap()
+                .starts_with("[dropped by the harness")
+        );
+        let event = event.expect("one record per request");
+        assert_eq!(event.status.as_deref(), Some("changed"));
+        let before = event.data.get("bytes_before").and_then(Value::as_u64);
+        let after = event.data.get("bytes_after").and_then(Value::as_u64);
+        assert!(
+            after < before,
+            "the request got smaller: {before:?} to {after:?}"
+        );
+        assert!(
+            after <= Some(2_000),
+            "the request fits the hard limit: {after:?}"
+        );
+    }
+
+    #[test]
+    fn an_old_verification_keeps_only_its_failure_lines() {
+        let config = Config::default();
+        let output = format!(
+            "{}FAILED tests/test_calc.py::test_add - assert 1 == 2\nok\n",
+            "....\n".repeat(300)
+        );
+        let mut messages = vec![tool_message("local-agent_run_tests", "", &output)];
+        messages.extend((0..3).map(|_| tool_message("local-agent_git_status", "", "clean")));
+
+        let (answer, _) = transform(&config, messages);
+
+        let changes = answer["changes"].as_array().expect("changes");
+        assert_eq!(changes.len(), 1, "{answer}");
+        let compacted = changes[0]["output"].as_str().unwrap();
+        assert!(compacted.contains("FAILED tests/test_calc.py::test_add"));
+        assert!(!compacted.contains("...."));
+    }
+
+    #[test]
+    fn with_compaction_off_the_request_is_unchanged_but_still_measured() {
+        let mut config = Config::default();
+        config.context.compact_tool_outputs = false;
+        config.context.target_tokens = 100;
+        config.context.hard_limit = 100;
+        let big = "x\n".repeat(3000);
+        let messages: Vec<Value> = (0..5).map(|_| tool_message("read", "", &big)).collect();
+
+        let (answer, event) = transform(&config, messages);
+
+        assert_eq!(answer["changes"], json!([]));
+        assert_eq!(
+            event.expect("one record").status.as_deref(),
+            Some("unchanged")
+        );
+    }
+}
 
 #[cfg(test)]
 mod tests {

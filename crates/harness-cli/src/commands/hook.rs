@@ -83,6 +83,11 @@ fn answer(
                 telemetry = Some(degraded_event(event, input, &error));
             }
         }
+        HookEvent::SystemTransform => match workflow::system_block(&app, input) {
+            Ok(Some(text)) => answer = json!({ "text": text }),
+            Ok(None) => {}
+            Err(error) => telemetry = Some(degraded_event(event, input, &error)),
+        },
         _ => {}
     }
     if let Some(ev) = telemetry {
@@ -111,6 +116,7 @@ fn loop_refusal_event(input: &Value, message: &str) -> Event {
 fn degraded_event(event: HookEvent, input: &Value, error: &anyhow::Error) -> Event {
     let kind = match event {
         HookEvent::ToolAfter => EventKind::ToolAfter,
+        HookEvent::MessagesTransform | HookEvent::SystemTransform => EventKind::Context,
         _ => EventKind::ToolBefore,
     };
     let mut ev = Event::now(kind);
