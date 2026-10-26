@@ -1,0 +1,71 @@
+name: CI
+
+# Release 1 is native Windows. The Rust gate runs on a Windows runner with the MSVC toolchain.
+# The shim type check is platform-neutral and runs on Linux. GPU and model runs are not in CI.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust gate (Windows, MSVC)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: "0"
+      RUST_BACKTRACE: "1"
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins 1.95.0 with rustfmt and clippy; rustup installs it on first use.
+      - name: Show the pinned toolchain
+        run: rustup show
+
+      - name: Cache cargo registry and build output
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (warnings are errors)
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Tests
+        run: cargo test --workspace --locked --no-fail-fast
+
+  shim:
+    name: TypeScript shim type check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: opencode-plugin
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: opencode-plugin/package-lock.json
+
+      - name: Install pinned dependencies
+        run: npm ci
+
+      - name: Type check against @opencode-ai/plugin 1.19.3
+        run: npm run typecheck
