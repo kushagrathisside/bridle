@@ -39,6 +39,7 @@
 //! | V33 | Error | a non-loopback Jev endpoint without `api_key_env` |
 //! | V34 | Error | `external.jev.timeout_ms` outside 100 to 60000 |
 //! | V35 | Error | credentials in the Jev endpoint URL |
+//! | V36 | Error | a remote LiteLLM gateway without `api_key_env` |
 //! | V24 | Warning | a verification step sets `targets = true` but its `kind` is not `test` |
 //!
 //! Unit tests: one passing baseline config (no issues) and at least one failing case per rule.
@@ -265,6 +266,17 @@ fn check_model(cfg: &Config, slot: &str, model: &ModelConfig, report: &mut Repor
 /// when the cloud opt-in is enabled and the scheme is `https`; a non-local model is only allowed
 /// when the cloud opt-in is enabled.
 fn check_endpoint(cfg: &Config, slot: &str, model: &ModelConfig, report: &mut Report) {
+    // V36: a LiteLLM gateway on another host holds keys for the cloud, so it needs a key name like any remote service.
+    if model.provider == ProviderKind::Litellm
+        && !endpoint_is_loopback(&model.endpoint)
+        && model.api_key_env.is_none()
+    {
+        report.error(
+            "V36",
+            model_path(slot, "api_key_env"),
+            "a remote LiteLLM gateway needs api_key_env, the name of the environment variable that holds its key",
+        );
+    }
     let host = endpoint_host(&model.endpoint).filter(|host| !host.is_empty());
     if host.is_none() {
         report.error(
@@ -818,6 +830,11 @@ fn is_https(endpoint: &str) -> bool {
         .is_some_and(|(scheme, _)| scheme.eq_ignore_ascii_case("https"))
 }
 
+/// True when the endpoint names a loopback host. An endpoint that does not parse is not loopback.
+pub fn endpoint_is_loopback(endpoint: &str) -> bool {
+    endpoint_host(endpoint).is_some_and(|host| !host.is_empty() && is_loopback_host(host))
+}
+
 /// Loopback test for an endpoint host: `localhost`, any `127.0.0.0/8` address, or `::1`.
 pub(super) fn is_loopback_host(host: &str) -> bool {
     if host.eq_ignore_ascii_case("localhost") {
@@ -997,6 +1014,38 @@ mod tests {
             main_model(&mut cfg).endpoint = endpoint.to_owned();
             assert_issue(&cfg, "V3", Severity::Error, "models.main.endpoint");
         }
+    }
+
+    #[test]
+    fn v36_a_remote_litellm_gateway_needs_a_key_name() {
+        let mut cfg = baseline();
+        cfg.external.cloud_models.enabled = true;
+        let model = main_model(&mut cfg);
+        model.provider = ProviderKind::Litellm;
+        model.endpoint = "https://gateway.example.com/v1".to_owned();
+        model.api_key_env = None;
+        assert_issue(&cfg, "V36", Severity::Error, "models.main.api_key_env");
+
+        main_model(&mut cfg).api_key_env = Some("BRIDLE_GATEWAY_KEY".to_owned());
+        assert_no_rule(&cfg, "V36");
+    }
+
+    #[test]
+    fn v36_does_not_apply_to_a_loopback_gateway() {
+        let mut cfg = baseline();
+        let model = main_model(&mut cfg);
+        model.provider = ProviderKind::Litellm;
+        model.endpoint = "http://127.0.0.1:4000/v1".to_owned();
+        model.api_key_env = None;
+        assert_no_rule(&cfg, "V36");
+    }
+
+    #[test]
+    fn endpoint_is_loopback_classifies_hosts() {
+        assert!(endpoint_is_loopback("http://127.0.0.1:4000/v1"));
+        assert!(endpoint_is_loopback("http://localhost:8001"));
+        assert!(!endpoint_is_loopback("https://gateway.example.com/v1"));
+        assert!(!endpoint_is_loopback("not a url"));
     }
 
     #[test]
