@@ -117,3 +117,10 @@ out. All M1 endpoints are loopback (rule V4).
 - Concepts: [architecture.md](../../concepts/architecture.md), [security.md](../../concepts/security.md)
 - Decisions: [docs/decisions/](../../decisions/)
 - Guide: [models.md](../../guide/models.md)
+
+## LiteLLM gateway (M8)
+
+`provider = "litellm"` builds the same OpenAI-compatible client, with the gateway's route name as `model` and the key from
+`api_key_env` as a bearer token. A loopback gateway uses the no-proxy agent; any other host uses the environment's proxy and
+native-tls (`remote_agent`, M7). The design is in [ADR-0008](../../decisions/0008-litellm-is-an-optional-gateway-behind-the-policy.md);
+the result and the pending live check are in [M8](../../status/milestones/m8-litellm.md).

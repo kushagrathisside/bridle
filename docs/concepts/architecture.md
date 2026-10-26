@@ -4,7 +4,7 @@ This page describes how Bridle is built: its layers, the path a tool call takes,
 MCP tools it serves. It is for engineers who want to know which component decides what before they trust the
 system with a repository. It assumes you know what OpenCode is and what an MCP server does.
 
-> **Status:** release 1 (native Windows). Milestones M0 to M6 are done and verified on one machine; M7 is built and tested, not live; M3 to M5 were run live
+> **Status:** release 1 (native Windows). Milestones M0 to M6 are done and verified on one machine; M7 (Jev) and M8 (LiteLLM) are built and tested, not live; M3 to M5 were run live
 > with the local models on 2026-10-26; M6 (context management) is built and verified live (see [progress.md](../status/progress.md)). Everything under
 > [Planned components](#planned-components) is not built yet.
 
@@ -113,7 +113,6 @@ Details are in [m2-tools.md](../status/milestones/m2-tools.md).
 | Cached symbol index; plan and summary files for tasks | later (M3 uses the code index on demand) |
 | Routing between model slots (R-29.1); LFM classification and summarising | M4 partly, later |
 | Escalation routing to the deep model (R-3.6, R-29.1) | later |
-| LiteLLM | M8 |
 | WSL runtime | Release 2 ([ADR-0002](../decisions/0002-runtime-os-repo-location-and-deviation.md)) |
 
 ## Limits

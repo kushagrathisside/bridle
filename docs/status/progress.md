@@ -5,7 +5,7 @@ dated and ordered newest first. Every "verified" line names the evidence. It is 
 other pages must agree with it.
 
 > **Status:** M2 (deterministic tools) is done and tagged `m2` on 2026-10-22; M1 is tagged `m1`. On 2026-10-23 the
-> history was rewritten and every hash in this log was updated. M0 to M6 are done and committed; M7 is built and tested, not live. Release 1 is native Windows,
+> history was rewritten and every hash in this log was updated. M0 to M6 are done and committed; M7 (Jev) and M8 (LiteLLM) are built and tested, not live. Release 1 is native Windows,
 > verified on one machine.
 
 ## Milestones
@@ -20,12 +20,24 @@ other pages must agree with it.
 | M5 | `deep` model on demand (Bonsai); one GPU model at a time | Done (`53724d4`) | [2026-10-26: M5 done](#2026-10-26-m5-done-and-committed-as-53724d4-deep-model-on-demand-one-gpu-model-at-a-time) |
 | M6 | Context management: per-request compaction and the task state in the system prompt | Done (`977a56f`) | [2026-10-26: M6 done](#2026-10-26-m6-done-and-committed-as-977a56f-context-policy-and-per-request-transforms) |
 | M7 | Jev decision backend behind the endpoint policy, with TLS | Built, not live (`6ad8861`) | [2026-10-27: M7 built](#2026-10-27-m7-built-and-tested-jev-backend-endpoint-policy-tls-not-live) |
-| M8 | LiteLLM for external providers, behind the policy | Planned | None yet |
+| M8 | LiteLLM gateway as a model provider, behind the policy | Built, not live (`0854f62`, `a3a6940`) | [2026-10-27: M8 built](#2026-10-27-m8-built-and-tested-with-a-mock-the-live-gateway-check-is-not-run) |
 | M9 | Security threat-model tests and egress audit | Planned | None yet |
 | M10 | Evaluation on a Rust coding benchmark | Planned | None yet |
 | M11 | Open-source release: licence, README, CI | Planned | None yet |
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
+
+## 2026-10-27: M8 built and tested with a mock; the live gateway check is not run
+
+- Built: `provider = "litellm"`, the gateway client (the same OpenAI-compatible client, with the transport choice of M7),
+  V36 for a remote gateway without a key name, the `hybrid` profile and the `{env:NAME}` key reference in the generated
+  OpenCode config. Committed as `0854f62`; the mock test as `a3a6940`. The result and limits are in
+  [milestones/m8-litellm.md](milestones/m8-litellm.md).
+- Gate at `0854f62`: fmt and clippy clean; 660 tests pass, 3 ignored.
+- Not run: the live gateway check. Starting a local LiteLLM gateway was refused by the session's permission check, so the
+  step waits for approval. LiteLLM 1.106.4 is installed in a Windows virtual environment.
+- Found while checking the profiles: validation messages were partly hidden by the redactor, because the path
+  `models.<slot>.api_key_env:` was read as a key with a value. The separator is now a dash (fixed in M9).
 
 ## 2026-10-27: M7 built and tested (Jev backend, endpoint policy, TLS); not live
 

@@ -129,7 +129,7 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-7.1 | CON | Never hard-code the harness against one model server | all | open |
-| R-7.2 | REQ | `ModelProvider` with adapters: OpenAICompatible, LlamaCpp, PrismBonsai, LiteLLM, JevDecision, Mock | M1 (OpenAICompatible, LlamaCpp, Mock), M5, M7, M8 | partial: the OpenAI-compatible, llama.cpp, Bonsai and mock providers are built; the JevDecision adapter is built (M7); the LiteLLM adapter is open (M8). |
+| R-7.2 | REQ | `ModelProvider` with adapters: OpenAICompatible, LlamaCpp, PrismBonsai, LiteLLM, JevDecision, Mock | M1 (OpenAICompatible, LlamaCpp, Mock), M5, M7, M8 | partial: the OpenAI-compatible, llama.cpp, Bonsai, mock, JevDecision (M7) and LiteLLM (M8) adapters are built. The LiteLLM live check is not run. |
 | R-7.3 | REQ | Primary LLM calls flow ModelRegistry → ModelRouter → ModelProvider | M1, M4 | open |
 | R-7.4 | REQ | Declarative model-registry config. The format is negotiable; the separation is not. | M1 | done (TOML, ADR-0001; layered machine/repo/explicit config with repository trust rules; docs/configuration.md) |
 | R-7.5 | REQ | Per-model config: name, endpoint, API-key *source*, context, temperature, max output, reasoning budget, MTP, KV-cache mode, timeout, retries, role, capabilities, hardware profile | M1 | done (`ModelConfig`: endpoint, `api_key_env`, context, sampling, max output, reasoning budget, MTP, KV cache, timeout, retries, role, capabilities, hardware; V1-V23) |
@@ -138,9 +138,9 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-8.1 | CON | LiteLLM is optional infrastructure and is not embedded in the agent loop | all | open |
+| R-8.1 | CON | LiteLLM is optional infrastructure and is not embedded in the agent loop | all | done: the gateway is a model slot, not part of the agent loop; local-only use needs no gateway. |
 | R-8.2 | REQ | Minimal mode: OpenCode → direct local model endpoints | M1 | done (OpenCode to Qwen directly; end-to-end runs 2026-10-21 and 2026-10-22) |
-| R-8.3 | REQ | Advanced mode: OpenCode → LiteLLM → local/cloud/decision providers | M8 | open |
+| R-8.3 | REQ | Advanced mode: OpenCode → LiteLLM → local/cloud/decision providers | M8 | partial: the advanced mode exists as the hybrid profile and a gateway slot (M8). The live run through a gateway is not done. |
 | R-8.4 | CLAIM | LiteLLM supports OpenCode as a harness, model groups, and TypeSafe/Jev (`/v1/decisions`, `/v1/systemone`, Jev routing, Jev compaction) | M0 | verified (decision routes need LiteLLM ≥ v1.104.2 / ≥ v1.105.0-rc.3) |
 
 ## §9 Jev integration
@@ -303,7 +303,7 @@ the ADR is linked.
 | R-27.2 | REQ | Never inject API keys, SSH private keys, `.env` secrets, cloud credentials, browser cookies, or Windows credential stores into model context | M1, M9 | in-progress (redactor tests pass; hook and event log redact; secret read denied end to end) |
 | R-27.3 | REQ | Redact API_KEY, TOKEN, PASSWORD, SECRET, AUTHORIZATION, and PRIVATE KEY patterns from telemetry | M1, M9 | open |
 | R-27.4 | REQ | Local-first mode never sends repo content to the network unexpectedly. External providers require explicit configuration. | M1 | done (endpoints must be loopback, V4; a repository config cannot add remote endpoints; webfetch and websearch follow `security.network`, denied in release 1). OpenCode's own catalog fetch: R-36.2 |
-| R-27.5 | ASM | Optional external/cloud models are supported. The default install is local-only and transmits no repo content. | M1, M8 | open |
+| R-27.5 | ASM | Optional external/cloud models are supported. The default install is local-only and transmits no repo content. | M1, M8 | partial: optional external models are opt-in: a remote gateway needs cloud_models and a key name (V4, V36). The default install sends nothing. |
 
 ## §28 Observability
 
@@ -378,7 +378,7 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-37.1 | REQ | The provider interface can expose a cloud frontier model. It is explicitly opt-in. Possible policy: routine → Qwen, hard → Bonsai, very hard → cloud. | M8 | open |
+| R-37.1 | REQ | The provider interface can expose a cloud frontier model. It is explicitly opt-in. Possible policy: routine → Qwen, hard → Bonsai, very hard → cloud. | M8 | partial: a cloud route can be opted into through a gateway. No automatic routing to it exists; escalation is not built. |
 | R-37.2 | CON | Never silently upload source code | all | open |
 
 ## §38 Model lifecycle and manifest
@@ -539,7 +539,7 @@ the ADR is linked.
 | R-57.5 | M5 Bonsai | Stalled-task escalation, deep reasoning, senior review (PTQ1_0) | Benchmark of Qwen alone vs Qwen + Bonsai escalation | open |
 | R-57.6 | M6 Context | History filtering, tool-result compaction, repo retrieval, state injection, token budgeting | Measured task success, prompt tokens, latency, memory | partial: bytes before and after each request are recorded in `events.jsonl` (live run, 2026-10-26). Prompt tokens, latency and task success are not measured by M6. |
 | R-57.7 | M7 Jev | JevDecisionEngine behind the same interface. No orchestration rewrite. | A/B rules vs LFM vs Jev. Jev on by default only with evidence. | partial: JevDecisionEngine sits behind the same interface, with no orchestration rewrite. The A/B run (rules, LFM, Jev) is not done; it needs a Jev service. |
-| R-57.8 | M8 LiteLLM | Optional gateway: routing, external providers, Jev, logging, aliases, hybrid | Not required for local-only users | open |
+| R-57.8 | M8 LiteLLM | Optional gateway: routing, external providers, Jev, logging, aliases, hybrid | Not required for local-only users | partial: gateway slots, the hybrid profile and the key reference are built (M8). Routing, aliases and logging are the gateway's own; the live check is pending. |
 | R-57.9 | M9 Security | Worktrees, path sandbox, secret redaction, risk policy, network policy, destructive-command policy | Adversarial tests pass | open |
 | R-57.10 | M10 Evaluation | Benchmark runner, task corpus, experiment matrix, metrics, reports | Full local suite run | open |
 | R-57.11 | M11 OSS release | README, docs, licence, security policy, contributing, examples, release workflow, publication, versioning, changelog, benchmark report | Docs and security posture match implementation quality | open |
