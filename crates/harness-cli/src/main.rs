@@ -85,6 +85,8 @@ enum Command {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// List every outbound destination of this configuration, and the proxy state (M9). Sends nothing.
+    Egress,
     /// Show the ordered record of a task (R-54.3).
     Trace {
         /// Task id (default: the latest task).
@@ -122,6 +124,7 @@ fn main() -> ExitCode {
                 Command::Trace { task, limit } => {
                     commands::task::trace(&app, task.as_deref(), limit)
                 }
+                Command::Egress => commands::egress::run(&app),
                 Command::EvalDecisions { cases, slot, out } => {
                     commands::eval::run(&app, &slot, &cases, out.as_deref())
                 }

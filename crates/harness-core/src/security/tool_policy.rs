@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use super::ToolClass;
 use super::command_risk::{CommandAssessment, ShellKind, argument_words_in, assess_command};
 use super::path_guard::{PathGuard, PathViolation, has_percent_expansion, is_unresolvable};
-use super::redact::is_secret_file;
+use super::redact::{is_secret_file, is_sensitive_entry};
 use crate::config::{SecuritySection, Verdict};
 
 /// Host-neutral tool families.
@@ -203,7 +203,7 @@ impl ToolPolicy {
         if is_null_device(word) {
             return None;
         }
-        if is_secret_file(Path::new(word)) || glob_may_match_secret(word) {
+        if may_name_secret(word) || glob_may_match_secret(word) {
             return Some(PolicyDecision::new(
                 Verdict::Deny,
                 ToolClass::ReadOnly,
@@ -279,7 +279,32 @@ impl ToolPolicy {
     }
 
     pub fn evaluate(&self, req: &ToolRequest) -> PolicyDecision {
-        // 1. Every path must stay inside the authorised roots, whatever the tool.
+        // 1. Secret files never enter model context; writing them needs a human.
+        let secret = req.paths.iter().find(|p| may_name_secret(p));
+        if let Some(p) = secret {
+            match req.kind {
+                // Harness tools only read what they are pointed at, and none takes a secret file.
+                ToolKind::Read | ToolKind::List | ToolKind::Search | ToolKind::Harness(_) => {
+                    return PolicyDecision::new(
+                        Verdict::Deny,
+                        ToolClass::ReadOnly,
+                        "secret_file",
+                        format!("{p} may contain credentials and is never sent to a model"),
+                    );
+                }
+                ToolKind::Edit | ToolKind::Write | ToolKind::Patch => {
+                    return PolicyDecision::new(
+                        Verdict::Ask,
+                        ToolClass::Write,
+                        "secret_file",
+                        format!("{p} may contain credentials; editing it needs approval"),
+                    );
+                }
+                _ => {}
+            }
+        }
+
+        // 2. Every path must stay inside the authorised roots, whatever the tool.
         let base = match &req.workdir {
             Some(w) => match self.guard.check(Path::new(w), &self.workspace) {
                 Ok(p) => p,
@@ -304,34 +329,6 @@ impl ToolPolicy {
                         return protected_denial(p);
                     }
                 }
-            }
-        }
-
-        // 2. Secret files never enter model context; writing them needs a human.
-        let secret = req
-            .paths
-            .iter()
-            .find(|p| is_secret_file(Path::new(p.as_str())));
-        if let Some(p) = secret {
-            match req.kind {
-                // Harness tools only read what they are pointed at, and none takes a secret file.
-                ToolKind::Read | ToolKind::List | ToolKind::Search | ToolKind::Harness(_) => {
-                    return PolicyDecision::new(
-                        Verdict::Deny,
-                        ToolClass::ReadOnly,
-                        "secret_file",
-                        format!("{p} may contain credentials and is never sent to a model"),
-                    );
-                }
-                ToolKind::Edit | ToolKind::Write | ToolKind::Patch => {
-                    return PolicyDecision::new(
-                        Verdict::Ask,
-                        ToolClass::Write,
-                        "secret_file",
-                        format!("{p} may contain credentials; editing it needs approval"),
-                    );
-                }
-                _ => {}
             }
         }
 
@@ -380,6 +377,14 @@ impl ToolPolicy {
                 };
                 // Shell arguments are paths too. A command must not read a secret file, or
                 // leave the workspace, just because the program is harmless (`cat .env`).
+                if dumps_environment(cmd) {
+                    return PolicyDecision::new(
+                        Verdict::Deny,
+                        ToolClass::ReadOnly,
+                        "secret_env",
+                        "the command prints the environment, which holds this machine's secrets; it is denied",
+                    );
+                }
                 if let Some(decision) = self.shell_argument_violation(cmd, &base) {
                     return decision;
                 }
@@ -495,6 +500,11 @@ fn unresolved_denial(word: &str) -> PolicyDecision {
 /// option names one (`--git-dir=/x/.git`). `None` when the expansion is too large to check.
 fn argument_candidates(word: &str) -> Option<Vec<String>> {
     let mut texts = vec![word.to_owned()];
+    // A bash word with escapes names the file the shell sees: `.en\v` is `.env` (M9).
+    let unescaped = unescape_shell_word(word);
+    if unescaped != word {
+        texts.push(unescaped);
+    }
     if word.starts_with('-')
         && let Some((_, value)) = word.split_once('=')
         && !value.is_empty()
@@ -506,6 +516,87 @@ fn argument_candidates(word: &str) -> Option<Vec<String>> {
         out.extend(expand_braces(&text)?);
     }
     Some(out)
+}
+
+/// The word the shell passes on after backslash escapes are removed (`.en\v` becomes `.env`).
+fn unescape_shell_word(word: &str) -> String {
+    let mut out = String::with_capacity(word.len());
+    let mut chars = word.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\'
+            && let Some(next) = chars.next()
+        {
+            out.push(next);
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Whether a path, as named, may be a secret file: the secret names of `is_secret_file`, or a Windows short
+/// (8.3) name such as `ENV~1`, which can address a file without naming it (M9).
+fn may_name_secret(path: &str) -> bool {
+    is_secret_file(Path::new(path)) || glob_may_match_secret(path) || is_short_name(path)
+}
+
+/// Whether a path has a component with `~` followed by a digit, the form of a Windows short name.
+fn is_short_name(path: &str) -> bool {
+    path.split(['/', '\\']).any(|part| {
+        part.as_bytes()
+            .windows(2)
+            .any(|pair| pair[0] == b'~' && pair[1].is_ascii_digit())
+    })
+}
+
+/// Whether a command prints the process environment, which holds the machine's keys (M9, residual risk 4): `env`,
+/// `printenv` or `set` with no operand, `export -p`, a PowerShell `Env:` drive listing, `printenv` of a secret-looking
+/// name, or the .NET call that returns every variable. Each segment is judged alone, so a wrapper such as `env FOO=1 cmd`
+/// is not a dump.
+fn dumps_environment(command: &str) -> bool {
+    if command
+        .to_ascii_lowercase()
+        .contains("getenvironmentvariables")
+    {
+        return true;
+    }
+    command
+        .split([';', '|', '&', '\n'])
+        .map(|segment| segment.split_whitespace().collect::<Vec<&str>>())
+        .any(|words| env_dump(&words))
+}
+
+fn env_dump(words: &[&str]) -> bool {
+    let Some(first) = words.first() else {
+        return false;
+    };
+    let program = first
+        .trim_matches(|c| c == '"' || c == '\'')
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or("")
+        .trim_end_matches(".exe")
+        .to_ascii_lowercase();
+    if words
+        .iter()
+        .any(|w| w.to_ascii_lowercase().contains("env:"))
+    {
+        return true;
+    }
+    let operands: Vec<&str> = words[1..]
+        .iter()
+        .copied()
+        .filter(|w| !w.starts_with('-') && !w.contains('='))
+        .collect();
+    match program.as_str() {
+        // `set -e` is a shell option; a bare `set` lists the variables.
+        "set" => words.len() == 1,
+        "env" | "export" => operands.is_empty(),
+        "printenv" => {
+            operands.is_empty() || operands.iter().any(|name| is_sensitive_entry(name, ""))
+        }
+        _ => false,
+    }
 }
 
 /// Expands bash brace alternatives into every word they name: `.{env,netrc}` gives `.env` and
@@ -774,6 +865,59 @@ mod tests {
         secret.paths = vec![".env".to_owned()];
         let d = p.evaluate(&secret);
         assert_eq!((d.verdict, d.rule.as_str()), (Verdict::Deny, "secret_file"));
+    }
+
+    #[test]
+    fn escaped_words_are_judged_as_the_shell_reads_them() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        assert_eq!(p.evaluate(&shell("cat .en\\v")).rule, "secret_file");
+        assert_eq!(p.evaluate(&shell("cat \\.env")).rule, "secret_file");
+    }
+
+    #[test]
+    fn short_name_aliases_of_a_file_are_denied_as_possible_secrets() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        let d = p.evaluate(&read("ENV~1"));
+        assert_eq!((d.verdict, d.rule.as_str()), (Verdict::Deny, "secret_file"));
+        assert_eq!(p.evaluate(&shell("cat ENV~1")).rule, "secret_file");
+        // A tilde without a digit is an ordinary name.
+        assert_ne!(p.evaluate(&read("a~b.txt")).rule, "secret_file");
+    }
+
+    #[test]
+    fn commands_that_dump_the_environment_are_denied() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        for cmd in [
+            "env",
+            "printenv",
+            "set",
+            "export -p",
+            "env | grep PATH",
+            "Get-ChildItem Env:",
+            "gci env:",
+            "[System.Environment]::GetEnvironmentVariables()",
+            "printenv OPENAI_API_KEY",
+            "echo $env:GITHUB_TOKEN",
+        ] {
+            assert_eq!(p.evaluate(&shell(cmd)).rule, "secret_env", "{cmd}");
+        }
+    }
+
+    #[test]
+    fn ordinary_uses_of_the_environment_are_not_dumps() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        for cmd in [
+            "env FOO=1 git status",
+            "printenv PATH",
+            "set -e",
+            "git status --short",
+        ] {
+            assert_ne!(p.evaluate(&shell(cmd)).rule, "secret_env", "{cmd}");
+        }
     }
 
     #[test]

@@ -69,7 +69,8 @@ fn issue_line(redactor: &Redactor, issue: &ConfigIssue) -> String {
     } else {
         "⚠"
     };
-    let line = format!("{mark} [{}] {}: {}", issue.rule, issue.path, issue.message);
+    // A dash, not a colon, after the path: the redactor reads `key:` as an assignment and hides the message.
+    let line = format!("{mark} [{}] {} - {}", issue.rule, issue.path, issue.message);
     redactor.redact(&line).into_owned()
 }
 
@@ -92,7 +93,7 @@ mod tests {
             "the secret value survived redaction"
         );
         assert!(
-            line.starts_with("✗ [V2] agent.default_model:"),
+            line.starts_with("✗ [V2] agent.default_model -"),
             "unexpected line prefix"
         );
     }

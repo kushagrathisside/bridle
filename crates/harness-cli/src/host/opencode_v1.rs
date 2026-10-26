@@ -71,6 +71,18 @@ pub fn map_tool_call(tool: &str, args: &Value) -> ToolRequest {
     {
         req.paths.push(base);
     }
+    // A glob pattern and a grep include filter are file-name globs, so the whole text is judged for secret names
+    // (`.env*`). A grep pattern is a regular expression, not a path, and is not judged as one (M9).
+    let glob_key = match tool {
+        "glob" => Some("pattern"),
+        "grep" => Some("include"),
+        _ => None,
+    };
+    if let Some(key) = glob_key
+        && let Some(text) = s(key).filter(|p| !p.is_empty())
+    {
+        req.paths.push(text);
+    }
     if let Some(patch) = s("patchText").or_else(|| s("patch")) {
         req.paths.extend(patch_paths(&patch));
     }
@@ -1016,10 +1028,12 @@ mod tests {
 
     #[test]
     fn glob_patterns_that_escape_are_checked() {
+        // The literal base is checked as a path; the whole pattern is checked for secret names (M9).
         let r = map_tool_call("glob", &json!({"pattern": "../../**/*.env"}));
-        assert_eq!(r.paths, vec!["../.."]);
+        assert_eq!(r.paths, vec!["../..", "../../**/*.env"]);
+        // No escaping base; the pattern itself is still judged for secret names.
         let r = map_tool_call("glob", &json!({"pattern": "src/**/*.rs"}));
-        assert!(r.paths.is_empty());
+        assert_eq!(r.paths, vec!["src/**/*.rs"]);
         let r = map_tool_call("grep", &json!({"pattern": "fn main", "path": "/etc"}));
         assert_eq!(r.paths, vec!["/etc"]);
     }

@@ -56,7 +56,7 @@ impl App {
             .issues
             .iter()
             .filter(|i| i.severity == Severity::Error)
-            .map(|i| format!("  [{}] {}: {}", i.rule, i.path, i.message))
+            .map(|i| format!("  [{}] {} - {}", i.rule, i.path, i.message))
             .collect();
         bail!(
             "configuration has errors (run `{} config validate`):\n{}",

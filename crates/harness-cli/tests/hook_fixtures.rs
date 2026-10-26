@@ -259,13 +259,13 @@ fn rows() -> Vec<Row> {
             NO_ENV,
             Block("unknown_tool"),
         ),
-        // The literal base `../..` of the glob escapes the workspace (glob_base in opencode_v1.rs).
+        // The pattern can name `.env`, which is judged first, so the secret rule answers (M9).
         row(
             "24 glob ../../**/*.env",
             BEFORE,
             before("glob", json!({"pattern": "../../**/*.env"})),
             NO_ENV,
-            Block("path_guard"),
+            Block("secret_file"),
         ),
         row(
             "25 grep fn main, no path",

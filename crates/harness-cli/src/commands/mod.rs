@@ -2,6 +2,7 @@
 
 pub mod config;
 pub mod doctor;
+pub mod egress;
 pub mod eval;
 pub mod health;
 pub mod hook;
