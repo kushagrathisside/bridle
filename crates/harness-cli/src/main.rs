@@ -74,6 +74,14 @@ enum Command {
         #[arg(long, default_value_t = 10)]
         limit: usize,
     },
+    /// A/B run of the rules and the micro model on recorded loop cases (M4).
+    EvalDecisions {
+        /// A JSON file of cases: name, task state and loop signals.
+        cases: PathBuf,
+        /// Also write the report to this file.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
     /// Show the ordered record of a task (R-54.3).
     Trace {
         /// Task id (default: the latest task).
@@ -110,6 +118,9 @@ fn main() -> ExitCode {
                 }
                 Command::Trace { task, limit } => {
                     commands::task::trace(&app, task.as_deref(), limit)
+                }
+                Command::EvalDecisions { cases, out } => {
+                    commands::eval::run(&app, &cases, out.as_deref())
                 }
                 Command::Hook { .. } | Command::Init(_) => unreachable!("handled above"),
             },

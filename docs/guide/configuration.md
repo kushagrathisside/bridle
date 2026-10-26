@@ -167,6 +167,9 @@ refusal_cap = 3             # loop refusals in a row before the harness stops re
 task_status = false         # offer the task_status tool to the model
 ```
 
+`decisions.provider` chooses who decides a stalled loop: `rules` (the default) or `local_lfm`, which asks the micro slot. A
+failure to reach the micro slot falls back to the rules. The model answers only ESCALATE, ASK_USER or REPLAN.
+
 A repository may enable the workflow or tune these values; it cannot switch the workflow off. The rule is enforced in
 `config/trust.rs`. Read-only calls are never refused by a loop rule. See
 [the M3 plan](../status/milestones/m3-state.md#fingerprints-and-loop-rules) for what each rule detects.

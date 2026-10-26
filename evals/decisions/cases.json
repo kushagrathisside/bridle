@@ -1,0 +1,592 @@
+[
+  {
+    "name": "same failure, guard test, three runs",
+    "state": {
+      "task_id": "task-0001",
+      "repository": "repo",
+      "branch": null,
+      "worktree": null,
+      "original_prompt": "make the tests pass",
+      "current_objective": "make the tests pass",
+      "phase": "DIAGNOSE",
+      "iteration": 2,
+      "active_model": "main",
+      "last_action": "run_tests",
+      "last_test": "run_tests",
+      "failure_class": "test_failure",
+      "failure_count": 3,
+      "escalation_count": 0,
+      "context_version": 0,
+      "status": "ACTIVE",
+      "consecutive_refusals": 0
+    },
+    "signals": [
+      {
+        "signal": "same_failure",
+        "fingerprint": "fp_v1:316c6bff79901be0",
+        "count": 3
+      }
+    ]
+  },
+  {
+    "name": "same failure, unit test after a fix",
+    "state": {
+      "task_id": "task-0001",
+      "repository": "repo",
+      "branch": null,
+      "worktree": null,
+      "original_prompt": "make the tests pass",
+      "current_objective": "make the tests pass",
+      "phase": "DIAGNOSE",
+      "iteration": 3,
+      "active_model": "main",
+      "last_action": "run_tests",
+      "last_test": "run_tests",
+      "failure_class": "test_failure",
+      "failure_count": 3,
+      "escalation_count": 0,
+      "context_version": 0,
+      "status": "ACTIVE",
+      "consecutive_refusals": 1
+    },
+    "signals": [
+      {
+        "signal": "same_failure",
+        "fingerprint": "fp_v1:b4679c3ebd32ea37",
+        "count": 3
+      }
+    ]
+  },
+  {
+    "name": "same failure, two failures per run",
+    "state": {
+      "task_id": "task-0001",
+      "repository": "repo",
+      "branch": null,
+      "worktree": null,
+      "original_prompt": "make the tests pass",
+      "current_objective": "make the tests pass",
+      "phase": "VERIFY",
+      "iteration": 2,
+      "active_model": "main",
+      "last_action": "run_verification",
+      "last_test": "run_tests",
+      "failure_class": "test_failure",
+      "failure_count": 3,
+      "escalation_count": 0,
+      "context_version": 0,
+      "status": "ACTIVE",
+      "consecutive_refusals": 0
+    },
+    "signals": [
+      {
+        "signal": "same_failure",
+        "fingerprint": "fp_v1:988b8a84f1349dc2",
+        "count": 3
+      }
+    ]
+  },
+  {
+    "name": "same failure, import error",
+    "state": {
+      "task_id": "task-0001",
+      "repository": "repo",
+      "branch": null,
+      "worktree": null,
+      "original_prompt": "make the tests pass",
+      "current_objective": "make the tests pass",
+      "phase": "DIAGNOSE",
+      "iteration": 2,
+      "active_model": "main",
+      "last_action": "run_tests",
+      "last_test": "run_tests",
+      "failure_class": "test_failure",
+      "failure_count": 3,
+      "escalation_count": 0,
+      "context_version": 0,
+      "status": "ACTIVE",
+      "consecutive_refusals": 0
+    },
+    "signals": [
+      {
+        "signal": "same_failure",
+        "fingerprint": "fp_v1:0123456789abcdef",
+        "count": 3
+      }
+    ]
+  },
+  {
+    "name": "same failure, lint finding",
+    "state": {
+      "task_id": "task-0001",
+      "repository": "repo",
+      "branch": null,
+      "worktree": null,
+      "original_prompt": "make the tests pass",
+      "current_objective": "make the tests pass",
+      "phase": "VERIFY",
+      "iteration": 2,
+      "active_model": "main",
+      "last_action": "run_linter",
+      "last_test": "run_tests",
+      "failure_class": "test_failure",
+      "failure_count": 3,
+      "escalation_count": 0,
+      "context_version": 0,
+      "status": "ACTIVE",
+      "consecutive_refusals": 0
+    },
+    "signals": [
+      {
+        "signal": "same_failure",
+        "fingerprint": "fp_v1:316c6bff79901be0",
+        "count": 3
+      }
+    ]
+  },
+  {
+    "name": "same failure, after two edits",
+    "state": {
+      "task_id": "task-0001",
+      "repository": "repo",
+      "branch": null,
+      "worktree": null,
+      "original_prompt": "make the tests pass",
+      "current_objective": "make the tests pass",
+      "phase": "DIAGNOSE",
+      "iteration": 4,
+      "active_model": "main",
+      "last_action": "edit calc.py",
+      "last_test": "run_tests",
+      "failure_class": "test_failure",
+      "failure_count": 3,
+      "escalation_count": 0,
+      "context_version": 0,
+      "status": "ACTIVE",
+      "consecutive_refusals": 0
+    },
+    "signals": [
+      {
+        "signal": "same_failure",
+        "fingerprint": "fp_v1:b4679c3ebd32ea37",
+        "count": 3
+      }
+    ]
+  },
+  {
+    "name": "repeated command, unittest",
+    "state": {
+      "task_id": "task-0001",
+      "repository": "repo",
+      "branch": null,
+      "worktree": null,
+      "original_prompt": "make the tests pass",
+      "current_objective": "make the tests pass",
+      "phase": "IMPLEMENT",
+      "iteration": 2,
+      "active_model": "main",
+      "last_action": "bash: python -m unittest",
+      "last_test": "run_tests",
+      "failure_class": null,
+      "failure_count": 0,
+      "escalation_count": 0,
+      "context_version": 0,
+      "status": "ACTIVE",
+      "consecutive_refusals": 0
+    },
+    "signals": [
+      {
+        "signal": "repeated_command",
+        "command_hash": "a1b2c3d4e5f60718",
+        "count": 3
+      }
+    ]
+  },
+  {
+    "name": "repeated command, build",
+    "state": {
+      "task_id": "task-0001",
+      "repository": "repo",
+      "branch": null,
+      "worktree": null,
+      "original_prompt": "make the tests pass",
+      "current_objective": "make the tests pass",
+      "phase": "IMPLEMENT",
+      "iteration": 2,
+      "active_model": "main",
+      "last_action": "bash: cargo build",
+      "last_test": "run_tests",
+      "failure_class": null,
+      "failure_count": 0,
+      "escalation_count": 0,
+      "context_version": 0,
+      "status": "ACTIVE",
+      "consecutive_refusals": 0
+    },
+    "signals": [
+      {
+        "signal": "repeated_command",
+        "command_hash": "0a0b0c0d0e0f1011",
+        "count": 3
+      }
+    ]
+  },
+  {
+    "name": "repeated command, install",
+    "state": {
+      "task_id": "task-0001",
+      "repository": "repo",
+      "branch": null,
+      "worktree": null,
+      "original_prompt": "make the tests pass",
+      "current_objective": "make the tests pass",
+      "phase": "PLAN",
+      "iteration": 1,
+      "active_model": "main",
+      "last_action": "bash: pip install -e .",
+      "last_test": "run_tests",
+      "failure_class": null,
+      "failure_count": 0,
+      "escalation_count": 0,
+      "context_version": 0,
+      "status": "ACTIVE",
+      "consecutive_refusals": 0
+    },
+    "signals": [
+      {
+        "signal": "repeated_command",
+        "command_hash": "1122334455667788",
+        "count": 3
+      }
+    ]
+  },
+  {
+    "name": "repeated command, make",
+    "state": {
+      "task_id": "task-0001",
+      "repository": "repo",
+      "branch": null,
+      "worktree": null,
+      "original_prompt": "make the tests pass",
+      "current_objective": "make the tests pass",
+      "phase": "IMPLEMENT",
+      "iteration": 3,
+      "active_model": "main",
+      "last_action": "bash: make test",
+      "last_test": "run_tests",
+      "failure_class": null,
+      "failure_count": 0,
+      "escalation_count": 0,
+      "context_version": 0,
+      "status": "ACTIVE",
+      "consecutive_refusals": 1
+    },
+    "signals": [
+      {
+        "signal": "repeated_command",
+        "command_hash": "99aabbccddeeff00",
+        "count": 4
+      }
+    ]
+  },
+  {
+    "name": "repeated command, formatter",
+    "state": {
+      "task_id": "task-0001",
+      "repository": "repo",
+      "branch": null,
+      "worktree": null,
+      "original_prompt": "make the tests pass",
+      "current_objective": "make the tests pass",
+      "phase": "IMPLEMENT",
+      "iteration": 2,
+      "active_model": "main",
+      "last_action": "bash: cargo fmt",
+      "last_test": "run_tests",
+      "failure_class": null,
+      "failure_count": 0,
+      "escalation_count": 0,
+      "context_version": 0,
+      "status": "ACTIVE",
+      "consecutive_refusals": 0
+    },
+    "signals": [
+      {
+        "signal": "repeated_command",
+        "command_hash": "abcdef0123456789",
+        "count": 3
+      }
+    ]
+  },
+  {
+    "name": "repeated edit, calc.py",
+    "state": {
+      "task_id": "task-0001",
+      "repository": "repo",
+      "branch": null,
+      "worktree": null,
+      "original_prompt": "make the tests pass",
+      "current_objective": "make the tests pass",
+      "phase": "IMPLEMENT",
+      "iteration": 2,
+      "active_model": "main",
+      "last_action": "edit calc.py",
+      "last_test": "run_tests",
+      "failure_class": "test_failure",
+      "failure_count": 1,
+      "escalation_count": 0,
+      "context_version": 0,
+      "status": "ACTIVE",
+      "consecutive_refusals": 0
+    },
+    "signals": [
+      {
+        "signal": "repeated_edit",
+        "file": "calc.py",
+        "count": 4
+      }
+    ]
+  },
+  {
+    "name": "repeated edit, README",
+    "state": {
+      "task_id": "task-0001",
+      "repository": "repo",
+      "branch": null,
+      "worktree": null,
+      "original_prompt": "make the tests pass",
+      "current_objective": "make the tests pass",
+      "phase": "IMPLEMENT",
+      "iteration": 2,
+      "active_model": "main",
+      "last_action": "edit README.md",
+      "last_test": "run_tests",
+      "failure_class": null,
+      "failure_count": 0,
+      "escalation_count": 0,
+      "context_version": 0,
+      "status": "ACTIVE",
+      "consecutive_refusals": 0
+    },
+    "signals": [
+      {
+        "signal": "repeated_edit",
+        "file": "README.md",
+        "count": 4
+      }
+    ]
+  },
+  {
+    "name": "repeated edit, test file",
+    "state": {
+      "task_id": "task-0001",
+      "repository": "repo",
+      "branch": null,
+      "worktree": null,
+      "original_prompt": "make the tests pass",
+      "current_objective": "make the tests pass",
+      "phase": "IMPLEMENT",
+      "iteration": 3,
+      "active_model": "main",
+      "last_action": "edit test_calc.py",
+      "last_test": "run_tests",
+      "failure_class": "test_failure",
+      "failure_count": 2,
+      "escalation_count": 0,
+      "context_version": 0,
+      "status": "ACTIVE",
+      "consecutive_refusals": 0
+    },
+    "signals": [
+      {
+        "signal": "repeated_edit",
+        "file": "test_calc.py",
+        "count": 5
+      }
+    ]
+  },
+  {
+    "name": "repeated edit, module",
+    "state": {
+      "task_id": "task-0001",
+      "repository": "repo",
+      "branch": null,
+      "worktree": null,
+      "original_prompt": "make the tests pass",
+      "current_objective": "make the tests pass",
+      "phase": "IMPLEMENT",
+      "iteration": 2,
+      "active_model": "main",
+      "last_action": "edit src/lib.rs",
+      "last_test": "run_tests",
+      "failure_class": "test_failure",
+      "failure_count": 1,
+      "escalation_count": 0,
+      "context_version": 0,
+      "status": "ACTIVE",
+      "consecutive_refusals": 1
+    },
+    "signals": [
+      {
+        "signal": "repeated_edit",
+        "file": "src/lib.rs",
+        "count": 4
+      }
+    ]
+  },
+  {
+    "name": "repeated edit, utilities",
+    "state": {
+      "task_id": "task-0001",
+      "repository": "repo",
+      "branch": null,
+      "worktree": null,
+      "original_prompt": "make the tests pass",
+      "current_objective": "make the tests pass",
+      "phase": "IMPLEMENT",
+      "iteration": 2,
+      "active_model": "main",
+      "last_action": "edit utils.py",
+      "last_test": "run_tests",
+      "failure_class": null,
+      "failure_count": 0,
+      "escalation_count": 0,
+      "context_version": 0,
+      "status": "ACTIVE",
+      "consecutive_refusals": 0
+    },
+    "signals": [
+      {
+        "signal": "repeated_edit",
+        "file": "utils.py",
+        "count": 4
+      }
+    ]
+  },
+  {
+    "name": "iteration limit reached",
+    "state": {
+      "task_id": "task-0001",
+      "repository": "repo",
+      "branch": null,
+      "worktree": null,
+      "original_prompt": "make the tests pass",
+      "current_objective": "make the tests pass",
+      "phase": "IMPLEMENT",
+      "iteration": 8,
+      "active_model": "main",
+      "last_action": "edit calc.py",
+      "last_test": "run_tests",
+      "failure_class": null,
+      "failure_count": 0,
+      "escalation_count": 0,
+      "context_version": 0,
+      "status": "ACTIVE",
+      "consecutive_refusals": 0
+    },
+    "signals": [
+      {
+        "signal": "iteration_limit",
+        "iteration": 8,
+        "limit": 8
+      }
+    ]
+  },
+  {
+    "name": "implementation retries exceeded",
+    "state": {
+      "task_id": "task-0001",
+      "repository": "repo",
+      "branch": null,
+      "worktree": null,
+      "original_prompt": "make the tests pass",
+      "current_objective": "make the tests pass",
+      "phase": "IMPLEMENT",
+      "iteration": 4,
+      "active_model": "main",
+      "last_action": "edit calc.py",
+      "last_test": "run_tests",
+      "failure_class": null,
+      "failure_count": 0,
+      "escalation_count": 0,
+      "context_version": 0,
+      "status": "ACTIVE",
+      "consecutive_refusals": 0
+    },
+    "signals": [
+      {
+        "signal": "implementation_retries",
+        "entries": 4,
+        "limit": 3
+      }
+    ]
+  },
+  {
+    "name": "iteration limit with a repeated command",
+    "state": {
+      "task_id": "task-0001",
+      "repository": "repo",
+      "branch": null,
+      "worktree": null,
+      "original_prompt": "make the tests pass",
+      "current_objective": "make the tests pass",
+      "phase": "IMPLEMENT",
+      "iteration": 8,
+      "active_model": "main",
+      "last_action": "bash: make test",
+      "last_test": "run_tests",
+      "failure_class": null,
+      "failure_count": 0,
+      "escalation_count": 0,
+      "context_version": 0,
+      "status": "ACTIVE",
+      "consecutive_refusals": 0
+    },
+    "signals": [
+      {
+        "signal": "repeated_command",
+        "command_hash": "0f0f0f0f0f0f0f0f",
+        "count": 3
+      },
+      {
+        "signal": "iteration_limit",
+        "iteration": 8,
+        "limit": 8
+      }
+    ]
+  },
+  {
+    "name": "retries exceeded with a same failure",
+    "state": {
+      "task_id": "task-0001",
+      "repository": "repo",
+      "branch": null,
+      "worktree": null,
+      "original_prompt": "make the tests pass",
+      "current_objective": "make the tests pass",
+      "phase": "VERIFY",
+      "iteration": 4,
+      "active_model": "main",
+      "last_action": "run_tests",
+      "last_test": "run_tests",
+      "failure_class": "test_failure",
+      "failure_count": 3,
+      "escalation_count": 0,
+      "context_version": 0,
+      "status": "ACTIVE",
+      "consecutive_refusals": 0
+    },
+    "signals": [
+      {
+        "signal": "implementation_retries",
+        "entries": 4,
+        "limit": 3
+      },
+      {
+        "signal": "same_failure",
+        "fingerprint": "fp_v1:316c6bff79901be0",
+        "count": 3
+      }
+    ]
+  }
+]

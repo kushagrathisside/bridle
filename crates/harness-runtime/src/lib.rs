@@ -6,6 +6,7 @@
 
 pub mod artifacts;
 pub mod code;
+pub mod decision;
 pub mod event_log;
 pub mod health;
 pub mod http;

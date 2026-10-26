@@ -27,6 +27,17 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-26: M4 done in the working tree (micro model decides stalled loops; A/B run)
+
+- The micro model (LFM2.5-1.2B, CPU) decides stalled loops when `decisions.provider = "local_lfm"`: ESCALATE, ASK_USER or
+  REPLAN, checked against that set; anything else falls back to the rules. See [milestones/m4-lfm.md](milestones/m4-lfm.md)
+  and [ADR-0005](../decisions/0005-micro-model-decides-stalled-loops-only.md).
+- A/B run on 20 recorded cases: 16 of 16 model answers valid, 0 fallbacks, 5 of 16 agreements with the rules (explained in
+  the M4 page), p50 3.2 s and p95 4.3 s per stalled decision on CPU. Report: `evals/decisions/report-2026-10-26.json`.
+- Live: the micro model decided a stalled repeated command through the real hook; `agent explain` shows the decision and
+  the model's reason. A black-box test covers an unreachable model (fallback to the rules).
+- Gate: green (fmt, clippy with warnings denied, 627 tests). The timeout test in `mcp/tools` was made robust under load.
+
 ## 2026-10-26: M3 done in the working tree (state, loop detection, decisions, worktrees, live runs)
 
 - Built and tested: the state store (`harness-runtime/src/state/`), the task model, fingerprints, the loop detector

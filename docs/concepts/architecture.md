@@ -19,7 +19,7 @@ The project has three layers:
 | Layer | State | What it covers |
 |---|---|---|
 | Harness | Built (M0 to M2) | Policy on every tool call, deterministic tools, redaction, decision log; runs inside OpenCode 1.19.3 |
-| Orchestrator | Built (M3): task state, loop detection, rules decisions. Planned: LFM decisions, routing (see [Planned components](#planned-components)) |
+| Orchestrator | Built (M3, M4): task state, loop detection, rules decisions, and the micro model for stalled loops. Routing is planned (see [Planned components](#planned-components)) |
 | Local-first application | Goal | A full application on the developer's machine, using local models |
 
 Model slots:
@@ -107,7 +107,7 @@ Details are in [m2-tools.md](../status/milestones/m2-tools.md).
 | Component | Milestone |
 |---|---|
 | Cached symbol index; plan and summary files for tasks | later (M3 uses the code index on demand) |
-| LFM decision engine (slot `micro`) | M4 |
+| Routing between model slots (R-29.1); LFM classification and summarising | M4 partly, later |
 | Bonsai deep path (slot `deep`) | M5 |
 | Context management | M6 |
 | Jev and LiteLLM | M7, M8 |

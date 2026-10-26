@@ -261,3 +261,41 @@ fn a_worktree_task_runs_in_its_own_folder_and_leaves_the_primary_tree_alone() {
 fn before_in(workspace: &Path, session: &str, call: &str, tool: &str, args: Value) -> Value {
     before(workspace, session, call, tool, args)
 }
+
+/// A repository whose decisions come from the micro model, which is not running: the port is closed.
+fn workspace_with_unreachable_model() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let profile = PROFILE
+        .replace(
+            "endpoint = \"http://127.0.0.1:8002/v1\"",
+            "endpoint = \"http://127.0.0.1:9/v1\"",
+        )
+        .replace(
+            "[decisions]\nprovider = \"rules\"",
+            "[decisions]\nprovider = \"local_lfm\"",
+        );
+    let config = format!("{profile}\n[workflow]\nenabled = true\n");
+    std::fs::write(dir.path().join("local-agent.toml"), config).expect("write config");
+    std::fs::write(dir.path().join("README.md"), "# fixture\n").expect("write README");
+    dir
+}
+
+#[test]
+fn an_unreachable_model_falls_back_to_the_rules_and_the_refusal_still_happens() {
+    let dir = workspace_with_unreachable_model();
+    let session = "ses_fallback";
+    for call in ["c1", "c2", "c3"] {
+        before(dir.path(), session, call, "bash", touch_note());
+    }
+    let refused = before(dir.path(), session, "c4", "bash", touch_note());
+    assert_eq!(refused["action"], "block", "{refused}");
+    let message = refused["message"].as_str().unwrap();
+    assert!(message.contains("repeated_command"), "{message}");
+    assert!(
+        !message.contains("model's reason"),
+        "a fallback has no model reason: {message}"
+    );
+    let (ok, explain) = agent(dir.path(), &["explain"], None);
+    assert!(ok, "{explain}");
+    assert!(explain.contains("fallback from local_lfm"), "{explain}");
+}

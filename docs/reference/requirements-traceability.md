@@ -101,11 +101,11 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-4.1 | STRAT | Micro-model: LFM2.5-1.2B-Thinking, CPU-resident, GGUF/llama.cpp | M4 | open |
+| R-4.1 | STRAT | Micro-model: LFM2.5-1.2B-Thinking, CPU-resident, GGUF/llama.cpp | M4 | partial: LFM2.5 served CPU-resident from its GGUF (llama.cpp, port 8002); 8 of 8 health checks live. Used for stalled-loop decisions only |
 | R-4.2 | CLAIM | 1.17B params, 32,768 ctx, llama.cpp GGUF, recommended for agentic/extraction/RAG, *not* for knowledge-intensive tasks or programming, native function calling, BFCLv3 56.97 | M0 | verified |
-| R-4.3 | CON | LFM is never assigned primary implementation responsibility | M4 | open |
-| R-4.4 | REQ | LFM bounded tasks: repo exploration, file triage, failure classification, context relevance, tool routing, subagent routing, escalation decisions, loop detection, completion classification, log summarisation, experiment-artifact classification, cheap structured decisions | M4 | open |
-| R-4.5 | DEF | Baseline sampling: temperature 0.05, top_k 50, repetition_penalty 1.05. Benchmark before changing. | M4 | open |
+| R-4.3 | CON | LFM is never assigned primary implementation responsibility | M4 | done: the model is never assigned implementation; it answers ESCALATE, ASK_USER or REPLAN for a stalled loop, and nothing else |
+| R-4.4 | REQ | LFM bounded tasks: repo exploration, file triage, failure classification, context relevance, tool routing, subagent routing, escalation decisions, loop detection, completion classification, log summarisation, experiment-artifact classification, cheap structured decisions | M4 | partial: loop escalation decisions only; file triage, classification, context and routing are not built |
+| R-4.5 | DEF | Baseline sampling: temperature 0.05, top_k 50, repetition_penalty 1.05. Benchmark before changing. | M4 | partial: sampling as configured (temperature 0.05, top_k 50, repeat penalty 1.05); no benchmark of alternatives yet |
 
 ## §5 Model role hierarchy
 
@@ -148,7 +148,7 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-9.1 | REQ | Jev is an *optional* `DecisionEngine` backend | M7 | open |
-| R-9.2 | REQ | Backends: RulesDecisionEngine, LFMDecisionEngine, JevDecisionEngine, plus a FutureLearnedDecisionEngine extension point | M3, M4, M7 | partial: RulesDecisionEngine only; LFM (M4) and Jev (M7) not built |
+| R-9.2 | REQ | Backends: RulesDecisionEngine, LFMDecisionEngine, JevDecisionEngine, plus a FutureLearnedDecisionEngine extension point | M3, M4, M7 | partial: LFM backend built (M4, stalled loops); Jev (M7) open |
 | R-9.3 | REQ | The rest of the system does not know which backend is active | M3 | partial: the call site names RulesDecisionEngine; the DecisionEngine trait is in place for M4 and M7 |
 | R-9.4 | REQ | `decide(state, schema) → DecisionResult { decision, confidence, reason_code, provider, latency_ms }` | M3 | done: DecisionResult carries decision, confidence, reason_code, provider, latency_ms (`decision.rs`) |
 | R-9.5 | REQ | Jev preserves probabilistic output. LFM output is strictly structured and validated. Rules give deterministic confidence or `null`. | M3, M4, M7 | done: loop rules give confidence 1.0; a phase default gives none |
@@ -244,7 +244,7 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-20.1 | REQ | Detect repeated commands, repeated patches, repeated failures, the same file rewritten repeatedly, no metric progress, the same test failing across attempts | M3, M4 | partial: repeated command, repeated failure, repeated edit and the same test failing across attempts; 'no metric progress' is not done |
-| R-20.2 | REQ | On a loop, stop and invoke the decision engine. `STALLED` leads to ESCALATE, REPLAN, or ASK_USER. | M4 | open |
+| R-20.2 | REQ | On a loop, stop and invoke the decision engine. `STALLED` leads to ESCALATE, REPLAN, or ASK_USER. | M4 | done (M4): a stalled loop gets ESCALATE, REPLAN or ASK_USER from the micro model, or from the rules when it cannot answer; live run and A/B |
 
 ## §21 Verification
 
@@ -324,11 +324,11 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-30.1 | CON | Do not claim LFM replaces Jev | all | open |
-| R-30.2 | REQ | `LocalDecisionEngine` (LFM) with schemas RouteDecision, EscalationDecision, ToolSelectionDecision, CompletionDecision, FailureClassification, ContextRetentionDecision | M4 | open |
-| R-30.3 | REQ | LFM receives a compact state, never the whole repository | M4 | open |
-| R-30.4 | REQ | Validate strictly against the schema. Invalid output falls back to the deterministic policy. | M4 | open |
-| R-30.5 | CON | Never execute arbitrary model output as control logic | all | open |
+| R-30.1 | CON | Do not claim LFM replaces Jev | all | done: the LFM engine does not replace Jev; Jev is a separate backend (M7) |
+| R-30.2 | REQ | `LocalDecisionEngine` (LFM) with schemas RouteDecision, EscalationDecision, ToolSelectionDecision, CompletionDecision, FailureClassification, ContextRetentionDecision | M4 | partial: LFM engine with the escalation choice only; RouteDecision, ToolSelectionDecision, CompletionDecision and ContextRetentionDecision not built |
+| R-30.3 | REQ | LFM receives a compact state, never the whole repository | M4 | done: the model receives a compact summary (phase, counters, last action, signal names), never the prompt or the repository (test) |
+| R-30.4 | REQ | Validate strictly against the schema. Invalid output falls back to the deterministic policy. | M4 | done: strict check of the answer (fixed set, one JSON object); an invalid answer falls back to the rules (tests and a live fallback test) |
+| R-30.5 | CON | Never execute arbitrary model output as control logic | all | done: the answer is a member of a fixed set and is never run as code or as a command |
 
 ## §31 OpenCode plugin architecture
 
@@ -448,8 +448,8 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-46.1 | REQ | GPU runs Qwen or Bonsai. CPU runs LFM. Benchmark it. | M4 | open |
-| R-46.2 | CON | Do not assume CPU LFM beats Qwen. LFM earns its place only by reducing end-to-end wall-clock. | M4 | open |
+| R-46.1 | REQ | GPU runs Qwen or Bonsai. CPU runs LFM. Benchmark it. | M4 | partial: LFM runs on CPU (hardware = cpu); Qwen stays on the GPU |
+| R-46.2 | CON | Do not assume CPU LFM beats Qwen. LFM earns its place only by reducing end-to-end wall-clock. | M4 | partial: measured 3.2 s p50 (4.3 s p95) per stalled decision on CPU; no end-to-end wall-clock benefit shown, so the case for it is not made |
 
 ## §47 Latency-aware policy
 
@@ -510,7 +510,7 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-54.1 | REQ | Every routing decision is inspectable | M3+ | open |
-| R-54.2 | REQ | `agent explain` shows the task class, main model, micro decision, decision, reason, confidence | M3, M4 | partial: `agent explain` shows the decision, reason, confidence and provider; the micro decision comes with M4 |
+| R-54.2 | REQ | `agent explain` shows the task class, main model, micro decision, decision, reason, confidence | M3, M4 | partial: `agent explain` shows the decision, reason, confidence, provider and the model's reason; the main model name is not shown |
 | R-54.3 | REQ | `agent trace` shows the ordered actor/tool/decision trace | M3 | done: `agent trace` prints the ordered journal |
 
 ## §55 Capabilities over names
@@ -567,7 +567,7 @@ the ADR is linked.
 |---|---|---|---|---|
 | AC-B1 | Basic | OpenCode loads the extension | M1 | done (OpenCode 1.19.3 loads the shim and the MCP server; every tool call is logged by the hooks; Windows run 2026-10-22) |
 | AC-B2 | Basic | Qwen works locally | M1 | done (Qwen3.5-9B serves locally on the RTX 4060; `agent health` passes; Windows runs 2026-10-21 and 2026-10-22) |
-| AC-B3 | Basic | LFM works locally | M4 | open |
+| AC-B3 | Basic | LFM works locally | M4 | done: LFM served and used locally (health 8 of 8; live refusal decided by the model) |
 | AC-B4 | Basic | Bonsai works locally | M5 | open |
 | AC-B5 | Basic | Models are independently testable | M1, M4, M5 | open |
 | AC-B6 | Basic | Configuration is declarative | M1 | done (TOML config with validation V1-V23 and `agent config validate`) |
@@ -580,7 +580,7 @@ the ADR is linked.
 | AC-O1 | Orchestration | Model routing works | M4 | open |
 | AC-O2 | Orchestration | Escalation works | M5 | open |
 | AC-O3 | Orchestration | Deterministic decision fallback works | M3, M4 | done: the rules engine is the only engine in M3 and its refusal and cap are tested |
-| AC-O4 | Orchestration | LFM decision backend works | M4 | open |
+| AC-O4 | Orchestration | LFM decision backend works | M4 | done: the LFM decision backend answers stalled loops (16 of 16 valid in the A/B; fallback tested) |
 | AC-O5 | Orchestration | Jev backend works when configured | M7 | open |
 | AC-O6 | Orchestration | No external service required for local-only mode | M1+ | open |
 | AC-S1 | Safety | Dangerous commands are governed | M1 (baseline), M9 | open |
