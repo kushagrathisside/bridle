@@ -1,0 +1,4 @@
+id = "refactor-rename"
+title = "Rename a function across the repository"
+category = "refactoring"
+prompt = """Rename compute_total to calculate_total everywhere in this repository: the definition, the imports, the calls and the tests. Do not change behaviour. Run python -m unittest -q to check."""

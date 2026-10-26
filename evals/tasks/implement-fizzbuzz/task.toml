@@ -1,0 +1,4 @@
+id = "implement-fizzbuzz"
+title = "Implement fizzbuzz from its README"
+category = "implementation"
+prompt = """Read README.md and implement what it describes in fizzbuzz.py, with unit tests in test_fizzbuzz.py. Run python -m unittest -q until it passes."""

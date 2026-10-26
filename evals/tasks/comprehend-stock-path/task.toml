@@ -1,0 +1,4 @@
+id = "comprehend-stock-path"
+title = "Find the function that applies a stock change"
+category = "repo_comprehension"
+prompt = """Look at the inventory package. Which function, defined in that package, does the arithmetic of the stock change that Store.restock makes? Write its name exactly as it is defined, with no alias and no module prefix, into answer.txt."""

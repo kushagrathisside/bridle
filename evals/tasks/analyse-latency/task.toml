@@ -1,0 +1,4 @@
+id = "analyse-latency"
+title = "Compute the mean latency of an experiment"
+category = "experiment_analysis"
+prompt = """results.csv holds the latency measurements of one experiment. Compute the mean of the latency_ms column, rounded to one decimal place. Write that number alone on the first line of summary.txt."""

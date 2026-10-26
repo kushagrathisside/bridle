@@ -6,7 +6,7 @@
 //! mapping lives here and in `host::opencode_v1`; the rules and the records live in `harness-core`.
 
 use anyhow::Result;
-use harness_core::config::DecisionProviderKind;
+use harness_core::config::{DecisionProviderKind, ModelRole};
 use harness_core::decision::{
     DecisionEngine, DecisionInput, DecisionResult, ReasonCode, RulesDecisionEngine, refuses,
 };
@@ -14,6 +14,7 @@ use harness_core::failures::parse_failures;
 use harness_core::fingerprint::{Context, args_hash, command_hash, fingerprints};
 use harness_core::journal::{Outcome, Record};
 use harness_core::loops::{Thresholds, detect};
+use harness_core::models::ModelRegistry;
 use harness_core::task::TaskState;
 use harness_runtime::decision::LfmEngine;
 use harness_runtime::jev::JevEngine;
@@ -182,9 +183,10 @@ pub fn decide_for(app: &App, input: &DecisionInput<'_>) -> DecisionResult {
             Err(error) => fallback_to_rules(input, "jev", &error),
         };
     }
-    if let (DecisionProviderKind::LocalLfm, Some(model)) = (
+    let registry = ModelRegistry::from_config(&app.config);
+    if let (DecisionProviderKind::LocalLfm, Some((_, model))) = (
         app.config.decisions.provider,
-        app.config.models.get("micro"),
+        registry.first_with_role(ModelRole::Decision),
     ) {
         return match provider_for(model, &env) {
             Ok(provider) => LfmEngine::new(provider).decide(input),

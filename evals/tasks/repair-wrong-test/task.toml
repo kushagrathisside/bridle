@@ -1,0 +1,4 @@
+id = "repair-wrong-test"
+title = "Repair a wrong expected value in a test"
+category = "test_repair"
+prompt = """The test in test_geometry.py has a wrong expected value. Read README.md. Correct the test, not geometry.py, so that python -m unittest -q passes."""

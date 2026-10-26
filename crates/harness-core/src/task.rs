@@ -27,6 +27,7 @@ pub enum Phase {
 
 impl Phase {
     /// Every phase, in declaration order. Used by the exhaustive transition test.
+    #[cfg(test)]
     pub const ALL: [Phase; 11] = [
         Phase::Start,
         Phase::Discover,

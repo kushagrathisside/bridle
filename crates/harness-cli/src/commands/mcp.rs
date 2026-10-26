@@ -29,6 +29,11 @@ pub fn run(app: &App) -> anyhow::Result<ExitCode> {
     };
     let mut tools = default_tools();
     tools.extend(adapter_tools(&app.config));
+    if app.config.subagents.enabled {
+        tools.push(Box::new(
+            harness_runtime::mcp::tools::subagent::SubagentTool,
+        ));
+    }
     if app.config.workflow.task_status {
         tools.push(Box::new(harness_runtime::mcp::tools::task::TaskStatusTool));
     }

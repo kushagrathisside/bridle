@@ -40,6 +40,8 @@
 //! | V34 | Error | `external.jev.timeout_ms` outside 100 to 60000 |
 //! | V35 | Error | credentials in the Jev endpoint URL |
 //! | V36 | Error | a remote LiteLLM gateway without `api_key_env` |
+//! | V37 | Error | `subagents.enabled` with a `slot` that is not defined under `[models]` |
+//! | V38 | Error | `subagents` limits out of range: `max_input_bytes` outside 256 to 65536, or `max_inputs` outside 1 to 8 |
 //! | V24 | Warning | a verification step sets `targets = true` but its `kind` is not `test` |
 //!
 //! Unit tests: one passing baseline config (no issues) and at least one failing case per rule.
@@ -127,6 +129,7 @@ pub fn validate_with(cfg: &Config, env: &ValidationEnv) -> Vec<ConfigIssue> {
     check_verification(cfg, &mut report);
     check_adapters(cfg, &mut report);
     check_workflow(cfg, &mut report);
+    check_subagents(cfg, &mut report);
     check_paths(cfg, env, &mut report);
 
     report.0
@@ -163,6 +166,35 @@ impl Report {
 
 /// V26 to V29: the loop thresholds are in range. A value that would refuse every call, or that
 /// makes a loop rule meaningless, is an error.
+/// V37 and V38: the subagent tier needs a slot that exists, and bounds that keep one call small.
+fn check_subagents(cfg: &Config, report: &mut Report) {
+    let sub = &cfg.subagents;
+    if sub.enabled && !cfg.models.contains_key(&sub.slot) {
+        report.error(
+            "V37",
+            "subagents.slot",
+            format!(
+                "subagents are enabled but slot `{}` is not defined under [models]",
+                sub.slot
+            ),
+        );
+    }
+    if !(256..=65_536).contains(&sub.max_input_bytes) {
+        report.error(
+            "V38",
+            "subagents.max_input_bytes",
+            "max_input_bytes must be between 256 and 65536",
+        );
+    }
+    if !(1..=8).contains(&sub.max_inputs) {
+        report.error(
+            "V38",
+            "subagents.max_inputs",
+            "max_inputs must be between 1 and 8",
+        );
+    }
+}
+
 fn check_workflow(cfg: &Config, report: &mut Report) {
     let workflow = &cfg.workflow;
     let agent = &cfg.agent;
@@ -964,6 +996,28 @@ mod tests {
         let mut cfg = baseline();
         cfg.agent.default_model = "deep".to_owned();
         assert_issue(&cfg, "V2", Severity::Error, "agent.default_model");
+    }
+
+    #[test]
+    fn v37_subagents_need_a_defined_slot() {
+        let mut cfg = baseline();
+        cfg.subagents.enabled = true;
+        cfg.subagents.slot = "missing".to_owned();
+        assert_issue(&cfg, "V37", Severity::Error, "subagents.slot");
+        cfg.subagents.slot = "main".to_owned();
+        assert_no_rule(&cfg, "V37");
+    }
+
+    #[test]
+    fn v38_subagent_limits_are_bounded() {
+        let mut cfg = Config::default();
+        cfg.subagents.max_input_bytes = 10;
+        assert_issue(&cfg, "V38", Severity::Error, "subagents.max_input_bytes");
+        cfg.subagents.max_input_bytes = 4_096;
+        cfg.subagents.max_inputs = 9;
+        assert_issue(&cfg, "V38", Severity::Error, "subagents.max_inputs");
+        cfg.subagents.max_inputs = 4;
+        assert_no_rule(&cfg, "V38");
     }
 
     #[test]
