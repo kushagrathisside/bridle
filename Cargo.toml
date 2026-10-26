@@ -6,9 +6,10 @@ members = ["crates/harness-core", "crates/harness-runtime", "crates/harness-cli"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
-# Project licence pending PM decision (audit §Q1); crates are not published until then.
+# Apache-2.0 (LICENSE). Publication stays off until the maintainer approves it (M11).
+license = "Apache-2.0"
 publish = false
-repository = ""
+repository = "https://github.com/kushagrathisside/bridle"
 
 [workspace.dependencies]
 harness-core = { path = "crates/harness-core" }

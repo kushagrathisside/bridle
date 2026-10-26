@@ -1,0 +1,8 @@
+Bridle
+Copyright 2026 Kushagra Srivastava
+
+Bridle is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party components keep their own licences. The list of the Rust crates Bridle links, with their licence
+expressions as declared in their manifests, is in THIRD_PARTY_LICENSES.md. Model weights are not part of this
+repository and are not covered by this licence; each model keeps its own terms (see docs/guide/models.md).

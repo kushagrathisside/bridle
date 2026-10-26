@@ -1,71 +1,51 @@
-name: CI
-
-# Release 1 is native Windows. The Rust gate runs on a Windows runner with the MSVC toolchain.
-# The shim type check is platform-neutral and runs on Linux. GPU and model runs are not in CI.
+# Continuous integration (M11). Runs the same gate as the project's local check: formatting, clippy with warnings denied,
+# the workspace tests, the shim typecheck, and two repository checks. GPU runs and the benchmark stay manual (D2).
+name: ci
 
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   rust:
-    name: Rust gate (Windows, MSVC)
-    runs-on: windows-latest
-    timeout-minutes: 45
-    env:
-      CARGO_TERM_COLOR: always
-      CARGO_INCREMENTAL: "0"
-      RUST_BACKTRACE: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
-      - name: Check out the repository
-        uses: actions/checkout@v4
-
-      # rust-toolchain.toml pins 1.95.0 with rustfmt and clippy; rustup installs it on first use.
-      - name: Show the pinned toolchain
-        run: rustup show
-
-      - name: Cache cargo registry and build output
-        uses: Swatinem/rust-cache@v2
-
-      - name: Format check
+      - uses: actions/checkout@v4
+      - name: Linux packages for native-tls
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+      - name: Format
         run: cargo fmt --all -- --check
-
-      - name: Clippy (warnings are errors)
+      - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
-
       - name: Tests
-        run: cargo test --workspace --locked --no-fail-fast
+        run: cargo test --workspace --locked
 
   shim:
-    name: TypeScript shim type check
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: opencode-plugin
     steps:
-      - name: Check out the repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: opencode-plugin/package-lock.json
+          node-version: "22"
+      - name: Typecheck the OpenCode shim against the pinned plugin
+        working-directory: opencode-plugin
+        run: npm ci && npm run typecheck
 
-      - name: Install pinned dependencies
-        run: npm ci
-
-      - name: Type check against @opencode-ai/plugin 1.19.3
-        run: npm run typecheck
+  repository:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No model weights in the repository (AC-R4)
+        run: |
+          if git ls-files | grep -E '\.(gguf|safetensors|bin|pt|onnx)$'; then
+            echo "model weights are tracked"; exit 1
+          fi
+      - name: Third-party licence list is current (R-52.1)
+        run: |
+          python3 scripts/third_party_licenses.py
+          git diff --exit-code THIRD_PARTY_LICENSES.md
