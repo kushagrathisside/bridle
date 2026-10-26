@@ -3,7 +3,8 @@
 // This file holds NO policy logic. It forwards OpenCode hook payloads as JSON to the Rust
 // `agent hook <event>` command and applies the verdict it returns. Policy hooks fail closed:
 // if the harness cannot answer, the tool call is blocked (tool.execute.before) and the
-// permission is denied (permission.ask). Telemetry-only hooks fail open.
+// permission is denied (permission.ask). Telemetry-only hooks and the context hooks (M6) fail open:
+// the request is sent unchanged. Compaction is a view of the history, not a security control.
 //
 // Generated into `.opencode/plugins/local-agent.ts` by `agent init`, which replaces the
 // placeholder below with the absolute path of the agent executable. Edit the template in the
@@ -29,6 +30,11 @@ const FORWARDED_EVENTS = new Set([
 ])
 
 type Json = Record<string, unknown>
+
+// The parts of a message this shim reads when it applies the context changes of M6.
+type ContextPart = { type: string; state?: { status?: string; output?: string } }
+type ContextMessage = { parts: ContextPart[] }
+type ContextChange = { message: number; part: number; output: string }
 
 function callHook(event: string, payload: Json, workspace: string): Promise<Json> {
   return new Promise((resolve, reject) => {
@@ -66,6 +72,23 @@ function callHook(event: string, payload: Json, workspace: string): Promise<Json
 
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+// Applies the outputs the harness chose for this request. Messages are replaced, not changed in place, so a
+// part object shared with the stored session is never modified.
+function applyContextChanges(messages: ContextMessage[], changes: unknown): void {
+  if (!Array.isArray(changes)) return
+  const copies = new Map<number, ContextMessage>()
+  for (const change of changes as ContextChange[]) {
+    const original = messages[change.message]
+    if (!original || typeof change.output !== "string") continue
+    const message = copies.get(change.message) ?? { ...original, parts: [...original.parts] }
+    copies.set(change.message, message)
+    const part = message.parts[change.part]
+    if (!part || part.type !== "tool" || part.state?.status !== "completed") continue
+    message.parts[change.part] = { ...part, state: { ...part.state, output: change.output } }
+  }
+  for (const [index, message] of copies) messages[index] = message
 }
 
 export const LocalAgentPlugin: Plugin = async ({ directory, worktree }) => {
@@ -112,6 +135,27 @@ export const LocalAgentPlugin: Plugin = async ({ directory, worktree }) => {
       } catch (err) {
         // Redaction is a security control: if it cannot run, withhold the output.
         output.output = `[local-agent] tool output withheld: redaction unavailable (${message(err)})`
+      }
+    },
+
+    "experimental.chat.messages.transform": async (_input, output) => {
+      try {
+        const result = await callHook("messages-transform", { messages: output.messages }, workspace)
+        applyContextChanges(output.messages, result.changes)
+      } catch {
+        // Fail open: the request keeps its full history.
+      }
+    },
+
+    "experimental.chat.system.transform": async (input, output) => {
+      try {
+        const result = await callHook("system-transform", { sessionID: input.sessionID }, workspace)
+        if (typeof result.text !== "string" || result.text.length === 0) return
+        // One system message only: the Qwen chat template rejects a second one, so the block joins the first.
+        if (output.system.length === 0) output.system.push(result.text)
+        else output.system[0] = `${output.system[0]}\n\n${result.text}`
+      } catch {
+        // Fail open: the prompt is sent without the task state.
       }
     },
 
