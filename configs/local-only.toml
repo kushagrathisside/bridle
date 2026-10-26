@@ -143,7 +143,7 @@ min_p = 0.05
 
 [models.deep.reasoning]
 enabled = true
-budget_tokens = 4096            # DEF
+budget_tokens = 8192            # M5: raised from 4096 (truncated answers); 16384 would leave no room in a 16K context
 
 [models.deep.capabilities]
 tool_calling = true

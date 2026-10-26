@@ -27,6 +27,15 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-26: M5 done in the working tree (deep model on demand; one GPU model at a time)
+
+- The deep model (Ternary Bonsai 2 27B, PTQ1_0, PrismML fork) loads in 27.8 s and uses 6552 MiB of GPU memory. The
+  main model was stopped to load it; `agent models serve` now refuses a second GPU server while one runs (live refusal).
+- `agent health deep`: 8 of 8. The reasoning budget is 8192 (4096 truncated answers; 16384 does not fit a 16K context).
+- A/B on the same 20 cases: 16 of 16 valid, no fallbacks, agreement with the rules 1 of 16, p50 2.1 s. Compare the micro
+  model (5 of 16, p50 3.2 s). Escalation routing to the deep model is not built. See [milestones/m5-bonsai.md](milestones/m5-bonsai.md).
+- Gate: green (fmt, clippy with warnings denied, 627 tests).
+
 ## 2026-10-26: M4 done in the working tree (micro model decides stalled loops; A/B run)
 
 - The micro model (LFM2.5-1.2B, CPU) decides stalled loops when `decisions.provider = "local_lfm"`: ESCALATE, ASK_USER or

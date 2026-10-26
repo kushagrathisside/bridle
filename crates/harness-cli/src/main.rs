@@ -78,6 +78,9 @@ enum Command {
     EvalDecisions {
         /// A JSON file of cases: name, task state and loop signals.
         cases: PathBuf,
+        /// The model slot that decides the stalled cases.
+        #[arg(long, default_value = "micro")]
+        slot: String,
         /// Also write the report to this file.
         #[arg(long)]
         out: Option<PathBuf>,
@@ -119,8 +122,8 @@ fn main() -> ExitCode {
                 Command::Trace { task, limit } => {
                     commands::task::trace(&app, task.as_deref(), limit)
                 }
-                Command::EvalDecisions { cases, out } => {
-                    commands::eval::run(&app, &cases, out.as_deref())
+                Command::EvalDecisions { cases, slot, out } => {
+                    commands::eval::run(&app, &slot, &cases, out.as_deref())
                 }
                 Command::Hook { .. } | Command::Init(_) => unreachable!("handled above"),
             },
