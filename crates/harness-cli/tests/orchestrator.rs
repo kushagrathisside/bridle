@@ -273,6 +273,10 @@ fn workspace_with_unreachable_model() -> tempfile::TempDir {
         .replace(
             "[decisions]\nprovider = \"rules\"",
             "[decisions]\nprovider = \"local_lfm\"",
+        )
+        .replace(
+            "enable_micro_decisions = false",
+            "enable_micro_decisions = true",
         );
     let config = format!("{profile}\n[workflow]\nenabled = true\n");
     std::fs::write(dir.path().join("local-agent.toml"), config).expect("write config");

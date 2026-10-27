@@ -17,6 +17,12 @@ use crate::providers::{ChatMessage, ChatRequest, ModelProvider};
 
 /// The name recorded for decisions made by the model.
 pub const PROVIDER_NAME: &str = "local_lfm";
+/// The label of a decision that was escalated to the deep slot, whether the call succeeded or not. Counting the
+/// recorded decisions with this label counts the escalations a task has used (R-18.1).
+pub const ESCALATED_PREFIX: &str = "escalated to deep";
+/// The longest time a deep escalation may take. The hook that asks has a limit of its own (the shim gives up after
+/// 20 s and blocks the call), so the deep slot's own timeout is not used for this call.
+pub const ESCALATION_TIMEOUT_MS: u64 = 15_000;
 /// The longest action text sent to the model.
 const MAX_ACTION: usize = 120;
 
@@ -85,6 +91,35 @@ impl LfmEngine {
             .ok_or_else(|| "the model gave no answer".to_owned())?;
         let choice = lfm::parse_choice(&content).map_err(|reason| reason.to_string())?;
         Ok((choice.decision, choice.reason))
+    }
+}
+
+impl LfmEngine {
+    /// Asks the model about a case the rules or the primary engine escalated. Unlike [`DecisionEngine::decide`],
+    /// it asks even when the rules decided, because the escalation is the reason for asking. A failed call keeps
+    /// the escalated decision, so the case still goes to the person.
+    pub fn escalate(&self, input: &DecisionInput<'_>, escalated: DecisionResult) -> DecisionResult {
+        let started = Instant::now();
+        let outcome = self.ask(input);
+        let latency_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        match outcome {
+            Ok((decision, reason)) => DecisionResult {
+                decision,
+                confidence: None,
+                provider: format!("{ESCALATED_PREFIX} ({})", self.provider.model_id()),
+                latency_ms,
+                model_reason: Some(reason),
+                ..escalated
+            },
+            Err(error) => DecisionResult {
+                provider: format!(
+                    "{ESCALATED_PREFIX} failed ({error}); kept {}",
+                    escalated.provider
+                ),
+                latency_ms,
+                ..escalated
+            },
+        }
     }
 }
 
@@ -245,5 +280,70 @@ mod tests {
             "the prompt is not sent"
         );
         assert_eq!(request.enable_thinking, Some(false));
+    }
+
+    /// The rules' escalation for the stalled loop, as the primary engine would hand it to the deep slot.
+    fn escalated_by_rules() -> DecisionResult {
+        let state = TaskState::new("task-1", "repo", "p");
+        RulesDecisionEngine.decide(&DecisionInput {
+            state: &state,
+            signals: &stalled(),
+        })
+    }
+
+    fn escalate(engine: &LfmEngine) -> DecisionResult {
+        let state = TaskState::new("task-1", "repo", "p");
+        engine.escalate(
+            &DecisionInput {
+                state: &state,
+                signals: &stalled(),
+            },
+            escalated_by_rules(),
+        )
+    }
+
+    #[test]
+    fn an_escalation_takes_the_deep_answer_and_keeps_its_reason_code() {
+        let result = escalate(&engine(vec![answer(
+            r#"{"decision": "REPLAN", "reason": "the fix is in another file"}"#,
+        )]));
+        assert_eq!(result.decision, Decision::Replan);
+        assert!(
+            result.provider.starts_with(ESCALATED_PREFIX),
+            "{}",
+            result.provider
+        );
+        assert_eq!(
+            result.reason_code,
+            harness_core::decision::ReasonCode::SameFailure
+        );
+        assert_eq!(
+            result.model_reason.as_deref(),
+            Some("the fix is in another file")
+        );
+    }
+
+    #[test]
+    fn a_failed_escalation_keeps_the_escalated_decision_and_says_why() {
+        let result = escalate(&engine(vec![Err(ProviderError::Unreachable(
+            "connection refused".to_owned(),
+        ))]));
+        assert_eq!(
+            result.decision,
+            Decision::Escalate,
+            "the case still goes on"
+        );
+        assert!(
+            result
+                .provider
+                .starts_with(&format!("{ESCALATED_PREFIX} failed")),
+            "{}",
+            result.provider
+        );
+        assert!(
+            result.provider.contains("kept rules"),
+            "{}",
+            result.provider
+        );
     }
 }
