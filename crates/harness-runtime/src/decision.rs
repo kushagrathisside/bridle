@@ -347,3 +347,63 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod deep_live_tests {
+    use super::*;
+    use crate::providers::provider_for;
+    use harness_core::config::{Config, ModelRole};
+    use harness_core::task::TaskState;
+
+    /// A live check of escalation: the deep slot answers an escalated stalled loop with a decision from the set. The
+    /// endpoint comes from `BRIDLE_DEEP_URL` (default: the `deep` slot of the shipped profile). Run with `--ignored`
+    /// while the deep model is served, and the main model is stopped (one GPU model at a time).
+    #[test]
+    #[ignore = "needs the deep model served on its endpoint"]
+    fn the_deep_slot_answers_an_escalated_loop() {
+        let profile = include_str!("../../../configs/local-with-jev.toml");
+        let mut config: Config = toml::from_str(profile).unwrap();
+        let slot = config
+            .models
+            .values_mut()
+            .find(|m| m.role == ModelRole::DeepReasoning)
+            .expect("the profile has a deep_reasoning slot");
+        if let Ok(url) = std::env::var("BRIDLE_DEEP_URL") {
+            slot.endpoint = url;
+        }
+        slot.timeout_ms = slot.timeout_ms.min(ESCALATION_TIMEOUT_MS);
+        let provider = provider_for(slot, &|name| std::env::var(name).ok())
+            .expect("the deep slot builds a provider");
+        let engine = LfmEngine::new(provider);
+
+        let state = TaskState::new("task-live", "repo", "fix the failing test");
+        let signals = [harness_core::loops::LoopSignal::SameFailure {
+            fingerprint: "fp_v1:live".to_owned(),
+            count: 3,
+        }];
+        let input = DecisionInput {
+            state: &state,
+            signals: &signals,
+        };
+        let primary = RulesDecisionEngine.decide(&input);
+        assert_eq!(primary.decision, Decision::Escalate, "the rules escalate a same failure");
+
+        let result = engine.escalate(&input, primary);
+        // A failed escalation carries the same prefix, so the check is that the label has no failure in it.
+        assert!(
+            result.provider.starts_with(ESCALATED_PREFIX) && !result.provider.contains("failed"),
+            "the deep answer was not used: {}",
+            result.provider
+        );
+        assert!(result.model_reason.is_some(), "the deep model gave no reason");
+        assert!(
+            matches!(
+                result.decision,
+                Decision::Replan | Decision::Escalate | Decision::AskUser
+            ),
+            "{:?}",
+            result.decision
+        );
+    }
+}
