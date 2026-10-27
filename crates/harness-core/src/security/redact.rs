@@ -20,7 +20,7 @@
 //! 4. Credentials in URLs: `scheme://user:password@host` → `scheme://user:[REDACTED]@host`. The
 //!    password runs to the last `@` before the authority ends.
 //! 5. Well-known token shapes anywhere in text, replaced entirely:
-//!    `sk-[A-Za-z0-9_-]{16,}` (OpenAI/Anthropic style incl. `sk-ant-`, `sk-proj-`),
+//!    `sk-[A-Za-z0-9_-]{16,}` (the common `sk-` key style, incl. `sk-ant-` and `sk-proj-`),
 //!    `sk_live_` / `sk_test_` followed by 16+ alphanumerics (Stripe style),
 //!    `gh[pousr]_[A-Za-z0-9]{30,}`, `github_pat_[A-Za-z0-9_]{30,}`, `AKIA[0-9A-Z]{16}`,
 //!    `ASIA[0-9A-Z]{16}`, `xox[abprs]-[A-Za-z0-9-]{10,}`, `hf_[A-Za-z0-9]{30,}`,
