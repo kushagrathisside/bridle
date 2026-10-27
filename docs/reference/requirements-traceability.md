@@ -395,15 +395,15 @@ the ADR is linked.
 | R-39.1 | REQ | Benchmark suite from real workload categories: 5 tasks each for repo understanding, implementation, debugging, research/simulation, refactoring, and experiment analysis | M10 (seed in M3) | open |
 | R-39.2 | ASM | Task counts are an initial proposal, not the final size | M10 | open |
 | R-39.3 | REQ | Compare A: Qwen only, B: + deterministic tools, C: + LFM, D: + LFM + Bonsai, E: + Jev, F: + LFM + Bonsai + Jev | M10 | open |
-| R-39.4 | REQ | Measure success rate, time to success, human interventions, iterations, failed tool calls, test pass rate, first-pass success, escalation rate, context size, prompt/output tokens, VRAM, RAM, CPU | M10 | open |
-| R-39.5 | REQ | Select the winning configuration empirically | M10 | open |
+| R-39.4 | REQ | Measure success rate, time to success, human interventions, iterations, failed tool calls, test pass rate, first-pass success, escalation rate, context size, prompt/output tokens, VRAM, RAM, CPU | M10 | partial: success, time, tool calls, blocked calls and context bytes are measured, one run per task (`evals/bench/results/2026-10-27/`). Tokens, VRAM, RAM, CPU, first-pass and escalation rate are not |
+| R-39.5 | REQ | Select the winning configuration empirically | M10 | partial: both conditions were run on the corpus once (minimal 6 of 6, harness 4 of 6). One run per task is not enough to select a configuration; repeated runs are the next step |
 
 ## §40 Beyond SWE-bench
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-40.1 | CON | Do not optimise for SWE-bench alone | M10 | open |
-| R-40.2 | REQ | Local "Research Coding Eval" covering repo comprehension, algorithm implementation, debugging, test repair, simulation debugging, experiment analysis, refactoring, cross-language changes. Do not tie the public name to it. | M10 | open |
+| R-40.2 | REQ | Local "Research Coding Eval" covering repo comprehension, algorithm implementation, debugging, test repair, simulation debugging, experiment analysis, refactoring, cross-language changes. Do not tie the public name to it. | M10 | partial: six tasks in six categories, each checked by a `verify.py`; simulation debugging and cross-language changes are not in the corpus |
 
 ## §41 Evaluation reproducibility
 

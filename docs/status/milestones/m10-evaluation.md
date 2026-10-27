@@ -3,9 +3,9 @@
 M10 is the benchmark: a corpus of tasks, two conditions, a runner and a report (R-39, R-40, R-57.10). The design is in the
 `agent bench` command (`crates/harness-cli/src/commands/bench.rs`) and the corpus under `evals/`.
 
-> **Status:** Built and checked. The live stall is explained and fixed in the runner (2026-10-27): a start waits for
-> OpenCode's dependency install, which can only finish through the network. The corpus results are not recorded yet; the
-> full run is in the Live runs section below.
+> **Status:** Built, and the full corpus has run once under both conditions (2026-10-27, one run per task). Minimal
+> passed 6 of 6; harness passed 4 of 6. The sample is six tasks and one run each: a lead, not a measured effect. The
+> start stall that blocked the earlier runs is explained and fixed (see below).
 
 ## What is built
 
@@ -56,17 +56,43 @@ start-up traffic out through the proxy. That is an egress choice for the person,
 | First one-task runs (before the fixes) | OpenCode stalled in every attempt, with no model request. |
 | One task, default data folder, after the runner fixes | Ran to the end: 13 tool calls, 6 blocked, verify failed (the model asked the user which option to take instead of finishing). The protocol sentence was added after this. |
 | Full corpus, both conditions (start-up switches on) | Stopped by the user before it finished. Minimal condition: 4 of 6 tasks ended (one passed, `implement-fizzbuzz`; `analyse-latency` stalled in all three attempts). |
+| Full corpus, both conditions, after the registry fix (2026-10-27, `m10-full-minimal`, `m10-full-harness`) | Minimal: 6 of 6 passed. Harness: 4 of 6 passed. No timeouts, no restarts. Results: `evals/bench/results/2026-10-27/`. |
 
 Start-up switches were turned on for benchmark runs (`OPENCODE_DISABLE_MODELS_FETCH`, `OPENCODE_DISABLE_AUTOUPDATE`,
 `OPENCODE_DISABLE_DEFAULT_PLUGINS`, `OPENCODE_DISABLE_LSP_DOWNLOAD`). They did not stop the stalls. The shared database is
 the current suspect; the per-run database (`OPENCODE_DB`) is in the runner and type-checks, but has not been run through the
 full corpus yet.
 
+## Full run (2026-10-27)
+
+One run per task, both conditions, the dev-target binary built from the code in this commit, the registry fix in place.
+
+| Task | Category | Minimal | Harness | Tool calls (minimal / harness) |
+|---|---|---|---|---|
+| analyse-latency | experiment analysis | pass | pass | 2 / 3 |
+| comprehend-stock-path | repository comprehension | pass | fail | 9 / 2 |
+| debug-range-sum | debugging | pass | fail | 4 / 2 |
+| implement-fizzbuzz | implementation | pass | pass | 4 / 4 |
+| refactor-rename | refactoring | pass | pass | 10 / 10 |
+| repair-wrong-test | test repair | pass | pass | 4 / 4 |
+
+Totals: minimal 6 of 6, harness 4 of 6. Mean time 185 s (minimal) and 189 s (harness). Mean context 8734 bytes
+(minimal) and 5293 bytes (harness). Both harness failures ended after two tool calls, each with one blocked call. The event
+log of both runs records a permission request that was replied to and no further tool call; in one of the two, the session
+then went idle. A benchmark run has no person to approve an `ask`, so the request is refused (decision D3). The minimal
+runs on the same two tasks had blocked calls too and went on. With one run per task this is a lead, not a finding.
+Checking it needs repeated runs and the text of the blocked call, which the event log does not hold.
+
+The earlier full run (before the registry fix) reported minimal 1 of 6 and harness 0 of 6. Those runs stalled before the
+model; they are not comparable with this run and are not reported as results.
+
 ## What remains
 
-- A full corpus run under both conditions with the per-run database, and the results recorded here.
+- More runs per task. One run per task cannot separate the conditions from noise. Repeated runs are the next step.
 - Tokens, GPU memory and first-pass success are not measured. Those are open (R-39.4).
-- The sample is six tasks, one run each. A difference is a lead, not a measured effect.
+- The per-run start includes about 70 s waiting for the blocked registry. The benchmark time includes that wait.
+- A decision for the person: letting OpenCode use the proxy for its start (faster, about 16 s, but start-up traffic
+  leaves the machine). Not taken; see the stall section.
 
 ## Related
 

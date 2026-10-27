@@ -23,7 +23,7 @@ other pages must agree with it.
 | M7 | Jev decision backend behind the endpoint policy, with TLS | Built, not live (`6ad8861`) | [2026-10-27: M7 built](#2026-10-27-m7-built-and-tested-jev-backend-endpoint-policy-tls-not-live) |
 | M8 | LiteLLM gateway as a model provider, behind the policy | Built, not live (`0854f62`, `a3a6940`) | [2026-10-27: M8 built](#2026-10-27-m8-built-and-tested-with-a-mock-the-live-gateway-check-is-not-run) |
 | M9 | Security threat-model tests and egress audit | Built (`5bef0f9`) | [2026-10-27: M9 built](#2026-10-27-m9-built-security-review-fixes-adversarial-suite-egress-audit) |
-| M10 | Evaluation: task corpus, two conditions, runner and report | Built; the start stall is explained and fixed; the corpus run is recorded in the milestone page | [milestones/m10-evaluation.md](milestones/m10-evaluation.md) |
+| M10 | Evaluation: task corpus, two conditions, runner and report | Built; the start stall is fixed; one full run recorded (minimal 6 of 6, harness 4 of 6); repeat runs not done | [milestones/m10-evaluation.md](milestones/m10-evaluation.md) |
 | M11 | Open-source release: licence, notices, policies, CI | Prepared; CI not run; publication not done | [milestones/m11-release.md](milestones/m11-release.md) |
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
@@ -37,6 +37,7 @@ M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
   up to `[agent] max_deep_escalations` per task, with a 15 s deep timeout and a fallback to the person. `[routing]
   enable_micro_decisions` now gates the micro model. Validation V39 (error) and V40 (warning). Tests: 10 new. Not run
   live. Details in [milestones/m5-bonsai.md](milestones/m5-bonsai.md).
+- M10 full run, one run per task: minimal 6 of 6 passed, harness 4 of 6. Both harness failures ended after two tool calls with a refused permission. Results: `evals/bench/results/2026-10-27/`. One run per task is a lead, not a measurement.
 - M10 stall: explained and fixed in the runner. A start waits on OpenCode's dependency install when the project has a
   plugin; the bench removes the proxy, so the install hung. A closed loopback registry makes it fail after about 71 s, and
   the start goes on. Verified: one harness task reached the model (`events.jsonl` written, session created). The per-run

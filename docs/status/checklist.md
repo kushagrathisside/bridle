@@ -59,7 +59,7 @@ finished. `open` means not built.
 | M9-3 | M9 | Egress audit command | built | crates/harness-cli/src/commands/egress.rs | the_shipped_local_profile_reaches_only_loopback, a_remote_jev_endpoint_is_listed_as_remote_with_its_condition | crates/harness-cli/src/main.rs::Command::Egress | R-27.4 |
 | M10-1 | M10 | Benchmark runner and report | built | crates/harness-cli/src/commands/bench.rs | the_report_carries_its_caveat_and_one_row_per_task, the_log_counts_calls_refusals_and_context_bytes | crates/harness-cli/src/main.rs::Command::Bench | R-39.1, R-57.10 |
 | M10-2 | M10 | Task corpus with verify scripts | built | evals/tasks/debug-range-sum/verify.py, evals/tasks/implement-fizzbuzz/verify.py | | evals/tasks/debug-range-sum/verify.py::range_sum | R-39.1, R-40.2 |
-| M10-3 | M10 | Live benchmark results | open | | | | R-39.4, R-39.5 |
+| M10-3 | M10 | Live benchmark results | partial | evals/bench/results/2026-10-27/report.md, docs/status/milestones/m10-evaluation.md | the_blocked_registry_is_loopback_so_nothing_leaves_the_machine | crates/harness-cli/src/commands/bench.rs::BLOCKED_REGISTRY | R-39.4, R-39.5 |
 | M11-1 | M11 | Apache-2.0 licence and NOTICE | built | LICENSE, NOTICE | | Cargo.toml::license = "Apache-2.0" | R-52.1 |
 | M11-2 | M11 | Third-party licence list and generator | built | THIRD_PARTY_LICENSES.md, scripts/third_party_licenses.py | | scripts/third_party_licenses.py::cargo | R-52.1, AC-R3 |
 | M11-3 | M11 | Changelog, security policy and contributing guide | built | CHANGELOG.md, SECURITY.md, CONTRIBUTING.md | | SECURITY.md::private vulnerability | R-57.11 |
