@@ -69,6 +69,13 @@ Checked by unit tests: the trigger (`escalation_due`), the deep answer replacing
 path keeping it, the cap, the missing deep slot, and that only ESCALATE is escalated. The deep model's own answers were
 measured before (the A/B above). Not yet run: an escalation from a real stalled loop in a live session.
 
+A live check of the deep answer is in `crates/harness-runtime/src/decision.rs`, the ignored test
+`the_deep_slot_answers_an_escalated_loop`. It sends a same-failure escalation to the deep slot and checks that the answer
+is one the engine accepts. To run it: stop the main model (`agent models stop main`), serve the deep model
+(`agent models serve deep --detach`), then run the test with `--ignored`. `BRIDLE_DEEP_URL` overrides the endpoint.
+Without the deep model the test fails with a connection error (checked 2026-10-28), which is the intended result: it
+must not pass on a fallback. It has not been run against a served deep model yet.
+
 ## Deviations
 
 - Reasoning budget 8192, not 16384. A 16K context cannot hold a 16K budget plus the prompt and an answer. The
