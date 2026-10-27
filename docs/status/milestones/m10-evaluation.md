@@ -3,9 +3,9 @@
 M10 is the benchmark: a corpus of tasks, two conditions, a runner and a report (R-39, R-40, R-57.10). The design is in the
 `agent bench` command (`crates/harness-cli/src/commands/bench.rs`) and the corpus under `evals/`.
 
-> **Status:** Built, with the live results not yet recorded. The runner, the report and the corpus are built and checked.
-> The live runs stalled: OpenCode sometimes never reached the model. The first cause found was a shared OpenCode session
-> database, and each run now gets its own. That fix is not yet verified in the runner, so no benchmark numbers are claimed.
+> **Status:** Built and checked. The live stall is explained and fixed in the runner (2026-10-27): a start waits for
+> OpenCode's dependency install, which can only finish through the network. The corpus results are not recorded yet; the
+> full run is in the Live runs section below.
 
 ## What is built
 
@@ -23,6 +23,31 @@ M10 is the benchmark: a corpus of tasks, two conditions, a runner and a report (
 
 Each `verify.py` was run on its untouched fixture and on a reference fix. Every one fails on the fixture and passes on the
 reference (2026-10-27). This shows the checks can fail and can pass; it does not show that a model passes them.
+
+## Why the starts stalled (2026-10-27)
+
+OpenCode 1.19.3 starts a background dependency install for the project's `.opencode` folder when that folder holds a
+plugin. The start waits for it. The benchmark removes the proxy variables from OpenCode's environment, so the install
+reached the package registry directly and never finished. Measured with one task, the same folder, and only the
+environment changed:
+
+| Setup | Start (creating instance to event connected) |
+|---|---|
+| No plugin file | about 0.5 s |
+| Trivial plugin, proxy variables inherited | about 16 s |
+| The real plugin, proxy variables removed, registry as normal | no progress for more than 5 minutes (three attempts); one isolated run resumed after about 2.5 minutes |
+| Trivial plugin, proxy removed, registry pointed at a closed loopback port | about 71 s, then "background dependency install failed" and the start goes on |
+| The real plugin, registry pointed at a closed loopback port (the fix below) | about 71 s, then the model is reached |
+
+Not the cause: the per-run session database, the isolated XDG directories, the startup switches, an empty
+`.opencode/package.json`, and the MCP server (it answers `initialize` in about 30 ms).
+
+The fix is in `start_opencode`: `NPM_CONFIG_REGISTRY` and `BUN_CONFIG_REGISTRY` point at `http://127.0.0.1:9/`, so the
+install fails after a bounded wait and nothing leaves the machine. The cost is about 70 s per start. A run that is
+still stalled after five minutes is restarted, as before.
+
+Alternative, not taken: let OpenCode use the proxy for its start. It is faster (about 16 s), but it sends OpenCode's
+start-up traffic out through the proxy. That is an egress choice for the person, not one the benchmark makes by itself.
 
 ## Live runs
 
