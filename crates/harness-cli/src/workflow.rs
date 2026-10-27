@@ -8,7 +8,8 @@
 use anyhow::Result;
 use harness_core::config::{DecisionProviderKind, ModelRole};
 use harness_core::decision::{
-    DecisionEngine, DecisionInput, DecisionResult, ReasonCode, RulesDecisionEngine, refuses,
+    DecisionEngine, DecisionInput, DecisionResult, ReasonCode, RulesDecisionEngine, escalation_due,
+    refuses,
 };
 use harness_core::failures::parse_failures;
 use harness_core::fingerprint::{Context, args_hash, command_hash, fingerprints};
@@ -16,7 +17,7 @@ use harness_core::journal::{Outcome, Record};
 use harness_core::loops::{Thresholds, detect};
 use harness_core::models::ModelRegistry;
 use harness_core::task::TaskState;
-use harness_runtime::decision::LfmEngine;
+use harness_runtime::decision::{ESCALATED_PREFIX, ESCALATION_TIMEOUT_MS, LfmEngine};
 use harness_runtime::jev::JevEngine;
 use harness_runtime::mcp::record::is_verification_tool;
 use harness_runtime::providers::provider_for;
@@ -60,12 +61,14 @@ pub fn before(app: &App, input: &Value, read_only: bool) -> Result<Option<String
 
     let thresholds = Thresholds::from_config(&app.config.agent, &app.config.workflow);
     let signals = detect(&journal.ring, &journal.state, &thresholds);
+    let escalations = escalations_used(&task)?;
     let result = decide_for(
         app,
         &DecisionInput {
             state: &journal.state,
             signals: &signals,
         },
+        escalations,
     );
 
     // Read-only calls are never refused: they cannot repeat a failure, and the model needs them to read it.
@@ -90,7 +93,10 @@ pub fn before(app: &App, input: &Value, read_only: bool) -> Result<Option<String
         return Ok(Some(message));
     }
 
-    if result.reason_code != ReasonCode::PhaseDefault {
+    // An escalation is recorded even when no loop rule fired: the record is how the task counts its escalations.
+    if result.reason_code != ReasonCode::PhaseDefault
+        || result.provider.starts_with(ESCALATED_PREFIX)
+    {
         task.record_decision(&DecisionRecord {
             call_id: call_id.to_owned(),
             signals,
@@ -168,9 +174,18 @@ fn short(text: &str, max: usize) -> String {
     }
 }
 
-/// The decision for an input. With `decisions.provider = "local_lfm"`, a stalled loop is decided by the micro
-/// slot; every other case, and every failure to reach the model, is decided by the rules (R-30).
-pub fn decide_for(app: &App, input: &DecisionInput<'_>) -> DecisionResult {
+/// The decision for an input. The primary engine decides first (see [`decide_primary`]). An ESCALATE decision that
+/// is due then goes to the deep slot, if routing allows it and the task has escalations left (R-3.6, R-18.1).
+/// `escalations` is the number of escalations the task has already used.
+pub fn decide_for(app: &App, input: &DecisionInput<'_>, escalations: u32) -> DecisionResult {
+    let primary = decide_primary(app, input);
+    escalate_if_due(app, input, primary, escalations)
+}
+
+/// The primary engine's decision. With `decisions.provider = "local_lfm"` and `routing.enable_micro_decisions`, a
+/// stalled loop is decided by the micro slot; every other case, and every failure to reach the model, is decided by
+/// the rules (R-30).
+fn decide_primary(app: &App, input: &DecisionInput<'_>) -> DecisionResult {
     let env = |name: &str| std::env::var(name).ok();
     if app.config.decisions.provider == DecisionProviderKind::Jev {
         let engine = if app.config.external.jev.enabled {
@@ -184,8 +199,9 @@ pub fn decide_for(app: &App, input: &DecisionInput<'_>) -> DecisionResult {
         };
     }
     let registry = ModelRegistry::from_config(&app.config);
-    if let (DecisionProviderKind::LocalLfm, Some((_, model))) = (
+    if let (DecisionProviderKind::LocalLfm, true, Some((_, model))) = (
         app.config.decisions.provider,
+        app.config.routing.enable_micro_decisions,
         registry.first_with_role(ModelRole::Decision),
     ) {
         return match provider_for(model, &env) {
@@ -194,6 +210,51 @@ pub fn decide_for(app: &App, input: &DecisionInput<'_>) -> DecisionResult {
         };
     }
     RulesDecisionEngine.decide(input)
+}
+
+/// Sends a due escalation to the deep slot (R-3.6, R-18.1). Routing must be on, the task must have escalations left,
+/// and a deep slot must be defined (validation V39). The deep call has a shorter timeout than the slot's: the hook
+/// that asks has a limit of its own. Any failure keeps the escalated decision, which goes to the person.
+fn escalate_if_due(
+    app: &App,
+    input: &DecisionInput<'_>,
+    primary: DecisionResult,
+    escalations: u32,
+) -> DecisionResult {
+    let routing = &app.config.routing;
+    if !routing.enable_deep_escalation
+        || escalations >= app.config.agent.max_deep_escalations
+        || !escalation_due(&primary, routing.escalation_threshold)
+    {
+        return primary;
+    }
+    let registry = ModelRegistry::from_config(&app.config);
+    let Some((_, deep)) = registry.first_with_role(ModelRole::DeepReasoning) else {
+        return primary;
+    };
+    let mut deep = deep.clone();
+    deep.timeout_ms = deep.timeout_ms.min(ESCALATION_TIMEOUT_MS);
+    let env = |name: &str| std::env::var(name).ok();
+    match provider_for(&deep, &env) {
+        Ok(provider) => LfmEngine::new(provider).escalate(input, primary),
+        Err(error) => DecisionResult {
+            provider: format!(
+                "{ESCALATED_PREFIX} failed ({error}); kept {}",
+                primary.provider
+            ),
+            ..primary
+        },
+    }
+}
+
+/// The escalations a task has used: every decision that went to the deep slot, successful or not.
+fn escalations_used(task: &harness_runtime::state::Task<'_>) -> Result<u32> {
+    let used = task
+        .decisions()?
+        .iter()
+        .filter(|record| record.result.provider.starts_with(ESCALATED_PREFIX))
+        .count();
+    Ok(u32::try_from(used).unwrap_or(u32::MAX))
 }
 
 /// The rules' decision, labelled as a fallback from the engine that could not decide.
@@ -356,6 +417,8 @@ fn str_field<'a>(input: &'a Value, key: &str) -> &'a str {
 mod tests {
     use super::*;
     use harness_core::config::Config;
+    use harness_core::decision::Decision;
+    use harness_core::loops::LoopSignal;
     use serde_json::json;
 
     #[test]
@@ -396,6 +459,7 @@ mod tests {
                 state: &state,
                 signals: &signals,
             },
+            0,
         );
         assert!(
             result.provider.starts_with("rules (fallback from jev:"),
@@ -417,10 +481,118 @@ mod tests {
                 state: &state,
                 signals: &signals,
             },
+            0,
         );
         assert_eq!(
             result.provider,
             "rules (fallback from jev: external.jev is not enabled)"
+        );
+    }
+
+    /// Adds a deep slot that answers with the mock provider. The mock's reply is not a decision, so an escalation
+    /// to it fails, which is the path these tests check.
+    fn with_deep_slot(app: &mut App) {
+        let deep: harness_core::config::ModelConfig = serde_json::from_value(json!({
+            "provider": "mock",
+            "id": "deep-mock",
+            "role": "deep_reasoning",
+            "endpoint": "http://127.0.0.1:9/v1",
+            "context": 8192,
+            "hardware": "gpu",
+        }))
+        .expect("test model config is valid");
+        app.config.models.insert("deep".to_owned(), deep);
+    }
+
+    fn same_failure() -> Vec<LoopSignal> {
+        vec![LoopSignal::SameFailure {
+            fingerprint: "fp_v1:aaaa".to_owned(),
+            count: 3,
+        }]
+    }
+
+    fn decide_with(app: &App, signals: &[LoopSignal], escalations: u32) -> DecisionResult {
+        let state = TaskState::new("task-0001", "repo", "fix");
+        decide_for(
+            app,
+            &DecisionInput {
+                state: &state,
+                signals,
+            },
+            escalations,
+        )
+    }
+
+    #[test]
+    fn an_escalation_is_off_unless_routing_enables_it() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut app = app(dir.path());
+        with_deep_slot(&mut app);
+        let result = decide_with(&app, &same_failure(), 0);
+        assert_eq!(result.decision, Decision::Escalate);
+        assert_eq!(result.provider, "rules", "the deep slot is not asked");
+    }
+
+    #[test]
+    fn a_due_escalation_goes_to_the_deep_slot_and_a_failure_keeps_the_case() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut app = app(dir.path());
+        with_deep_slot(&mut app);
+        app.config.routing.enable_deep_escalation = true;
+        let result = decide_with(&app, &same_failure(), 0);
+        assert_eq!(
+            result.decision,
+            Decision::Escalate,
+            "the escalated case goes to the person"
+        );
+        assert!(
+            result
+                .provider
+                .starts_with(&format!("{ESCALATED_PREFIX} failed")),
+            "{}",
+            result.provider
+        );
+        assert!(
+            result.provider.contains("kept rules"),
+            "{}",
+            result.provider
+        );
+    }
+
+    #[test]
+    fn the_escalations_a_task_may_use_are_capped() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut app = app(dir.path());
+        with_deep_slot(&mut app);
+        app.config.routing.enable_deep_escalation = true;
+        let used = app.config.agent.max_deep_escalations;
+        let result = decide_with(&app, &same_failure(), used);
+        assert_eq!(result.provider, "rules", "no escalation past the cap");
+    }
+
+    #[test]
+    fn an_escalation_needs_a_deep_slot() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut app = app(dir.path());
+        app.config.routing.enable_deep_escalation = true;
+        let result = decide_with(&app, &same_failure(), 0);
+        assert_eq!(result.provider, "rules", "no deep slot, no escalation");
+    }
+
+    #[test]
+    fn only_an_escalate_decision_is_escalated() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut app = app(dir.path());
+        with_deep_slot(&mut app);
+        app.config.routing.enable_deep_escalation = true;
+        let repeated = [LoopSignal::RepeatedCommand {
+            command_hash: "h".to_owned(),
+            count: 3,
+        }];
+        let result = decide_with(&app, &repeated, 0);
+        assert_eq!(
+            result.provider, "rules",
+            "a diagnose decision is not escalated"
         );
     }
 

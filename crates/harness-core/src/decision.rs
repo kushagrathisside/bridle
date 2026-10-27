@@ -151,6 +151,13 @@ pub fn refuses(result: &DecisionResult, consecutive_refusals: u32, refusal_cap: 
         && consecutive_refusals < refusal_cap
 }
 
+/// Whether a decision is due for escalation to the deep slot (R-3.6, R-18.1). An ESCALATE decision is acted on when
+/// its confidence reaches `threshold`. A decision with no confidence (the micro model's answers) is acted on: the
+/// model answered for the case, and there is no number to compare.
+pub fn escalation_due(result: &DecisionResult, threshold: f32) -> bool {
+    result.decision == Decision::Escalate && result.confidence.is_none_or(|c| c >= threshold)
+}
+
 /// The rule that takes priority when several fired: a limit before a retry rule, a retry rule before
 /// an edit or command rule.
 fn first_signal(signals: &[LoopSignal]) -> Option<&LoopSignal> {
@@ -340,5 +347,29 @@ mod tests {
             }],
         );
         assert!(!refuses(&done, 0, 3));
+    }
+
+    #[test]
+    fn an_escalate_decision_is_due_when_its_confidence_reaches_the_threshold() {
+        let escalate = |confidence| DecisionResult {
+            decision: Decision::Escalate,
+            confidence,
+            reason_code: ReasonCode::SameFailure,
+            provider: "rules".to_owned(),
+            latency_ms: 0,
+            model_reason: None,
+        };
+        assert!(escalation_due(&escalate(Some(1.0)), 0.75));
+        assert!(escalation_due(&escalate(Some(0.75)), 0.75));
+        assert!(!escalation_due(&escalate(Some(0.5)), 0.75));
+        assert!(
+            escalation_due(&escalate(None), 0.75),
+            "a model answer has no number to compare"
+        );
+        let replan = DecisionResult {
+            decision: Decision::Replan,
+            ..escalate(Some(1.0))
+        };
+        assert!(!escalation_due(&replan, 0.75), "only ESCALATE is escalated");
     }
 }

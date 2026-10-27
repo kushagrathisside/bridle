@@ -42,6 +42,8 @@
 //! | V36 | Error | a remote LiteLLM gateway without `api_key_env` |
 //! | V37 | Error | `subagents.enabled` with a `slot` that is not defined under `[models]` |
 //! | V38 | Error | `subagents` limits out of range: `max_input_bytes` outside 256 to 65536, or `max_inputs` outside 1 to 8 |
+//! | V39 | Error | `routing.enable_deep_escalation` without a model whose role is `deep_reasoning` |
+//! | V40 | Warning | `decisions.provider = "local_lfm"` while `routing.enable_micro_decisions` is off |
 //! | V24 | Warning | a verification step sets `targets = true` but its `kind` is not `test` |
 //!
 //! Unit tests: one passing baseline config (no issues) and at least one failing case per rule.
@@ -54,7 +56,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use super::schema::{
-    Config, DecisionProviderKind, LaunchConfig, ModelConfig, ProfileKind, ProviderKind,
+    Config, DecisionProviderKind, LaunchConfig, ModelConfig, ModelRole, ProfileKind, ProviderKind,
     RuntimeConfig, RuntimeKind, StepKind,
 };
 use super::{is_absolute_any_platform, reserved_launch_flag};
@@ -683,13 +685,34 @@ fn check_decisions(cfg: &Config, report: &mut Report) {
     }
 }
 
-/// V10: the escalation threshold is a confidence in `[0, 1]`.
+/// V10: the escalation threshold is a confidence in `[0, 1]`. V39: deep escalation needs a deep slot. V40: the micro
+/// engine is used only when `routing.enable_micro_decisions` is on, so a `local_lfm` provider without it is a warning.
 fn check_routing(cfg: &Config, report: &mut Report) {
     if !(0.0..=1.0).contains(&cfg.routing.escalation_threshold) {
         report.error(
             "V10",
             "routing.escalation_threshold",
             "escalation_threshold must be within [0, 1]",
+        );
+    }
+    let has_deep_slot = cfg
+        .models
+        .values()
+        .any(|model| model.role == ModelRole::DeepReasoning);
+    if cfg.routing.enable_deep_escalation && !has_deep_slot {
+        report.error(
+            "V39",
+            "routing.enable_deep_escalation",
+            "deep escalation needs a model with role `deep_reasoning` under [models]",
+        );
+    }
+    if cfg.decisions.provider == DecisionProviderKind::LocalLfm
+        && !cfg.routing.enable_micro_decisions
+    {
+        report.warning(
+            "V40",
+            "decisions.provider",
+            "decisions.provider is local_lfm but routing.enable_micro_decisions is false, so the micro model is not used",
         );
     }
 }
@@ -1304,6 +1327,32 @@ mod tests {
             cfg.routing.escalation_threshold = threshold;
             assert_issue(&cfg, "V10", Severity::Error, "routing.escalation_threshold");
         }
+    }
+
+    #[test]
+    fn v39_deep_escalation_needs_a_deep_slot() {
+        let mut cfg = baseline();
+        cfg.routing.enable_deep_escalation = true;
+        assert_issue(
+            &cfg,
+            "V39",
+            Severity::Error,
+            "routing.enable_deep_escalation",
+        );
+        let mut deep = main_model(&mut cfg).clone();
+        deep.role = ModelRole::DeepReasoning;
+        cfg.models.insert("deep".to_owned(), deep);
+        assert_no_rule(&cfg, "V39");
+    }
+
+    #[test]
+    fn v40_local_lfm_without_micro_routing_is_a_warning() {
+        let mut cfg = baseline();
+        cfg.decisions.provider = DecisionProviderKind::LocalLfm;
+        cfg.routing.enable_micro_decisions = false;
+        assert_issue(&cfg, "V40", Severity::Warning, "decisions.provider");
+        cfg.routing.enable_micro_decisions = true;
+        assert_no_rule(&cfg, "V40");
     }
 
     #[test]
