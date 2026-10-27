@@ -1,0 +1,3 @@
+DEFAULT_TIMEOUT_S = 30
+RETRY_LIMIT = 7
+CACHE_DIR = "/var/cache/app"

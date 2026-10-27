@@ -1,0 +1,77 @@
+{
+  "_about": "Subagent quality cases (M4b-8). Each case names a role, a task and the inputs. A run passes when its answer matches one of `must_any` (case-insensitive regular expressions) and none of `must_not`. The fixtures are copied into the workspace before the runs.",
+  "cases": [
+    {
+      "id": "calc-add-return",
+      "role": "explore",
+      "task": "What does add(a, b) return? Cite the line.",
+      "paths": ["calc.py"],
+      "must_any": ["a - b", "a-b", "subtract"],
+      "must_not": ["a \\+ b", "a\\+b"]
+    },
+    {
+      "id": "calc-mul-return",
+      "role": "explore",
+      "task": "What does mul(a, b) return? Cite the line.",
+      "paths": ["calc.py"],
+      "must_any": ["a \\* b", "a\\*b", "multiplies", "product"],
+      "must_not": ["a - b", "a-b"]
+    },
+    {
+      "id": "calc-no-divide",
+      "role": "explore",
+      "task": "Is there a function named divide in this file? Answer yes or no.",
+      "paths": ["calc.py"],
+      "must_any": ["\\bno\\b", "\\bnot\\b", "doesn't", "does not"],
+      "must_not": ["\\byes\\b"]
+    },
+    {
+      "id": "config-retry-limit",
+      "role": "explore",
+      "task": "What is RETRY_LIMIT set to? Cite the line.",
+      "paths": ["config.py"],
+      "must_any": ["\\b7\\b"],
+      "must_not": ["\\b30\\b", "\\b5\\b"]
+    },
+    {
+      "id": "config-cache-dir",
+      "role": "explore",
+      "task": "What is the cache directory?",
+      "paths": ["config.py"],
+      "must_any": ["/var/cache/app"],
+      "must_not": []
+    },
+    {
+      "id": "log-error-service",
+      "role": "explore",
+      "task": "Which service reported the ERROR line?",
+      "paths": ["service.log"],
+      "must_any": ["payments"],
+      "must_not": ["worker"]
+    },
+    {
+      "id": "log-failed-status",
+      "role": "explore",
+      "task": "Which HTTP status code failed in the log?",
+      "paths": ["service.log"],
+      "must_any": ["\\b503\\b"],
+      "must_not": ["\\b200\\b"]
+    },
+    {
+      "id": "log-retried-order",
+      "role": "explore",
+      "task": "Which order was retried?",
+      "paths": ["service.log"],
+      "must_any": ["88213"],
+      "must_not": []
+    },
+    {
+      "id": "log-summarise-errors",
+      "role": "summarise",
+      "task": "Summarise the errors in this log.",
+      "paths": ["service.log"],
+      "must_any": ["503", "payments"],
+      "must_not": []
+    }
+  ]
+}

@@ -5,8 +5,9 @@ R-12.3, R-13.1, R-13.2, R-18.3). Until this milestone only the micro model decid
 not built. The checklist exposed that gap. This page records what was built, where it is plugged in, and what the live
 run showed.
 
-> **Status:** Built and plugged into the MCP tool list and the CLI (2026-10-27). Live check run against the micro model
-> (LFM2.5-1.2B on the CPU): the answer was correct in 4 of 5 repeated runs. Quality measured on one question only.
+> **Status:** Built and plugged into the MCP tool list and the CLI (2026-10-27). Quality measured on a set of nine
+> questions, three runs each, against the micro model (LFM2.5-1.2B on the CPU): 24 of 27 answers passed. The one
+> question that failed did so in all three runs. The sample is small; a difference of a few runs is not a finding.
 
 ## What was built
 
@@ -56,11 +57,42 @@ Two changes were tried and reverted, and the reasons are recorded here:
 2. **Bare line numbers accepted for a single input** (`2`, `line:2`, `line 2` become `calc.py:2`). Kept. It is a rule, not a
    guess: with one input, a bare number can only mean that input. It is covered by a unit test.
 
+## Quality over the eval set (2026-10-27)
+
+`evals/subagent/run.py` runs `agent subagent` for each case in `evals/subagent/cases.json`, three times, and scores the
+answer body (the summary, the findings and the recommendation) against the case's expected patterns. The raw result
+is in `evals/subagent/results/2026-10-27-micro.json`.
+
+| Case | Passed |
+|---|---|
+| What `add` returns (explore `calc.py`) | 3 of 3 |
+| What `mul` returns | 3 of 3 |
+| Whether a `divide` function exists (answer no) | 3 of 3 |
+| `RETRY_LIMIT` value | 3 of 3 |
+| Cache directory | 3 of 3 |
+| Which service reported the ERROR line | 0 of 3 |
+| Failed HTTP status | 3 of 3 |
+| Which order was retried | 3 of 3 |
+| Summary of the errors (summarise role) | 3 of 3 |
+
+Total: 24 of 27 runs passed; 0 unavailable; 0.89 over answered runs.
+
+The failing case: the model said "an error related to payment status" and did not name the service `payments`. It also
+said the error details were not in the input, which they were. The answer was the same in all three runs, so it is a
+consistent miss, not noise. Six runs had a reference dropped by the citation check.
+
+The first run of the script reported all 27 runs as unavailable. The cause was in the batch file, not the model: an
+`echo` whose value ran into `>>` was read as a redirect of standard input, so the exit line never reached the file. The
+script now writes the line with a parenthesised echo, and it counts a missing answer header as unavailable.
+
 ## Limits
 
 - The answer quality of a 1.2B model is limited. The tier is useful for narrowing a search, not for conclusions. The
   parent is told so in every answer.
-- Five repeats on one question is a small sample. A quality measurement on a larger set is open (checklist row M4b-8).
+- Nine questions, three runs each, is still a small sample. The set is in `evals/subagent/cases.json`; it covers two
+  roles, three fixture kinds and one absence question (a function that does not exist). It does not cover long inputs
+  near the byte limit, or inputs that mix a secret with an answer. The citation check counts a line number that is past
+  the end of the file as valid: it checks the file name only (the answer is not verified against the line).
 - Confidence is the model's own estimate. It is not calibrated.
 - The tool reads only what the policy allows, and only up to the configured limits. A repository cannot enable it: the
   setting is read from the machine config through the trust rules.

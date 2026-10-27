@@ -1,0 +1,171 @@
+{
+  "counts": {
+    "pass": 24,
+    "fail": 3,
+    "unavailable": 0
+  },
+  "rows": [
+    {
+      "case": "calc-add-return",
+      "run": 1,
+      "status": "pass",
+      "dropped_references": false
+    },
+    {
+      "case": "calc-add-return",
+      "run": 2,
+      "status": "pass",
+      "dropped_references": false
+    },
+    {
+      "case": "calc-add-return",
+      "run": 3,
+      "status": "pass",
+      "dropped_references": false
+    },
+    {
+      "case": "calc-mul-return",
+      "run": 1,
+      "status": "pass",
+      "dropped_references": false
+    },
+    {
+      "case": "calc-mul-return",
+      "run": 2,
+      "status": "pass",
+      "dropped_references": false
+    },
+    {
+      "case": "calc-mul-return",
+      "run": 3,
+      "status": "pass",
+      "dropped_references": false
+    },
+    {
+      "case": "calc-no-divide",
+      "run": 1,
+      "status": "pass",
+      "dropped_references": false
+    },
+    {
+      "case": "calc-no-divide",
+      "run": 2,
+      "status": "pass",
+      "dropped_references": false
+    },
+    {
+      "case": "calc-no-divide",
+      "run": 3,
+      "status": "pass",
+      "dropped_references": false
+    },
+    {
+      "case": "config-retry-limit",
+      "run": 1,
+      "status": "pass",
+      "dropped_references": false
+    },
+    {
+      "case": "config-retry-limit",
+      "run": 2,
+      "status": "pass",
+      "dropped_references": false
+    },
+    {
+      "case": "config-retry-limit",
+      "run": 3,
+      "status": "pass",
+      "dropped_references": false
+    },
+    {
+      "case": "config-cache-dir",
+      "run": 1,
+      "status": "pass",
+      "dropped_references": false
+    },
+    {
+      "case": "config-cache-dir",
+      "run": 2,
+      "status": "pass",
+      "dropped_references": false
+    },
+    {
+      "case": "config-cache-dir",
+      "run": 3,
+      "status": "pass",
+      "dropped_references": false
+    },
+    {
+      "case": "log-error-service",
+      "run": 1,
+      "status": "fail",
+      "dropped_references": false
+    },
+    {
+      "case": "log-error-service",
+      "run": 2,
+      "status": "fail",
+      "dropped_references": false
+    },
+    {
+      "case": "log-error-service",
+      "run": 3,
+      "status": "fail",
+      "dropped_references": false
+    },
+    {
+      "case": "log-failed-status",
+      "run": 1,
+      "status": "pass",
+      "dropped_references": false
+    },
+    {
+      "case": "log-failed-status",
+      "run": 2,
+      "status": "pass",
+      "dropped_references": false
+    },
+    {
+      "case": "log-failed-status",
+      "run": 3,
+      "status": "pass",
+      "dropped_references": true
+    },
+    {
+      "case": "log-retried-order",
+      "run": 1,
+      "status": "pass",
+      "dropped_references": true
+    },
+    {
+      "case": "log-retried-order",
+      "run": 2,
+      "status": "pass",
+      "dropped_references": true
+    },
+    {
+      "case": "log-retried-order",
+      "run": 3,
+      "status": "pass",
+      "dropped_references": true
+    },
+    {
+      "case": "log-summarise-errors",
+      "run": 1,
+      "status": "pass",
+      "dropped_references": true
+    },
+    {
+      "case": "log-summarise-errors",
+      "run": 2,
+      "status": "pass",
+      "dropped_references": true
+    },
+    {
+      "case": "log-summarise-errors",
+      "run": 3,
+      "status": "pass",
+      "dropped_references": false
+    }
+  ]
+}
