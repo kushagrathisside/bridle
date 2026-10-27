@@ -17,16 +17,34 @@ other pages must agree with it.
 | M2 | Deterministic tools: MCP tools, failure parsing, tree-sitter | Done | [2026-10-22 (night): M2 started, steps 0 to 3 done](#2026-10-22-night-m2-started-steps-0-to-3-done) |
 | M3 | State and loop detection; task journal; refusals; worktree tasks | Done (`736fea3`) | [2026-10-26: M3 done](#2026-10-26-m3-done-and-committed-as-736fea3-state-loop-detection-decisions-worktrees-live-runs) |
 | M4 | `micro` model decides stalled loops (LFM2.5, CPU), with rules fallback and an A/B run | Done (`49f74d9`) | [2026-10-26: M4 done](#2026-10-26-m4-done-and-committed-as-49f74d9-micro-model-decides-stalled-loops-ab-run) |
-| M4b | Subagent tier: a small model reads a few bounded, redacted files and answers with checked citations | Built, plugged (`subagent` tool, `agent subagent`); live quality measured on one question | [2026-10-27: M4b built](milestones/m4b-subagents.md) |
-| M5 | `deep` model on demand (Bonsai); one GPU model at a time | Done (`53724d4`) | [2026-10-26: M5 done](#2026-10-26-m5-done-and-committed-as-53724d4-deep-model-on-demand-one-gpu-model-at-a-time) |
+| M4b | Subagent tier: a small model reads a few bounded, redacted files and answers with checked citations | Built, plugged; quality measured on nine questions, three runs each (24 of 27 passed) | [2026-10-27: subagent quality](milestones/m4b-subagents.md) |
+| M5 | `deep` model on demand (Bonsai); one GPU model at a time; escalation to it | Done (`53724d4`); escalation routing built and tested, not run live (M5-3) | [2026-10-27: escalation routing](#2026-10-27-later-subagent-quality-measured-escalation-routing-m5-3-the-m10-stall-explained) |
 | M6 | Context management: per-request compaction and the task state in the system prompt | Done (`977a56f`) | [2026-10-26: M6 done](#2026-10-26-m6-done-and-committed-as-977a56f-context-policy-and-per-request-transforms) |
 | M7 | Jev decision backend behind the endpoint policy, with TLS | Built, not live (`6ad8861`) | [2026-10-27: M7 built](#2026-10-27-m7-built-and-tested-jev-backend-endpoint-policy-tls-not-live) |
 | M8 | LiteLLM gateway as a model provider, behind the policy | Built, not live (`0854f62`, `a3a6940`) | [2026-10-27: M8 built](#2026-10-27-m8-built-and-tested-with-a-mock-the-live-gateway-check-is-not-run) |
 | M9 | Security threat-model tests and egress audit | Built (`5bef0f9`) | [2026-10-27: M9 built](#2026-10-27-m9-built-security-review-fixes-adversarial-suite-egress-audit) |
-| M10 | Evaluation: task corpus, two conditions, runner and report | Built; live results not yet recorded (runs stalled) | [milestones/m10-evaluation.md](milestones/m10-evaluation.md) |
+| M10 | Evaluation: task corpus, two conditions, runner and report | Built; the start stall is explained and fixed; the corpus run is recorded in the milestone page | [milestones/m10-evaluation.md](milestones/m10-evaluation.md) |
 | M11 | Open-source release: licence, notices, policies, CI | Prepared; CI not run; publication not done | [milestones/m11-release.md](milestones/m11-release.md) |
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
+
+## 2026-10-27 (later): subagent quality measured, escalation routing (M5-3), the M10 stall explained
+
+- Subagent quality (M4b-8): nine questions, three runs each, against the micro model. 24 of 27 answers passed. The one
+  miss was the same in all three runs (it named no service). Raw result: `evals/subagent/results/2026-10-27-micro.json`;
+  runner: `evals/subagent/run.py`. Details in [milestones/m4b-subagents.md](milestones/m4b-subagents.md).
+- Escalation routing (M5-3): an ESCALATE decision goes to the deep slot when `[routing] enable_deep_escalation` is on,
+  up to `[agent] max_deep_escalations` per task, with a 15 s deep timeout and a fallback to the person. `[routing]
+  enable_micro_decisions` now gates the micro model. Validation V39 (error) and V40 (warning). Tests: 10 new. Not run
+  live. Details in [milestones/m5-bonsai.md](milestones/m5-bonsai.md).
+- M10 stall: explained and fixed in the runner. A start waits on OpenCode's dependency install when the project has a
+  plugin; the bench removes the proxy, so the install hung. A closed loopback registry makes it fail after about 71 s, and
+  the start goes on. Verified: one harness task reached the model (`events.jsonl` written, session created). The per-run
+  database, XDG isolation, the startup switches and an empty `.opencode/package.json` did not fix it. Details in
+  [milestones/m10-evaluation.md](milestones/m10-evaluation.md).
+- Decision for the person: letting OpenCode use the proxy for its start is faster (about 16 s instead of about 71 s) but
+  sends that start-up traffic out through the proxy. Not taken.
+- Gate (before the registry change): fmt, clippy and 703 tests pass.
 
 ## 2026-10-27: M4b built (subagent tier), the checklist, and the M10 and M11 status
 

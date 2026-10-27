@@ -2,9 +2,10 @@
 
 M5 makes the deep model usable without giving it the main model's place. It loads on demand, it never runs beside
 the main model on the GPU, its reasoning budget is raised, and it is checked and measured like the other slots.
-Its escalation routing (R-3.6, R-29.1) is not built.
+Its escalation routing (R-3.6, R-18.1) was added later, as M5-3 (2026-10-27); see the section below.
 
-> **Status:** Done and committed as `53724d4` (2026-10-26). Gate green (627 tests). Live results below.
+> **Status:** Done and committed as `53724d4` (2026-10-26). Gate green (627 tests). Live results below. Escalation routing
+> added on 2026-10-27 (M5-3, partial: built and tested, a live escalation not yet run).
 
 ## Gate and what was checked
 
@@ -46,6 +47,28 @@ low for both. The A/B does not show which answer is right. Reports: `evals/decis
 The deep requests disable thinking (`enable_thinking: false`), which is why a stalled decision takes about 2 s; the
 health check's completion uses the reasoning budget and takes about 30 s.
 
+## Escalation routing (M5-3, 2026-10-27)
+
+When the decision is ESCALATE and `[routing] enable_deep_escalation = true`, the deep slot is asked for the decision
+instead of the person (R-3.6, R-18.1). The rules are as follows, all checked in `workflow::escalate_if_due`:
+
+- An ESCALATE decision is acted on when its confidence reaches `[routing] escalation_threshold` (rules give 1.0 for a
+  loop rule; the micro model gives none and is always acted on; Jev gives its own confidence). This is the meaning
+  the config already documented.
+- A task may use `[agent] max_deep_escalations` escalations (default 1). Each attempt counts, successful or not. The
+  count is read from the task's recorded decisions, so it survives across the separate hook processes.
+- The deep call has a timeout of 15 s, not the slot's own (up to 30 min). The hook that asks has a limit of 20 s and
+  blocks the call when it is reached, so a slow deep model must not hold the hook. A call that fails or times out
+  keeps the escalated decision, which goes to the person.
+- The deep slot is never started by the harness. It has to be running already (`agent models serve deep`). Starting
+  it would need the main model stopped first, and that is a choice for the person.
+- Validation: V39 (enable_deep_escalation without a `deep_reasoning` slot) is an error. V40 (`decisions.provider =
+  "local_lfm"` while `enable_micro_decisions` is off) is a warning; the micro model is then not used.
+
+Checked by unit tests: the trigger (`escalation_due`), the deep answer replacing the escalated decision, the failure
+path keeping it, the cap, the missing deep slot, and that only ESCALATE is escalated. The deep model's own answers were
+measured before (the A/B above). Not yet run: an escalation from a real stalled loop in a live session.
+
 ## Deviations
 
 - Reasoning budget 8192, not 16384. A 16K context cannot hold a 16K budget plus the prompt and an answer. The
@@ -55,8 +78,8 @@ health check's completion uses the reasoning budget and takes about 30 s.
 
 ## Not done
 
-- Escalation routing: a stalled loop does not go to the deep model automatically (R-3.6, R-18.1, R-29.1). The engine
-  asks only the slot it is configured for. Routing needs the deep model's cost and a policy; it is the next step.
+- Escalation routing beyond the persistent-failure case. Only ESCALATE decisions from the rules and the micro model are
+  routed (see below). Architecture, research and high-complexity triggers (R-3.6, R-29.1) are not built.
 - Lifecycle states (R-45.2) are recorded only as running or stopped by PID.
 - Large deep (24K to 32K) is not benchmarked (R-3.5).
 

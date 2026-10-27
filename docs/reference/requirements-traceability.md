@@ -89,12 +89,12 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-3.1 | STRAT | Deep/escalation model: Ternary Bonsai 2 27B, PTQ1_0, PrismML llama.cpp fork, CUDA. It is not the default model. | M5 | partial: Bonsai is served, health-checked and used for the A/B; escalation from the loop rules is not routed to it yet |
+| R-3.1 | STRAT | Deep/escalation model: Ternary Bonsai 2 27B, PTQ1_0, PrismML llama.cpp fork, CUDA. It is not the default model. | M5 | partial: Bonsai is served, health-checked and used for the A/B; persistent-failure escalations are routed to it when `routing.enable_deep_escalation` is on (M5-3), and that routing is not yet run live |
 | R-3.2 | CLAIM | PTQ1_0 is 5.95 GB and PQ2_0 is 7.21 GB. PTQ1_0 decodes faster on Ada. The PrismML fork is required. | M0 | verified (PrismML artifact table also lists 5.93 / 7.25 GB) |
 | R-3.3 | DEF | PTQ1_0 is the default on 8 GB cards. Do not default to PQ2_0. | M5 | done: the PTQ1_0 file is the one in use |
 | R-3.4 | CON | Do not use the full 262K context by default | M5 | done: context 16384 (normal deep); the 262K context is not used |
 | R-3.5 | DEF | Operating modes: normal deep 16K–24K, large deep 24K–32K, very large repo = retrieval + summaries. Benchmark them. | M5, M10 | partial: normal deep (16K) measured; large deep not benchmarked |
-| R-3.6 | REQ | Invoke Bonsai for: persistent debugging failure, hard architecture, research methodology, hard algorithms, cross-module causal analysis, high-impact refactoring, repeated local-model failure, user-marked "deep", policy-predicted worth-the-latency | M5 | open |
+| R-3.6 | REQ | Invoke Bonsai for: persistent debugging failure, hard architecture, research methodology, hard algorithms, cross-module causal analysis, high-impact refactoring, repeated local-model failure, user-marked "deep", policy-predicted worth-the-latency | M5 | partial (M5-3): an ESCALATE decision (persistent failure, repeated local-model failure) goes to Bonsai, capped per task, when routing is on. The other triggers are not built |
 | R-3.7 | CON | Bonsai must not automatically replace Qwen for every task | M5 | done: the deep model is not a default; it answers only the A/B cases |
 
 ## §4 Micro-model: LFM2.5-1.2B-Thinking
@@ -170,7 +170,7 @@ the ADR is linked.
 | R-11.2 | REQ | `build`: Qwen3.5-9B. read=allow, edit=allow, bash=ask/policy-mediated. Covers implementation, debugging, tests, Git, controlled autonomous loops. | M1 | done (generated `build` agent: edit allow, read rules with secrets denied, bash `ask` plus allow list, every call through the `tool-before` policy) |
 | R-11.3 | REQ | `explore`: LFM2.5-1.2B. read=allow, edit=deny, bash=restricted. Covers repo mapping, dependency tracing, symbol discovery, targeted inspection, concise evidence. | M1 (on Qwen, see audit C-2), M4 (LFM A/B) | open |
 | R-11.4 | REQ | `review`: LFM2.5-1.2B or optional Qwen 2B/4B. Covers inspecting diffs, classifying failures, finding regressions and missing tests, challenging the implementation. | M4 | open |
-| R-11.5 | REQ | `deep`: Bonsai 2 27B. Covers hard architecture, persistent failure, research reasoning, escalation, senior review. | M5 | partial: the deep model is measured on the stalled-loop cases; escalation routing is not built |
+| R-11.5 | REQ | `deep`: Bonsai 2 27B. Covers hard architecture, persistent failure, research reasoning, escalation, senior review. | M5 | partial: the deep model is measured on the stalled-loop cases; it receives persistent-failure escalations when routing is on (M5-3); architecture, research and review routes are not built |
 | R-11.6 | CON | Build on OpenCode's allow/ask/deny permission system. Do not invent a parallel one. | M1 | done (permissions are generated into `opencode.json`; the plugin hooks only answer allow or deny inside OpenCode's own flow) |
 
 ## §12 No multi-agent swarm
@@ -179,7 +179,7 @@ the ADR is linked.
 |---|---|---|---|---|
 | R-12.1 | CON | No free-running, recursive role swarm (architect/researcher/coder/tester/…/manager) | all | open |
 | R-12.2 | REQ | Hierarchical design: main Qwen → (LFM cheap evidence \| deterministic tools \| review subagent \| Bonsai when justified) | M4, M5 | done (M4b): the subagent tier reads bounded, redacted inputs through the policy and is offered as a tool when enabled (`harness-runtime/src/subagent.rs`). |
-| R-12.3 | REQ | Subagents return evidence or bounded analysis, not autonomous branches | M4 | partial (M4b): subagents return checked answers and never edit; their quality is measured on one question only (5 runs, 4 correct). |
+| R-12.3 | REQ | Subagents return evidence or bounded analysis, not autonomous branches | M4 | partial (M4b): subagents return checked answers and never edit. Quality on nine questions, three runs each, against the micro model: 24 of 27 passed (`evals/subagent/results/2026-10-27-micro.json`); one question failed in every run. The sample is small. |
 
 ## §13 Subagent output policy
 
@@ -226,9 +226,9 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-18.1 | REQ | Default Qwen → Qwen → Qwen. On stall, LFM classifies the state. Persistent or high-complexity failure goes to Bonsai. | M4, M5 | open |
+| R-18.1 | REQ | Default Qwen → Qwen → Qwen. On stall, LFM classifies the state. Persistent or high-complexity failure goes to Bonsai. | M4, M5 | partial (M5-3): persistent failure goes to Bonsai when routing is on, with a cap per task; high-complexity routing is not built |
 | R-18.2 | REQ | Triggers: same normalised failure ≥ 2, different patches with the same failure, high architecture uncertainty, cross-module behaviour, research-methodology question, explicit user request, high-impact change | M5 | open |
-| R-18.3 | REQ | Bonsai analyses and proposes. Qwen implements and tests. | M5 | partial (M4b): the small model analyses and proposes; it never edits. Escalation to the deep model is not routed. |
+| R-18.3 | REQ | Bonsai analyses and proposes. Qwen implements and tests. | M5 | partial (M4b, M5-3): the small model analyses and proposes; it never edits. Persistent-failure escalations reach the deep model when routing is on; the deep model still never edits. |
 | R-18.4 | CON | Bonsai must not mutate code automatically in the first implementation stage | M5 | done: the deep model has no path that edits code |
 
 ## §19 Failure normalisation

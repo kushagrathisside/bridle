@@ -20,7 +20,7 @@ finished. `open` means not built.
 | M1-7 | M1 | OpenCode shim (TypeScript) | built | opencode-plugin/local-agent.ts | | crates/harness-cli/src/commands/init.rs::SHIM_TEMPLATE | R-33.2 |
 | M1-8 | M1 | Doctor, health and models commands | built | crates/harness-cli/src/commands/doctor.rs, crates/harness-cli/src/commands/health.rs, crates/harness-cli/src/commands/models.rs | unreachable_endpoint_is_a_failed_health_check | crates/harness-cli/src/main.rs::Command::Doctor | R-42.2 |
 | M1-9 | M1 | Event log with redaction | built | crates/harness-runtime/src/event_log.rs | appended_events_never_contain_secret_values | crates/harness-cli/src/commands/hook.rs::event_log().append | R-27.3 |
-| M1-10 | M1 | Real model run through OpenCode | partial | docs/status/progress.md | | crates/harness-cli/src/main.rs::Command::Doctor | R-6.1 |
+| M1-10 | M1 | Real model run through OpenCode | built | docs/status/progress.md | | crates/harness-cli/src/main.rs::Command::Doctor | R-6.1 |
 | M2-1 | M2 | MCP server on stdio | built | crates/harness-runtime/src/mcp/protocol.rs | tools_list_reports_default_tools_in_order | crates/harness-cli/src/commands/mcp.rs::Server::new | R-7.x |
 | M2-2 | M2 | Git tools | built | crates/harness-runtime/src/mcp/tools/mod.rs | | crates/harness-runtime/src/mcp/tools/mod.rs::Box::new(GitStatusTool) | R-14.1 |
 | M2-3 | M2 | Verification tools and failure parsing | built | crates/harness-runtime/src/mcp/tools/verify.rs, crates/harness-runtime/src/mcp/tools/failures.rs, crates/harness-core/src/failures.rs | every_pattern_compiles | crates/harness-runtime/src/mcp/tools/mod.rs::Box::new(verify::RUN_TESTS) | R-14.2 |
@@ -39,7 +39,8 @@ finished. `open` means not built.
 | M4-2 | M4 | Strict check of the micro answer | built | crates/harness-core/src/lfm.rs | | crates/harness-runtime/src/decision.rs::lfm::parse_choice | R-30.4 |
 | M4-3 | M4 | Decision evaluation command | built | crates/harness-cli/src/commands/eval.rs | | crates/harness-cli/src/main.rs::Command::EvalDecisions | R-39.5 |
 | M5-1 | M5 | One GPU model at a time | built | crates/harness-cli/src/commands/models.rs | | crates/harness-cli/src/commands/models.rs::check_one_gpu_model | R-45.1 |
-| M5-2 | M5 | Deep model on demand | partial | crates/harness-cli/src/commands/models.rs | | crates/harness-cli/src/main.rs::Command::EvalDecisions | R-3.6, R-18.1 |
+| M5-2 | M5 | Deep model on demand | built | crates/harness-cli/src/commands/models.rs | | crates/harness-cli/src/main.rs::Command::EvalDecisions | R-45.3, R-3.5 |
+| M5-3 | M5 | Escalation to the deep slot | partial | crates/harness-cli/src/workflow.rs | an_escalation_is_off_unless_routing_enables_it, a_due_escalation_goes_to_the_deep_slot_and_a_failure_keeps_the_case, the_escalations_a_task_may_use_are_capped, an_escalation_needs_a_deep_slot, only_an_escalate_decision_is_escalated, an_escalation_takes_the_deep_answer_and_keeps_its_reason_code, a_failed_escalation_keeps_the_escalated_decision_and_says_why, an_escalate_decision_is_due_when_its_confidence_reaches_the_threshold, v39_deep_escalation_needs_a_deep_slot, v40_local_lfm_without_micro_routing_is_a_warning | crates/harness-cli/src/workflow.rs::escalate_if_due | R-3.6, R-18.1 |
 | M6-1 | M6 | Context policy | built | crates/harness-core/src/context.rs | the_budget_is_taken_in_tokens, recent_results_are_kept_whole_while_the_context_fits, a_recent_result_is_compacted_only_when_the_context_would_not_fit | crates/harness-cli/src/host/opencode_v1.rs::messages_transform | R-24.1, R-24.2 |
 | M6-2 | M6 | Per-request tool-result transform | built | crates/harness-cli/src/host/opencode_v1.rs | older_reads_are_dropped_over_the_hard_limit_and_the_recent_ones_are_kept, an_old_verification_keeps_only_its_failure_lines | crates/harness-cli/src/host/opencode_v1.rs::HookEvent::MessagesTransform | R-23.2, R-33.1 |
 | M6-3 | M6 | Task state in the system prompt | built | crates/harness-cli/src/workflow.rs | the_state_block_names_the_phase_and_cleans_model_text | crates/harness-cli/src/commands/hook.rs::HookEvent::SystemTransform | R-23.1 |
@@ -71,8 +72,8 @@ finished. `open` means not built.
 | M4b-4 | M4b | Subagent config and validation V37, V38 | built | crates/harness-core/src/config/schema.rs, crates/harness-core/src/config/validate.rs | v37_subagents_need_a_defined_slot, v38_subagent_limits_are_bounded | crates/harness-core/src/config/validate.rs::check_subagents | R-12.2 |
 | M4b-5 | M4b | Subagent tool offered to the model | built | crates/harness-runtime/src/mcp/tools/subagent.rs | the_subagent_tool_is_offered_only_when_the_tier_is_on, a_bad_role_is_refused_by_the_tool_before_any_model_call | crates/harness-cli/src/commands/mcp.rs::SubagentTool | R-12.2 |
 | M4b-6 | M4b | Subagent command for manual use | built | crates/harness-cli/src/commands/subagent.rs | the_command_refuses_when_the_tier_is_off, an_unreachable_model_is_reported_as_unavailable_and_nothing_is_answered | crates/harness-cli/src/main.rs::Command::Subagent | R-12.2 |
-| M4b-7 | M4b | Subagent live check against the micro model | partial | docs/status/milestones/m4b-subagents.md | | crates/harness-cli/src/commands/subagent.rs::run | R-12.3 |
-| M4b-8 | M4b | Subagent quality measured over repeated runs | open | | | | R-12.3 |
+| M4b-7 | M4b | Subagent live check against the micro model | built | docs/status/milestones/m4b-subagents.md | | crates/harness-cli/src/commands/subagent.rs::run | R-12.3 |
+| M4b-8 | M4b | Subagent quality measured over repeated runs | built | evals/subagent/cases.json, evals/subagent/results/2026-10-27-micro.json | | evals/subagent/run.py::main | R-12.3 |
 
 ## Open requirements without a row above
 

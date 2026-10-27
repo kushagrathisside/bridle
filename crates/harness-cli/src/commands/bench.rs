@@ -32,6 +32,11 @@ const OPENCODE_STARTUP_SWITCHES: [(&str, &str); 4] = [
     ("OPENCODE_DISABLE_DEFAULT_PLUGINS", "1"),
     ("OPENCODE_DISABLE_LSP_DOWNLOAD", "1"),
 ];
+/// The package registry OpenCode's dependency install uses. OpenCode starts that install for the project's `.opencode`
+/// folder when the folder holds a plugin, and the start waits for it. The proxy is removed for benchmark runs, so the
+/// install reaches the registry directly and hangs. Pointing the registry at a closed loopback port makes the install
+/// fail after a bounded wait (about 70 s, measured 2026-10-27), and the start goes on. Nothing leaves the machine.
+const BLOCKED_REGISTRY: &str = "http://127.0.0.1:9/";
 /// The longest a start may take before the model is reached. Longer means the start stalled.
 const STARTUP_WATCHDOG: Duration = Duration::from_secs(300);
 /// Starts per task before the task counts as failed.
@@ -287,8 +292,9 @@ fn start_opencode(plan: &RunPlan<'_>, task: &Task, run_dir: &Path) -> Result<Chi
         .arg(format!("{} {PROTOCOL}", task.prompt))
         .current_dir(run_dir)
         .envs(OPENCODE_STARTUP_SWITCHES)
-        // Each run gets its own session database. A database shared with other OpenCode processes, or left locked by a
-        // killed run, made later starts wait without end (M10). The benchmark also stays out of the user's history.
+        .env("NPM_CONFIG_REGISTRY", BLOCKED_REGISTRY)
+        .env("BUN_CONFIG_REGISTRY", BLOCKED_REGISTRY)
+        // Each run gets its own session database, so runs share no state and stay out of the user's history.
         .env("OPENCODE_DB", run_dir.join("opencode.db"))
         .env_remove("HTTP_PROXY")
         .env_remove("HTTPS_PROXY")
@@ -603,5 +609,13 @@ mod tests {
         assert!(md.contains("| a | 1 | 1 | 0 |"), "{md}");
         assert!(md.contains("| t1 | debugging | a | yes |"), "{md}");
         assert!(md.contains("The sample is small"), "{md}");
+    }
+
+    #[test]
+    fn the_blocked_registry_is_loopback_so_nothing_leaves_the_machine() {
+        assert!(
+            BLOCKED_REGISTRY.starts_with("http://127.0.0.1:"),
+            "{BLOCKED_REGISTRY}"
+        );
     }
 }
