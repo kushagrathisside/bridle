@@ -76,6 +76,23 @@ is one the engine accepts. To run it: stop the main model (`agent models stop ma
 Without the deep model the test fails with a connection error (checked 2026-10-28), which is the intended result: it
 must not pass on a fallback. It has not been run against a served deep model yet.
 
+## Lifecycle status (R-45.2, 2026-10-28)
+
+`agent models status [slot]` prints one line per slot. The state comes from the PID record and, for a running
+process only, one health request (2 s timeout):
+
+- `unloaded`: no record (never started, or stopped).
+- `warming`: the process runs and its health endpoint does not answer 200 yet.
+- `ready`: the process runs and the health endpoint answers 200.
+- `error`: a record exists but its process is gone, or the PID now belongs to another program.
+
+Checked live on 2026-10-28: with no server running, all three slots report `unloaded`. A planted record with a dead PID
+reports `error` and names the command that starts the slot again. `ready` and `warming` are covered by unit tests of
+the mapping; a live check needs a GPU model running.
+
+Not reported: `loaded` (weights resident), `idle` (time since the last request) and `unloading` (a stop in progress).
+The command has no signal for them.
+
 ## Deviations
 
 - Reasoning budget 8192, not 16384. A 16K context cannot hold a 16K budget plus the prompt and an answer. The
@@ -85,10 +102,14 @@ must not pass on a fallback. It has not been run against a served deep model yet
 
 ## Not done
 
-- Escalation routing beyond the persistent-failure case. Only ESCALATE decisions from the rules and the micro model are
-  routed (see below). Architecture, research and high-complexity triggers (R-3.6, R-29.1) are not built.
-- Lifecycle states (R-45.2) are recorded only as running or stopped by PID.
-- Large deep (24K to 32K) is not benchmarked (R-3.5).
+- Escalation triggers beyond persistent failure. Only ESCALATE decisions from the rules and the micro model are routed
+  (see above). Architecture, research and high-complexity triggers (R-3.6, R-29.1) are not built. Each needs a
+  definition of the trigger (a keyword rule, a classifier, or a user mark) that has not been chosen; a deep call on a
+  guessed trigger would also swap the GPU model.
+- Lifecycle states `loaded`, `idle` and `unloading` (R-45.2) are not reported; see the lifecycle section above. Keeping
+  Qwen loaded and unloading it automatically (R-45.3) are not built.
+- Large deep (24K to 32K) is not benchmarked (R-3.5). This needs a 32K deep server config and a GPU swap from Qwen, which
+  the person runs; nothing was started here.
 
 ## Related
 

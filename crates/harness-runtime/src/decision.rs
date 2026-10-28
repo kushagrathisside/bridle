@@ -387,7 +387,11 @@ mod deep_live_tests {
             signals: &signals,
         };
         let primary = RulesDecisionEngine.decide(&input);
-        assert_eq!(primary.decision, Decision::Escalate, "the rules escalate a same failure");
+        assert_eq!(
+            primary.decision,
+            Decision::Escalate,
+            "the rules escalate a same failure"
+        );
 
         let result = engine.escalate(&input, primary);
         // A failed escalation carries the same prefix, so the check is that the label has no failure in it.
@@ -396,7 +400,10 @@ mod deep_live_tests {
             "the deep answer was not used: {}",
             result.provider
         );
-        assert!(result.model_reason.is_some(), "the deep model gave no reason");
+        assert!(
+            result.model_reason.is_some(),
+            "the deep model gave no reason"
+        );
         assert!(
             matches!(
                 result.decision,
