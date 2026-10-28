@@ -28,6 +28,15 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-28 (newest): condition C run, and the policy decision for condition D
+
+- Condition C (Qwen plus LFM on the harness condition, micro model on CPU): 5 of 6 passed (mean 189 s, 6.8 tool calls).
+  The one failure is `analyse-latency`. Results: `evals/bench/results/2026-10-28/micro.jsonl`; condition file
+  `evals/bench/conditions/micro.toml`.
+- Condition D decision: a GPU swap (Qwen out, Bonsai in, Qwen back) takes about 20 s per escalation. Bonsai on CPU takes about
+  48 s for the same request. The swap is faster, so D will use it. The swap is not implemented yet: it has to run outside the
+  20 s shim hook, and the 15 s deep cap must rise. Details in [milestones/m10-evaluation.md](milestones/m10-evaluation.md).
+
 ## 2026-10-28 (latest): M8 live gateway check passed
 
 - LiteLLM 1.106.4 gateway on `127.0.0.1:4000` in front of the main model (route `local-qwen`), started by a PowerShell
