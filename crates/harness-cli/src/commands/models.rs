@@ -30,6 +30,11 @@ const POLL_INTERVAL: Duration = Duration::from_millis(500);
 pub enum ModelsAction {
     /// List configured model slots.
     List,
+    /// Show each slot's server state: unloaded, warming, ready or error.
+    Status {
+        /// Slot to show (default: every configured slot).
+        slot: Option<String>,
+    },
     /// Start the local inference server for a slot.
     Serve {
         slot: String,
@@ -55,6 +60,7 @@ pub enum ModelsAction {
 pub fn run(app: &App, action: &ModelsAction) -> anyhow::Result<ExitCode> {
     match action {
         ModelsAction::List => Ok(list(app)),
+        ModelsAction::Status { slot } => status(app, slot.as_deref()),
         ModelsAction::Serve {
             slot,
             detach,
@@ -82,6 +88,83 @@ fn list(app: &App) -> ExitCode {
         );
     }
     ExitCode::SUCCESS
+}
+
+/// Where a slot's server stands, as seen from outside the process (R-45.2). `loaded`, `idle` and
+/// `unloading` need signals this command does not have (weights resident, time since the last
+/// request, a stop in progress), so they are not reported.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Lifecycle {
+    /// No server was started for the slot, or it was stopped.
+    Unloaded,
+    /// The server process runs but its health endpoint does not answer 200 yet.
+    Warming,
+    /// The server process runs and its health endpoint answers 200.
+    Ready,
+    /// A record exists but its process is gone, or the PID belongs to another program.
+    Error,
+}
+
+/// Maps the PID check and the health answer to a lifecycle state. `healthy` is only read for a
+/// running process.
+fn lifecycle(pid_state: Option<&RecordState>, healthy: bool) -> Lifecycle {
+    match pid_state {
+        None => Lifecycle::Unloaded,
+        Some(RecordState::Running) if healthy => Lifecycle::Ready,
+        Some(RecordState::Running) => Lifecycle::Warming,
+        Some(RecordState::Gone | RecordState::Reused(_)) => Lifecycle::Error,
+    }
+}
+
+/// `agent models status`: one line per slot. Only a running process is probed over HTTP.
+fn status(app: &App, slot: Option<&str>) -> anyhow::Result<ExitCode> {
+    let state = app.state_dir();
+    let slots: Vec<&str> = match slot {
+        Some(name) => {
+            check_slot_name(name)?;
+            slot_model(&app.config, name)?;
+            vec![name]
+        }
+        None => app.config.models.keys().map(String::as_str).collect(),
+    };
+    if slots.is_empty() {
+        println!("· no model slots configured (add [models.<slot>] to the config)");
+    }
+    for name in slots {
+        let model = slot_model(&app.config, name)?;
+        let record = read_record(&pid_path(&state, name))?;
+        let pid_state = record
+            .as_ref()
+            .map(|record| record_state(record, &expected_server_bin(&app.config, name)));
+        let healthy = pid_state == Some(RecordState::Running)
+            && launcher::is_healthy(&health_url(&model.endpoint));
+        let (mark, text) = match lifecycle(pid_state.as_ref(), healthy) {
+            Lifecycle::Unloaded => (Mark::Info, "unloaded".to_owned()),
+            Lifecycle::Warming => (
+                Mark::Warn,
+                "warming (health check does not answer 200 yet)".to_owned(),
+            ),
+            Lifecycle::Ready => (Mark::Ok, "ready".to_owned()),
+            Lifecycle::Error => {
+                let pid = record.as_ref().map_or(0, |record| record.pid);
+                let detail = match &pid_state {
+                    Some(RecordState::Reused(image)) => {
+                        format!("pid {pid} now belongs to `{image}`")
+                    }
+                    _ => format!("pid {pid} is gone"),
+                };
+                (
+                    Mark::Fail,
+                    format!(
+                        "error: {detail}; `{} models serve {name}` starts it again",
+                        identity::CLI_NAME
+                    ),
+                )
+            }
+        };
+        line(mark, name, text);
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 fn serve(app: &App, slot: &str, detach: bool, wait_secs: u64) -> anyhow::Result<ExitCode> {
@@ -779,5 +862,31 @@ hardware = "cpu"
             Path::new("/state/servers/main.pid")
         );
         assert_eq!(log_path(state, "main"), Path::new("/state/logs/main.log"));
+    }
+
+    #[test]
+    fn a_slot_without_a_record_is_unloaded() {
+        assert_eq!(lifecycle(None, false), Lifecycle::Unloaded);
+    }
+
+    #[test]
+    fn a_running_server_is_warming_until_it_answers_health() {
+        assert_eq!(
+            lifecycle(Some(&RecordState::Running), false),
+            Lifecycle::Warming
+        );
+        assert_eq!(
+            lifecycle(Some(&RecordState::Running), true),
+            Lifecycle::Ready
+        );
+    }
+
+    #[test]
+    fn a_record_whose_process_is_gone_or_reused_is_an_error() {
+        assert_eq!(lifecycle(Some(&RecordState::Gone), true), Lifecycle::Error);
+        assert_eq!(
+            lifecycle(Some(&RecordState::Reused("notepad.exe".into())), false),
+            Lifecycle::Error
+        );
     }
 }

@@ -441,7 +441,7 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-45.1 | CON | Do not assume Qwen 9B and Bonsai 27B coexist in VRAM | M5 | done: `agent models serve` refuses a second GPU server while one runs (live refusal) |
-| R-45.2 | REQ | Lifecycle states: loaded, warming, ready, idle, unloading, unloaded, error | M5 | partial: running or stopped, recorded by PID; the full lifecycle states are not built |
+| R-45.2 | REQ | Lifecycle states: loaded, warming, ready, idle, unloading, unloaded, error | M5 | partial: `agent models status` reports unloaded, warming, ready or error (PID record and health probe); loaded, idle and unloading are not reported |
 | R-45.3 | REQ | Configurable lifecycle (keep Qwen loaded, LFM CPU-resident, Bonsai on demand; unload Qwen before Bonsai if needed) | M5 | partial: the deep slot loads and unloads on demand; keeping Qwen loaded and unloading it automatically are not built |
 
 ## §46 CPU-resident LFM

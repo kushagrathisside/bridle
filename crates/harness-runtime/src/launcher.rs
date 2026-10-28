@@ -238,6 +238,14 @@ pub fn wait_until_healthy(
     }
 }
 
+/// One health request: `true` only when the server answers HTTP 200 now. Nothing is retried.
+pub fn is_healthy(health_url: &str) -> bool {
+    crate::http::local_agent(HEALTH_REQUEST_TIMEOUT)
+        .get(health_url)
+        .call()
+        .is_ok_and(|response| response.status().as_u16() == 200)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
