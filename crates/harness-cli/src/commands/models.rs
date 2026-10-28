@@ -301,6 +301,63 @@ fn stop(app: &App, slot: &str) -> anyhow::Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
+/// Whether a slot's server is running: its PID record names a live process of the server's program.
+pub(crate) fn is_running(app: &App, slot: &str) -> anyhow::Result<bool> {
+    check_slot_name(slot)?;
+    let Some(record) = read_record(&pid_path(&app.state_dir(), slot))? else {
+        return Ok(false);
+    };
+    Ok(record_state(&record, &expected_server_bin(&app.config, slot)) == RecordState::Running)
+}
+
+/// Starts a slot's server and returns once it answers health. Prints nothing: the escalation swap runs inside a hook,
+/// whose stdout carries the answer. A server that is already running is left alone.
+pub(crate) fn start_quiet(app: &App, slot: &str, wait: Duration) -> anyhow::Result<()> {
+    check_slot_name(slot)?;
+    if is_running(app, slot)? {
+        return Ok(());
+    }
+    let plan = plan_serve(&app.config, slot)?;
+    let state = app.state_dir();
+    let pid_file = pid_path(&state, slot);
+    let _ = fs::remove_file(&pid_file);
+    let log = log_path(&state, slot);
+    let mut child = launcher::spawn_server(&plan.bin, &plan.args, &log)
+        .with_context(|| format!("starting {}", plan.bin.display()))?;
+    if let Err(err) = write_record(&pid_file, child.id(), &plan.bin) {
+        let _ = child.kill();
+        bail!(
+            "cannot record the server pid in {}: {err}",
+            pid_file.display()
+        );
+    }
+    match launcher::wait_until_healthy(&plan.health_url, wait, POLL_INTERVAL, Some(&mut child)) {
+        Ok(_) => Ok(()),
+        Err(err) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = fs::remove_file(&pid_file);
+            bail!(
+                "`{slot}` did not become healthy: {err} (see {})",
+                log.display()
+            );
+        }
+    }
+}
+
+/// Stops a slot's server and prints nothing. A record whose process is gone is removed.
+pub(crate) fn stop_quiet(app: &App, slot: &str) -> anyhow::Result<()> {
+    check_slot_name(slot)?;
+    let pid_file = pid_path(&app.state_dir(), slot);
+    if let Some(record) = read_record(&pid_file)? {
+        if record_state(&record, &expected_server_bin(&app.config, slot)) == RecordState::Running {
+            terminate(record.pid)?;
+        }
+        let _ = fs::remove_file(&pid_file);
+    }
+    Ok(())
+}
+
 fn manifest_command(app: &App, slot: Option<&str>, no_hash: bool) -> anyhow::Result<ExitCode> {
     app.require_valid_config()?;
     let slots: Vec<&str> = match slot {
@@ -399,7 +456,7 @@ fn plan_serve(config: &Config, slot: &str) -> anyhow::Result<ServePlan> {
 }
 
 /// `GET <root>/health`, where the root is the endpoint without its `/v1` suffix.
-fn health_url(endpoint: &str) -> String {
+pub(crate) fn health_url(endpoint: &str) -> String {
     let root = endpoint.trim_end_matches('/');
     let root = root.strip_suffix("/v1").unwrap_or(root);
     format!("{root}/health")

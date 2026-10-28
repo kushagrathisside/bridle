@@ -28,6 +28,16 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-28 (newest-2): GPU swap for condition D built and checked live
+
+- The escalation to the deep slot now swaps GPU models when the deep slot is not serving: the GPU slots that run are parked, Bonsai
+  starts, the call runs, Bonsai stops, and the parked slots start again. Built in `crates/harness-cli/src/workflow.rs`, with
+  quiet start and stop helpers in `crates/harness-cli/src/commands/models.rs`.
+- Timeouts: deep call cap 30 s (was 15 s); shim hook limit 150 s (was 20 s).
+- Checks: the unit test `only_the_other_gpu_slots_are_parked_for_a_deep_call` passes; the live swap test passes in 15.0 s;
+  condition D on `analyse-latency` passes but did not escalate, so the swap did not run in the task.
+- Still open: a task-level D result with an escalation. Result files: `evals/bench/results/2026-10-28/deep.jsonl`.
+
 ## 2026-10-28 (newest): condition C run, and the policy decision for condition D
 
 - Condition C (Qwen plus LFM on the harness condition, micro model on CPU): 5 of 6 passed (mean 189 s, 6.8 tool calls).

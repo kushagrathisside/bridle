@@ -139,7 +139,19 @@ Two changes are needed before D can run as a task condition. Neither is in the c
 Bonsai on CPU is not used. Its speed on this machine makes every escalation slower than the 15 s cap, so it would fall back to the
 rules every time.
 
-D has not been run as a task condition. It needs the swap in the escalation path, which is the next implementation step.
+The swap is built (`with_deep_on_gpu` in `crates/harness-cli/src/workflow.rs`). The deep slot starts on the GPU when a GPU
+deep call is due, the other GPU slots are parked, and afterwards they start again. The deep call cap is now 30 s, and the shim's
+hook limit is 150 s.
+
+Checks run on 2026-10-28:
+
+- Live swap test `a_deep_escalation_swaps_the_gpu_model_and_restores_it` (ignored; run by hand): passed in 15.0 s. Qwen was
+  parked, Bonsai reported healthy, Qwen restarted, and Bonsai was stopped.
+- Condition D (`evals/bench/conditions/deep.toml`) on one task, `analyse-latency`: passed in 196 s with 2 tool calls. No escalation
+  happened in that run, so the swap was not exercised by the task. This timing is an ordinary task, not a swap timing.
+
+D still has no task-level result with an escalation. Each escalation costs about 17 to 20 s: the swap (15 s measured) plus
+the deep answer (about 2 s measured). The task-level cost needs a task where an escalation actually fires.
 
 ## What remains
 

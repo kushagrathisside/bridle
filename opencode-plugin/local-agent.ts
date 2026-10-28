@@ -16,7 +16,9 @@ import type { Plugin } from "@opencode-ai/plugin"
 import { spawn } from "node:child_process"
 
 const AGENT_BIN: string = process.env.LOCAL_AGENT_BIN || "__AGENT_BIN__"
-const HOOK_TIMEOUT_MS = 20_000
+// A deep escalation swaps GPU models inside the tool-before hook, which takes about 20 s in all (measured 2026-10-28).
+// The limit leaves room for two swap waits of 45 s and the deep answer, and still gives up before OpenCode does.
+const HOOK_TIMEOUT_MS = 150_000
 
 // Only low-frequency lifecycle events are forwarded; streaming updates would spawn a process
 // per token.
