@@ -150,6 +150,8 @@ Checks run on 2026-10-28:
 - Condition D (`evals/bench/conditions/deep.toml`) on one task, `analyse-latency`, two runs: passed in 196 s (2 tool calls) and
   in 327 s (17 tool calls, 9 blocked). Neither run escalated (`escalation_count` 0), so neither exercised the swap. Result files:
   `evals/bench/results/2026-10-28/deep.jsonl` and `deep2.jsonl`.
+- Condition D on `design-auth-schema`, a new seven-category task (not yet in the corpus): passed in 176 s (6 tool calls, 2 blocked).
+  No escalation happened, so the swap did not run in this task either. Result file: `deep3.jsonl`.
 
 D still has no task-level result with an escalation. Each escalation costs about 17 to 20 s: the swap (15 s measured) plus
 the deep answer (about 2 s measured). The task-level cost needs a task where an escalation actually fires.
