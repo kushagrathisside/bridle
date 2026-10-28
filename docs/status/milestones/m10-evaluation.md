@@ -147,8 +147,9 @@ Checks run on 2026-10-28:
 
 - Live swap test `a_deep_escalation_swaps_the_gpu_model_and_restores_it` (ignored; run by hand): passed in 15.0 s. Qwen was
   parked, Bonsai reported healthy, Qwen restarted, and Bonsai was stopped.
-- Condition D (`evals/bench/conditions/deep.toml`) on one task, `analyse-latency`: passed in 196 s with 2 tool calls. No escalation
-  happened in that run, so the swap was not exercised by the task. This timing is an ordinary task, not a swap timing.
+- Condition D (`evals/bench/conditions/deep.toml`) on one task, `analyse-latency`, two runs: passed in 196 s (2 tool calls) and
+  in 327 s (17 tool calls, 9 blocked). Neither run escalated (`escalation_count` 0), so neither exercised the swap. Result files:
+  `evals/bench/results/2026-10-28/deep.jsonl` and `deep2.jsonl`.
 
 D still has no task-level result with an escalation. Each escalation costs about 17 to 20 s: the swap (15 s measured) plus
 the deep answer (about 2 s measured). The task-level cost needs a task where an escalation actually fires.
