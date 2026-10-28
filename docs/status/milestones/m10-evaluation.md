@@ -86,10 +86,44 @@ Checking it needs repeated runs and the text of the blocked call, which the even
 The earlier full run (before the registry fix) reported minimal 1 of 6 and harness 0 of 6. Those runs stalled before the
 model; they are not comparable with this run and are not reported as results.
 
+## Repeat run (2026-10-28)
+
+The same six tasks, both conditions, run again on the same main model (Qwen3.5 9B, served on port 8001), so the two
+full runs can be compared. Results: `evals/bench/results/2026-10-28/` (`minimal/`, `harness/`, `report.md`).
+
+| Task | Minimal | Harness | Tool calls (minimal / harness) |
+|---|---|---|---|
+| analyse-latency | fail | pass | 4 / 27 |
+| comprehend-stock-path | fail | pass | 3 / 8 |
+| debug-range-sum | fail | pass | 3 / 6 |
+| implement-fizzbuzz | pass | fail | 4 / 19 |
+| refactor-rename | pass | pass | 10 / 11 |
+| repair-wrong-test | pass | pass | 4 / 4 |
+
+Totals: minimal 3 of 6, harness 5 of 6. Across both full runs, the totals are minimal 9 of 12 and harness 9 of 12. Per-task results change between runs; the next section explains why this sample cannot settle that.
+
+Findings from the repeat run, read from the run logs:
+
+- **Minimal failures came from a policy block on a harmless command.** In all three minimal failures the model ran an `awk`
+  command whose `$2` looked like a shell expansion. The path check refused it as an unresolved path
+  (`PRIVILEGED, unresolved_path`). The model then could not write the result file that the verify script reads. The policy did what it is written to do, but
+  this is a false positive on a plain `awk` field reference. Fixing it changes the policy, so it is not changed here.
+- **The harness fizzbuzz failure came from a false positive and a retry limit.** The path check refused a `*.py` glob with
+  "path escapes the workspace through a symlink or junction". No symlink or junction exists in that folder (checked). The
+  model then hit the `implementation_retries` loop limit and stopped, with the test still failing. The model also built
+  one shell command with backslashes removed, which the path check refused as an alternate data stream.
+- **Harness used more tool calls and spent more of them blocked.** Mean 12.5 calls and 4.8 blocked, against 4.7 and 0.8 for
+  minimal. Mean wall time 257 s (harness) and 171 s (minimal). Mean context 44640 bytes (harness) and 6346 bytes (minimal).
+
+The sample is still six tasks, two runs each. The two conditions have the same pass count across both runs (9 of 12 each),
+so these runs do not separate them.
+
 ## What remains
 
-- More runs per task. One run per task cannot separate the conditions from noise. Repeated runs are the next step.
+- Corpus size. Six tasks is too few to separate the conditions. More tasks need choosing, each with a verify script. That
+  choice is yours.
 - Tokens, GPU memory and first-pass success are not measured. Those are open (R-39.4).
+- The path-check false positives above (`awk` with `$n`; a `*.py` glob) need a decision on the policy before the next run.
 - The per-run start includes about 70 s waiting for the blocked registry. The benchmark time includes that wait.
 - A decision for the person: letting OpenCode use the proxy for its start (faster, about 16 s, but start-up traffic
   leaves the machine). Not taken; see the stall section.

@@ -5,7 +5,7 @@ the main model on the GPU, its reasoning budget is raised, and it is checked and
 Its escalation routing (R-3.6, R-18.1) was added later, as M5-3 (2026-10-27); see the section below.
 
 > **Status:** Done and committed as `53724d4` (2026-10-26). Gate green (627 tests). Live results below. Escalation routing
-> added on 2026-10-27 (M5-3, partial: built and tested, a live escalation not yet run).
+> added on 2026-10-27. Its live check passed on 2026-10-28 against the served deep model (M5-3, built).
 
 ## Gate and what was checked
 
@@ -67,14 +67,15 @@ instead of the person (R-3.6, R-18.1). The rules are as follows, all checked in 
 
 Checked by unit tests: the trigger (`escalation_due`), the deep answer replacing the escalated decision, the failure
 path keeping it, the cap, the missing deep slot, and that only ESCALATE is escalated. The deep model's own answers were
-measured before (the A/B above). Not yet run: an escalation from a real stalled loop in a live session.
+measured before (the A/B above). An escalation from a real stalled loop in a live session is not run; the live check below is.
 
 A live check of the deep answer is in `crates/harness-runtime/src/decision.rs`, the ignored test
 `the_deep_slot_answers_an_escalated_loop`. It sends a same-failure escalation to the deep slot and checks that the answer
 is one the engine accepts. To run it: stop the main model (`agent models stop main`), serve the deep model
 (`agent models serve deep --detach`), then run the test with `--ignored`. `BRIDLE_DEEP_URL` overrides the endpoint.
 Without the deep model the test fails with a connection error (checked 2026-10-28), which is the intended result: it
-must not pass on a fallback. It has not been run against a served deep model yet.
+must not pass on a fallback. Run on 2026-10-28 with the deep model served (`ready`, port 8003): passed, the deep answer
+was used and its label carried no failure.
 
 ## Lifecycle status (R-45.2, 2026-10-28)
 
@@ -88,7 +89,7 @@ process only, one health request (2 s timeout):
 
 Checked live on 2026-10-28: with no server running, all three slots report `unloaded`. A planted record with a dead PID
 reports `error` and names the command that starts the slot again. `ready` and `warming` are covered by unit tests of
-the mapping; a live check needs a GPU model running.
+the mapping. Live on 2026-10-28, the deep model reported `ready` through the same health check. `warming` is still not seen live.
 
 Not reported: `loaded` (weights resident), `idle` (time since the last request) and `unloading` (a stop in progress).
 The command has no signal for them.
