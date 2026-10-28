@@ -4,8 +4,8 @@ M8 adds LiteLLM as an optional gateway for model traffic (R-8.3, R-7.2, R-37.1).
 decision providers through it, and the agent's endpoint policy covers the gateway like any other slot. The design is in
 [ADR-0008](../../decisions/0008-litellm-is-an-optional-gateway-behind-the-policy.md).
 
-> **Status:** Built and tested with a mock (2026-10-27). The live gateway check is **not run yet**: starting a local gateway
-> was refused by the session's permission check, and the test waits for your approval. See "Live check" below.
+> **Status:** Built and tested with a mock (2026-10-27). The live gateway check passed on 2026-10-28 with a LiteLLM 1.106.4
+> gateway on `127.0.0.1:4000` in front of the main model. See "Live check" below.
 
 ## What was built
 
@@ -39,9 +39,16 @@ Planned: a LiteLLM proxy (1.106.4, installed in a Windows virtual environment) i
 (Qwen3.5-9B on port 8001), with the route `local-qwen`. The steps are: start the model, start the gateway on
 `127.0.0.1:4000`, run `agent models health gateway`, then run the ignored test with `--ignored`.
 
-**Status: not run.** Starting the gateway was refused by the session's permission check ("expose local services"). The
-step is left for the user to approve or run. Nothing was started outside that refusal, and the model server was not
-restarted for it.
+**Status: passed (2026-10-28).** The gateway was installed into a Windows virtual environment at `D:\llm-gateway\.venv`
+and started by `D:\llm-gateway\start-litellm-gateway.ps1`, which the person ran in PowerShell. Results:
+
+- `GET /health/liveliness` on `127.0.0.1:4000`: HTTP 200.
+- A chat completion with model `local-qwen` and the gateway key reached the main model. The reply was cut at 20 tokens
+  because the model's reasoning used the budget; the route itself worked.
+- The ignored test `a_gateway_slot_completes_a_request` passed with the gateway running.
+
+Not run: `agent models health gateway` (the planned step), and any cloud route. The gateway key in the script is a local
+test value for loopback only. Its config is `D:\llm-gateway\litellm-config.yaml`.
 
 ## Limits
 
