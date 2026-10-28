@@ -1,0 +1,1 @@
+{"condition":"deep","task":"analyse-latency","category":"experiment_analysis","success":true,"verify_exit":0,"opencode_exit":0,"timed_out":false,"wall_s":327.2238271,"tool_calls":17,"blocked_calls":9,"loop_refusals":0,"context_bytes_before":55187,"context_bytes_after":55187,"attempts":1}
