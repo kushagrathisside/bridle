@@ -21,8 +21,9 @@ pub const PROVIDER_NAME: &str = "local_lfm";
 /// recorded decisions with this label counts the escalations a task has used (R-18.1).
 pub const ESCALATED_PREFIX: &str = "escalated to deep";
 /// The longest time a deep escalation may take. The hook that asks has a limit of its own (the shim gives up after
-/// 20 s and blocks the call), so the deep slot's own timeout is not used for this call.
-pub const ESCALATION_TIMEOUT_MS: u64 = 15_000;
+/// 150 s and blocks the call), so the deep slot's own timeout is not used for this call. A GPU swap takes about 20 s
+/// and the deep answer about 2 s (measured 2026-10-28); 30 s leaves room for a longer answer.
+pub const ESCALATION_TIMEOUT_MS: u64 = 30_000;
 /// The longest action text sent to the model.
 const MAX_ACTION: usize = 120;
 

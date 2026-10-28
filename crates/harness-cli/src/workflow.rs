@@ -5,8 +5,10 @@
 //! only after the M2 policy has allowed the call, so the policy keeps the final say. The OpenCode payload
 //! mapping lives here and in `host::opencode_v1`; the rules and the records live in `harness-core`.
 
+use std::time::Duration;
+
 use anyhow::Result;
-use harness_core::config::{DecisionProviderKind, ModelRole};
+use harness_core::config::{Config, DecisionProviderKind, Hardware, ModelRole};
 use harness_core::decision::{
     DecisionEngine, DecisionInput, DecisionResult, ReasonCode, RulesDecisionEngine, escalation_due,
     refuses,
@@ -19,12 +21,14 @@ use harness_core::models::ModelRegistry;
 use harness_core::task::TaskState;
 use harness_runtime::decision::{ESCALATED_PREFIX, ESCALATION_TIMEOUT_MS, LfmEngine};
 use harness_runtime::jev::JevEngine;
+use harness_runtime::launcher;
 use harness_runtime::mcp::record::is_verification_tool;
 use harness_runtime::providers::provider_for;
 use harness_runtime::state::{DecisionRecord, StateDir};
 use serde_json::Value;
 
 use crate::app::App;
+use crate::commands::models;
 
 /// The prefix OpenCode adds to MCP tool names.
 const MCP_PREFIX: &str = "local-agent_";
@@ -212,9 +216,15 @@ fn decide_primary(app: &App, input: &DecisionInput<'_>) -> DecisionResult {
     RulesDecisionEngine.decide(input)
 }
 
+/// How long the deep slot may take to answer health after it starts, and how long a parked slot may take to answer
+/// health again. Both run inside the hook, whose limit is 150 s in the shim (see `opencode-plugin/local-agent.ts`).
+const DEEP_START_WAIT: Duration = Duration::from_secs(45);
+const PARKED_RESTORE_WAIT: Duration = Duration::from_secs(45);
+
 /// Sends a due escalation to the deep slot (R-3.6, R-18.1). Routing must be on, the task must have escalations left,
-/// and a deep slot must be defined (validation V39). The deep call has a shorter timeout than the slot's: the hook
-/// that asks has a limit of its own. Any failure keeps the escalated decision, which goes to the person.
+/// and a deep slot must be defined (validation V39). When the deep slot runs on the GPU and is not serving, the GPU
+/// slots that run are parked for the call and started again afterwards (R-45.1, R-45.3). Any failure keeps the escalated
+/// decision, which goes to the person.
 fn escalate_if_due(
     app: &App,
     input: &DecisionInput<'_>,
@@ -229,22 +239,70 @@ fn escalate_if_due(
         return primary;
     }
     let registry = ModelRegistry::from_config(&app.config);
-    let Some((_, deep)) = registry.first_with_role(ModelRole::DeepReasoning) else {
+    let Some((deep_name, deep)) = registry.first_with_role(ModelRole::DeepReasoning) else {
         return primary;
     };
+    let deep_name = deep_name.to_owned();
     let mut deep = deep.clone();
     deep.timeout_ms = deep.timeout_ms.min(ESCALATION_TIMEOUT_MS);
     let env = |name: &str| std::env::var(name).ok();
-    match provider_for(&deep, &env) {
-        Ok(provider) => LfmEngine::new(provider).escalate(input, primary),
-        Err(error) => DecisionResult {
-            provider: format!(
-                "{ESCALATED_PREFIX} failed ({error}); kept {}",
-                primary.provider
-            ),
-            ..primary
-        },
+    let provider = match provider_for(&deep, &env) {
+        Ok(provider) => provider,
+        Err(error) => return failed_escalation(primary, &error.to_string()),
+    };
+    let needs_swap = deep.hardware == Hardware::Gpu
+        && !launcher::is_healthy(&models::health_url(&deep.endpoint));
+    if !needs_swap {
+        return LfmEngine::new(provider).escalate(input, primary);
     }
+    let fallback = primary.clone();
+    match with_deep_on_gpu(app, &deep_name, || {
+        LfmEngine::new(provider).escalate(input, primary)
+    }) {
+        Ok(answer) => answer,
+        Err(error) => failed_escalation(fallback, &error.to_string()),
+    }
+}
+
+/// The escalated decision kept, labelled with the reason the escalation did not happen.
+fn failed_escalation(primary: DecisionResult, reason: &str) -> DecisionResult {
+    DecisionResult {
+        provider: format!(
+            "{ESCALATED_PREFIX} failed ({reason}); kept {}",
+            primary.provider
+        ),
+        ..primary
+    }
+}
+
+/// The GPU slots other than `deep`, in name order: the ones a deep call on the GPU must park.
+fn other_gpu_slots(config: &Config, deep: &str) -> Vec<String> {
+    config
+        .models
+        .iter()
+        .filter(|(name, model)| name.as_str() != deep && model.hardware == Hardware::Gpu)
+        .map(|(name, _)| name.clone())
+        .collect()
+}
+
+/// Runs `call` with the deep slot serving. The running GPU slots are stopped, the deep slot starts, and afterwards the
+/// deep slot stops and the parked slots start again, whatever `call` returned. Nothing is printed: the hook's stdout
+/// carries the answer. Returns the error when the deep slot did not start; `call` is then not run.
+fn with_deep_on_gpu<T>(app: &App, deep: &str, call: impl FnOnce() -> T) -> anyhow::Result<T> {
+    let mut parked = Vec::new();
+    for slot in other_gpu_slots(&app.config, deep) {
+        // A slot that cannot be stopped stays where it is; the slots already parked are still restored below.
+        if models::is_running(app, &slot).unwrap_or(false) && models::stop_quiet(app, &slot).is_ok()
+        {
+            parked.push(slot);
+        }
+    }
+    let answer = models::start_quiet(app, deep, DEEP_START_WAIT).map(|()| call());
+    let _ = models::stop_quiet(app, deep);
+    for slot in &parked {
+        let _ = models::start_quiet(app, slot, PARKED_RESTORE_WAIT);
+    }
+    answer
 }
 
 /// The escalations a task has used: every decision that went to the deep slot, successful or not.
@@ -502,6 +560,65 @@ mod tests {
         }))
         .expect("test model config is valid");
         app.config.models.insert("deep".to_owned(), deep);
+    }
+
+    #[test]
+    fn only_the_other_gpu_slots_are_parked_for_a_deep_call() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut app = app(dir.path());
+        for (name, role, hardware) in [
+            ("main", "engineer", "gpu"),
+            ("micro", "decision", "cpu"),
+            ("deep", "deep_reasoning", "gpu"),
+        ] {
+            let model: harness_core::config::ModelConfig = serde_json::from_value(json!({
+                "provider": "mock",
+                "id": name,
+                "role": role,
+                "endpoint": "http://127.0.0.1:9/v1",
+                "context": 8192,
+                "hardware": hardware,
+            }))
+            .expect("test model config is valid");
+            app.config.models.insert(name.to_owned(), model);
+        }
+        // The CPU micro model stays where it is; the GPU main model is parked while the deep slot runs.
+        assert_eq!(
+            other_gpu_slots(&app.config, "deep"),
+            vec!["main".to_owned()]
+        );
+    }
+
+    /// Live check of the escalation swap (2026-10-28). Needs the main model served, the environment naming the machine's
+    /// model and runtime folders, and `BRIDLE_SWAP_WORKSPACE` naming a workspace whose config has launch sections for
+    /// `main` and `deep`. It stops and restarts the main model, so it is run by hand.
+    #[test]
+    #[ignore = "needs the main model served and a workspace with launch sections"]
+    fn a_deep_escalation_swaps_the_gpu_model_and_restores_it() {
+        let workspace = std::env::var("BRIDLE_SWAP_WORKSPACE").expect("set BRIDLE_SWAP_WORKSPACE");
+        let app =
+            App::load(None, Some(std::path::Path::new(&workspace))).expect("the workspace loads");
+        assert!(
+            models::is_running(&app, "main").expect("main's record reads"),
+            "the main model must be running before the swap"
+        );
+        let deep_endpoint = app.config.models["deep"].endpoint.clone();
+        let deep_answered = with_deep_on_gpu(&app, "deep", || {
+            launcher::is_healthy(&models::health_url(&deep_endpoint))
+        })
+        .expect("the swap runs");
+        assert!(
+            deep_answered,
+            "the deep slot answered health while main was parked"
+        );
+        assert!(
+            models::is_running(&app, "main").expect("main's record reads"),
+            "main is started again after the swap"
+        );
+        assert!(
+            !models::is_running(&app, "deep").expect("deep's record reads"),
+            "deep is stopped after the swap"
+        );
     }
 
     fn same_failure() -> Vec<LoopSignal> {
