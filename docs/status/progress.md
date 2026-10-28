@@ -28,6 +28,20 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-28: CI fix: secret names are denied on every platform
+
+- CI run `40647169565` on `c7bbb3c` failed on `ubuntu-latest` only. Three adversarial cases were allowed on Linux:
+  `.env ` (trailing space), `git show HEAD:.env` and `git -C . show :.env`. Windows passed.
+- Cause: the secret-name check ran on the whole word, so `HEAD:.env` was not seen as `.env`, and Linux keeps a trailing
+  space in a name. On Windows the path guard's alternate-stream rule caught the colon, and the guard's Windows rules
+  dropped the space. The verdict depended on the host.
+- Fix: `may_name_secret` in `crates/harness-core/src/security/tool_policy.rs` judges each `:`-separated piece with
+  trailing spaces and dots dropped, on every platform. Test `secret_names_are_denied_on_every_platform_whatever_the_host_drops_or_adds`.
+- Verified on Linux (WSL, same commands as CI, `--locked`): `cargo fmt --check`, `cargo clippy --workspace --all-targets
+  -- -D warnings` (no diagnostics), `cargo test --workspace` (all pass, with the proxy variables unset). Verified on
+  Windows: `cargo test --workspace` passes.
+- Note: three Jev tests fail in a shell with a proxy set (`CONNECT proxy failed`). They pass without it, as on CI.
+
 ## 2026-10-27 (later): subagent quality measured, escalation routing (M5-3), the M10 stall explained
 
 - Subagent quality (M4b-8): nine questions, three runs each, against the micro model. 24 of 27 answers passed. The one

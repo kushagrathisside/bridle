@@ -537,7 +537,14 @@ fn unescape_shell_word(word: &str) -> String {
 /// Whether a path, as named, may be a secret file: the secret names of `is_secret_file`, or a Windows short
 /// (8.3) name such as `ENV~1`, which can address a file without naming it (M9).
 fn may_name_secret(path: &str) -> bool {
-    is_secret_file(Path::new(path)) || glob_may_match_secret(path) || is_short_name(path)
+    // A `:` can separate a git revision from a path (`HEAD:.env`) or name an alternate stream, and
+    // Windows drops trailing spaces and dots from a name. Each `:`-separated piece is judged with
+    // those dropped, on every platform, so the verdict does not depend on the host the hook runs on.
+    is_short_name(path)
+        || path.split(':').any(|piece| {
+            let named = piece.trim_end_matches([' ', '.']);
+            is_secret_file(Path::new(named)) || glob_may_match_secret(named)
+        })
 }
 
 /// Whether a path has a component with `~` followed by a digit, the form of a Windows short name.
@@ -884,6 +891,25 @@ mod tests {
         assert_eq!(p.evaluate(&shell("cat ENV~1")).rule, "secret_file");
         // A tilde without a digit is an ordinary name.
         assert_ne!(p.evaluate(&read("a~b.txt")).rule, "secret_file");
+    }
+
+    #[test]
+    fn secret_names_are_denied_on_every_platform_whatever_the_host_drops_or_adds() {
+        // Linux keeps a trailing space and treats `HEAD:.env` as a plain name; Windows drops the
+        // space and refuses the colon. Both must be denied everywhere.
+        for name in [
+            ".env ",
+            ".env.",
+            "HEAD:.env",
+            ":.env",
+            "notes.txt:.env",
+            "C:\\u\\.ssh\\id_rsa",
+        ] {
+            assert!(may_name_secret(name), "{name} must be denied");
+        }
+        for name in ["HEAD:README.md", "readme.txt ", "src/main.rs"] {
+            assert!(!may_name_secret(name), "{name} must stay allowed");
+        }
     }
 
     #[test]
