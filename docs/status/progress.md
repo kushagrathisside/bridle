@@ -28,6 +28,15 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-28 (latest): M8 live gateway check passed
+
+- LiteLLM 1.106.4 gateway on `127.0.0.1:4000` in front of the main model (route `local-qwen`), started by a PowerShell
+  script in `D:\llm-gateway`. The script needed UTF-8 set for Python (the LiteLLM banner failed on the Windows code page).
+- Results: liveliness 200; a completion through `local-qwen` reached Qwen; the ignored test
+  `a_gateway_slot_completes_a_request` passed. Not run: `agent models health gateway`.
+- M8-4 is now built. Checker: built 60, partial 4, open 2.
+- Open for D10: the A to F matrix. Conditions E and F need Jev access, and D needs Bonsai and Qwen loaded together.
+
 ## 2026-10-28 (later): M5 live, M10 repeat run, M7 and M8 blocked on the person
 
 - M5-3 live: the ignored test `the_deep_slot_answers_an_escalated_loop` passed with the deep model served (`ready`).
