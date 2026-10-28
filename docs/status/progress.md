@@ -28,6 +28,18 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-28 (later): M5 live, M10 repeat run, M7 and M8 blocked on the person
+
+- M5-3 live: the ignored test `the_deep_slot_answers_an_escalated_loop` passed with the deep model served (`ready`).
+  The lifecycle status showed `ready` for that server. `warming` was not seen live.
+- M10 repeat run, same six tasks and both conditions: minimal 3 of 6, harness 5 of 6. Across both full runs each condition
+  is 9 of 12. Findings: three minimal failures and one harness failure came from path-check false positives (a plain
+  `awk` with `$2`; a `*.py` glob). The harness fizzbuzz run then hit the retry limit. Results:
+  `evals/bench/results/2026-10-28/`. Details in [milestones/m10-evaluation.md](milestones/m10-evaluation.md).
+- M10 is not finished: corpus size, and the tokens, GPU memory and first-pass measures, need a decision.
+- M7-5 (live Jev) needs a Jev endpoint and an API key from you. M8-4 (live LiteLLM gateway) needs LiteLLM installed and
+  running on port 4000; it is not installed here.
+
 ## 2026-10-28: CI fix: secret names are denied on every platform
 
 - CI run `40647169565` on `c7bbb3c` failed on `ubuntu-latest` only. Three adversarial cases were allowed on Linux:
