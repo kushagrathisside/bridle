@@ -118,6 +118,29 @@ Findings from the repeat run, read from the run logs:
 The sample is still six tasks, two runs each. The two conditions have the same pass count across both runs (9 of 12 each),
 so these runs do not separate them.
 
+## Condition D: policy decision (2026-10-28)
+
+Condition D is Qwen plus LFM plus Bonsai. One GPU model runs at a time (R-45.1), so Bonsai cannot sit beside Qwen on the GPU.
+Two ways to run D were timed on the same escalation request (151 to 236 prompt tokens, 28 output tokens, the length of a
+decision answer):
+
+| Approach | Measured | Per escalation |
+|---|---|---|
+| Bonsai on CPU, Qwen stays on GPU | 48.1 s (236 prompt tokens at 8.1 tok/s, 28 output at 1.43 tok/s) | about 48 s |
+| GPU swap: stop Qwen, serve Bonsai, answer, stop Bonsai, serve Qwen | stop Qwen 1 s; Bonsai healthy 11.1 s; answer 1.8 s (33.5 tok/s); stop Bonsai 0.4 s; Qwen healthy 6.0 s | about 20 s |
+
+Decision: the GPU swap is the faster approach, about 2.4 times faster per escalation, so D uses the swap.
+
+Two changes are needed before D can run as a task condition. Neither is in the code yet:
+
+- The swap cannot run inside the `tool_before` hook. The shim gives each hook 20 s (`HOOK_TIMEOUT_MS` in `opencode-plugin/local-agent.ts`), and a timed-out `tool_before` fails closed, which blocks the tool call. The hook limit must be raised to at least 30 s for an escalation, or the swap must run outside the hook.
+- The deep call is capped at 15 s (`ESCALATION_TIMEOUT_MS`). A swap-based escalation needs about 2 s for the answer and about 20 s for the swap, so the cap must be raised.
+
+Bonsai on CPU is not used. Its speed on this machine makes every escalation slower than the 15 s cap, so it would fall back to the
+rules every time.
+
+D has not been run as a task condition. It needs the swap in the escalation path, which is the next implementation step.
+
 ## What remains
 
 - Corpus size. Six tasks is too few to separate the conditions. More tasks need choosing, each with a verify script. That
