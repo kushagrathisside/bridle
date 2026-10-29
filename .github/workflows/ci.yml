@@ -1,5 +1,5 @@
-# Continuous integration (M11). Runs the same gate as the project's local check: formatting, clippy with warnings denied,
-# the workspace tests, the shim typecheck, and two repository checks. GPU runs and the benchmark stay manual (D2).
+# Continuous integration. Runs formatting, clippy with warnings denied, the workspace tests, the shim typecheck and
+# two repository checks. GPU runs and the benchmark are run by hand on the machine that has the model weights.
 name: ci
 
 on:
@@ -40,12 +40,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: No model weights in the repository (AC-R4)
+      - name: No model weights in the repository
         run: |
           if git ls-files | grep -E '\.(gguf|safetensors|bin|pt|onnx)$'; then
             echo "model weights are tracked"; exit 1
           fi
-      - name: Third-party licence list is current (R-52.1)
+      - name: Third-party licence list is current
         run: |
           python3 scripts/third_party_licenses.py
           git diff --exit-code THIRD_PARTY_LICENSES.md
