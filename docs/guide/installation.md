@@ -4,8 +4,8 @@ This page takes you from a clean Windows machine to a project that runs OpenCode
 the `main` model slot. It is for an engineer setting up release 1. It assumes you can run commands in a Windows
 shell and have downloaded the model weights listed in [models.md](models.md).
 
-> **Status:** Release 1 (native Windows), harness milestones M0 to M2. Verified on one machine (Windows 11, RTX 4060
-> Laptop 8 GB, 16 GB RAM); other setups are not tested. End-to-end runs verified on 2026-10-21 and 2026-10-22.
+> **Status:** Release 1 (native Windows). Verified on one machine (Windows 11, RTX 4060 Laptop 8 GB, 16 GB RAM); other
+> setups are not tested. End-to-end runs verified on 2026-10-21 and 2026-10-22.
 
 ## Prerequisites
 
@@ -20,20 +20,21 @@ shell and have downloaded the model weights listed in [models.md](models.md).
 | Python | 3.13 on PATH | used by the example project's tests |
 
 The `deep` slot (Ternary Bonsai 2 27B) needs the PrismML llama.cpp fork (`prism-b10787-73bfe6c`, CUDA 12.4). The
-`deep` slot (M5) needs the fork; the harness runs without it, and the deep slot is then unavailable.
+harness runs without the fork, and the deep slot is then unavailable.
 
 ## Directory layout
 
-Place the files as follows. Entries marked M4 or M5 are for the micro and deep slots, which run only when their weights and runtimes are present and configured.
+Place the files as follows. The `micro` and `deep` entries are for the micro and deep slots, which run only when their
+weights and runtimes are present and configured.
 
 ```text
 D:\models\Qwen3.5-9B\Qwen3.5-9B-Q4_K_M.gguf
-D:\models\LFM2.5-1.2B-Thinking\LFM2.5-1.2B-Thinking-Q4_K_M.gguf          (M4)
-D:\models\Ternary-Bonsai-2-27B\Ternary-Bonsai-2-27B-PTQ1_0.gguf          (M5)
+D:\models\LFM2.5-1.2B-Thinking\LFM2.5-1.2B-Thinking-Q4_K_M.gguf
+D:\models\Ternary-Bonsai-2-27B\Ternary-Bonsai-2-27B-PTQ1_0.gguf
 D:\runtimes\llama.cpp\b11756-cuda12.4\llama-server.exe
-D:\runtimes\llama.cpp-prism\prism-b10787-cuda12.4\llama-server.exe      (M5)
+D:\runtimes\llama.cpp-prism\prism-b10787-cuda12.4\llama-server.exe
 D:\runtimes\opencode\1.19.3\opencode.exe
-D:\cargo-target\harness                                                  (build output)
+D:\cargo-target\harness                                   (build output)
 ```
 
 Verify the weights against the checksums in [models.md](models.md) after download.
@@ -102,7 +103,7 @@ Expect warnings for anything not set up yet. `doctor` must not panic.
 
 - Release 1 runs on native Windows only. WSL support moves to release 2.
 - Only one machine has been verified (see the status line).
-- The `micro` (M4) and `deep` (M5) slots are used only when their weights and runtimes are present and configured.
+- The `micro` and `deep` slots are used only when their weights and runtimes are present and configured.
 
 ## Related
 
@@ -111,4 +112,3 @@ Expect warnings for anything not set up yet. `doctor` must not panic.
 - [troubleshooting.md](troubleshooting.md): problems seen on the target machine and their fixes.
 - [../concepts/architecture.md](../concepts/architecture.md): how the harness fits into OpenCode.
 - [../reference/modules/cli-commands.md](../reference/modules/cli-commands.md): reference for the `agent` commands.
-- [../status/progress.md](../status/progress.md): verified results by date.

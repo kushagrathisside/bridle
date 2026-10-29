@@ -1,14 +1,14 @@
 # ADR-0005: The micro model decides stalled loops only, and only among three answers
 
-- **Status:** Accepted (2026-10-26, with the M4 result)
+- **Status:** Accepted (2026-10-26)
 - **Date:** 2026-10-26
 - **Deciders:** Kushagra Srivastava
 
 ## Context
 
-The brief asks for a local model that decides where the rules cannot (R-4.4, R-20.2, R-30.2), and forbids letting it
-become a controller (R-4.3, R-30.5). The M3 rules already name a stalled loop (same failure, repeated command, repeated
-edit). The iteration and retry limits are fixed by the brief (R-17). The micro model is LFM2.5-1.2B on the CPU, which is
+The design calls for a local model that decides where the rules cannot, and it forbids letting that model
+become a controller. The loop rules already name a stalled loop (same failure, repeated command, repeated
+edit). The iteration and retry limits are fixed in advance. The micro model is LFM2.5-1.2B on the CPU, which is
 small enough to be wrong and fast enough to be used on each stalled loop.
 
 ## Decision
@@ -16,7 +16,7 @@ small enough to be wrong and fast enough to be used on each stalled loop.
 1. The rules run first. The model is consulted only when the rules report a stalled loop. Limits (iteration and
    implementation retries) are never sent to the model.
 2. The model may answer one of three values: `ESCALATE`, `ASK_USER` or `REPLAN`. The answer must be one JSON object
-   with a `decision` from that set. Anything else is rejected, and the rules decide (R-30.4).
+   with a `decision` from that set. Anything else is rejected, and the rules decide.
 3. The model sees a compact summary: the phase, the counters, the last action (capped) and the names of the signals. It
    does not see the prompt, command text or tool output.
 4. The model's answer changes the decision that is recorded and shown. It never allows or denies a call on its own: a

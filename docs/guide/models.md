@@ -2,20 +2,18 @@
 
 This page lists the model weights and inference runtimes for each model slot, with sources, checksums and
 licences, and the resource use measured on the release 1 target. It is for an engineer downloading and verifying
-the files. Weights are never bundled or committed (decision D-2 and R-42.1): download them yourself into
-`D:\models`.
+the files. Weights are never bundled or committed: download them yourself into `D:\models`.
 
-> **Status:** Release 1. Slot `main` is in use and measured on the target machine. Slots `micro` (M4, CPU) and `deep`
-> (M5, GPU, on demand) were run live on 2026-10-26. Each file below was downloaded and its SHA-256 checked on
-> 2026-10-21.
+> **Status:** Release 1. Slot `main` is in use and measured on the target machine. Slots `micro` (CPU) and `deep`
+> (GPU, on demand) were run live on 2026-10-26. Each file below was downloaded and its SHA-256 checked on 2026-10-21.
 
 ## Weights
 
 | Slot | Model | Quantisation | Source (revision) | File | SHA-256 | Licence |
 |---|---|---|---|---|---|---|
 | `main` | Qwen3.5-9B | Q4_K_M, 5.68 GB | `unsloth/Qwen3.5-9B-GGUF` @ `3885219b` | `Qwen3.5-9B-Q4_K_M.gguf` | `03b74727…52b7e8` | Apache-2.0 |
-| `micro` (M4) | LFM2.5-1.2B-Thinking | Q4_K_M, 0.73 GB | `LiquidAI/LFM2.5-1.2B-Thinking-GGUF` @ `9584426e` | `LFM2.5-1.2B-Thinking-Q4_K_M.gguf` | `7223a220…12e1231b` | LFM Open License v1.0 (research use; see licence notes) |
-| `deep` (M5) | Ternary Bonsai 2 27B | PTQ1_0, 5.95 GB | `prism-ml/Ternary-Bonsai-2-27B-gguf` @ `b072e1d3` | `Ternary-Bonsai-2-27B-PTQ1_0.gguf` | `53107f53…fe33ee3` | Apache-2.0 |
+| `micro` | LFM2.5-1.2B-Thinking | Q4_K_M, 0.73 GB | `LiquidAI/LFM2.5-1.2B-Thinking-GGUF` @ `9584426e` | `LFM2.5-1.2B-Thinking-Q4_K_M.gguf` | `7223a220…12e1231b` | LFM Open License v1.0 (research use; see licence notes) |
+| `deep` | Ternary Bonsai 2 27B | PTQ1_0, 5.95 GB | `prism-ml/Ternary-Bonsai-2-27B-gguf` @ `b072e1d3` | `Ternary-Bonsai-2-27B-PTQ1_0.gguf` | `53107f53…fe33ee3` | Apache-2.0 |
 
 The official `Qwen/Qwen3.5-9B-GGUF` repository did not respond (HTTP 401). The unsloth GGUF is the one used.
 

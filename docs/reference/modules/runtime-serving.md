@@ -5,7 +5,7 @@ model manifests, host probes, and the append-only event log. They own process sp
 hash cache, and the JSONL files under `.local-agent/`. They make no policy decisions; reserved launch flags and
 redaction rules come from `harness-core`.
 
-> **Status:** Built and tested in M1. Verified on Windows with Qwen3.5-9B and llama.cpp b11756.
+> **Status:** Built and tested. Verified on Windows with Qwen3.5-9B and llama.cpp b11756.
 
 ## Responsibilities
 
@@ -44,12 +44,12 @@ redaction rules come from `harness-core`.
 Windows. A missing binary is `LaunchError::MissingBinary(path)`.
 
 `wait_until_healthy(health_url, timeout, poll, child)` polls `/health` (2 s per request,
-`HEALTH_REQUEST_TIMEOUT`) until HTTP 200 and returns the elapsed load time (R-41). It fails fast with
+`HEALTH_REQUEST_TIMEOUT`) until HTTP 200 and returns the elapsed load time. It fails fast with
 `LaunchError::Exited` if the server dies, and with `NotReady` on timeout.
 
 ### Health checks (`health.rs`)
 
-An HTTP 200 does not prove the model works (§44). `run_checks(provider, model, opts)` runs, in order:
+An HTTP 200 does not prove the model works. `run_checks(provider, model, opts)` runs, in order:
 
 | # | Check | Pass when |
 |---|---|---|
@@ -70,7 +70,7 @@ else Pass; Skip never counts. The checks never panic. Verified on Windows with Q
 
 ### Manifests (`manifest.rs`)
 
-A manifest records what was actually run, so benchmark results are comparable (§38, R-41).
+A manifest records what was actually run, so benchmark results are comparable.
 
 - `sha256_file(path)`: streaming SHA-256 with a 1 MiB buffer (`HASH_BUFFER_BYTES`).
 - `cached_sha256(cache_path, file)`: cache at `<state>/manifests/hash-cache.json` (`hash_cache_path`), keyed by

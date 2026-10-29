@@ -75,7 +75,7 @@ kill.
 
 ### A tool call is blocked with "unrecognised program"
 
-**Cause:** the command is not in the classifier's list, so the default is deny (decision D3).
+**Cause:** the command is not in the classifier's list, so the default is deny.
 
 **Fix:** if it is your project's own command, add it to `security.safe_commands` in the machine config or a
 `--config` file (see [configuration.md](configuration.md#runners-that-are-not-built-in)). A project config may not
@@ -101,4 +101,3 @@ it.
 - [configuration.md](configuration.md): safe commands, verification steps and validation rules.
 - [models.md](models.md): model files, runtimes and resource use.
 - [../concepts/security.md](../concepts/security.md): how the policy classifies commands and paths.
-- [../status/progress.md](../status/progress.md): the dated record of fixes and verified runs.

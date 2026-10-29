@@ -6,7 +6,7 @@ types. It reads config files and nothing else: it never opens a network socket, 
 nothing about OpenCode (ADR-0001).
 
 > **Status:** Built and tested. Identity, schema, loading, validation V1 to V35, registry and telemetry types are
-> from M1; the `[tools]` section, rules V24 and V25, and the repository-layer refusal of `tools` were added in M2.
+> complete; the `[tools]` section, rules V24 and V25, and the repository-layer refusal of `tools` are included.
 
 ## Responsibilities
 
@@ -25,7 +25,7 @@ nothing about OpenCode (ADR-0001).
 
 ### Identity (`identity.rs`)
 
-The product name is provisional (R-0.7). Every derived string is a constant here, so a rename touches this file,
+The product name is provisional. Every derived string is a constant here, so a rename touches this file,
 the `[[bin]]` name in `crates/harness-cli/Cargo.toml`, and the shim's `package.json`.
 
 | Constant | Value | Used for |
@@ -118,7 +118,7 @@ The machine config and `--config` are trusted. The shipped profiles pass the che
 ### Validation (`validate.rs`)
 
 `validate_with(cfg, env)` returns every issue at once (`ConfigIssue { severity, path, message }`, plus the rule
-id), with dotted paths such as `models.main.endpoint`. `ValidationEnv` carries the system drive, so the D-2 check
+id), with dotted paths such as `models.main.endpoint`. `ValidationEnv` carries the system drive, so the system-drive check
 is testable. `validate(cfg)` uses `ValidationEnv::from_process()`.
 
 | Rule | Severity | Checks |
@@ -135,7 +135,7 @@ is testable. `validate(cfg)` uses `ValidationEnv::from_process()`.
 | V15 | Warning | verification required but no steps configured |
 | V16 | Error | relative `model_file`/`server_bin` with no base directory |
 | V17 | Warning | two slots share one endpoint |
-| V18 | Warning | `models_dir` on the system drive (directive D-2) |
+| V18 | Warning | `models_dir` on the system drive |
 | V19 | Warning | decision fallback is not `rules` |
 | V20 | Error | `mock` provider outside the `test` profile |
 | V22 | Error | `launch.extra_args` contains a reserved flag (`RESERVED_LAUNCH_FLAGS`: `--host`, `--port`, `-m`, `--alias`, `-c`, `--api-key`, `--log-file`, `--slot-save-path`, model download flags, ...) |
@@ -170,7 +170,7 @@ routing is reproducible.
 
 ## Limits
 
-- The product name is provisional (R-0.7); a rename needs the three edits listed under Identity.
+- The product name is provisional; a rename needs the three edits listed under Identity.
 - Arrays never merge across layers. A repository that sets `verification.steps` replaces the machine list.
 - The trust check reports the first refused key only, not every one.
 

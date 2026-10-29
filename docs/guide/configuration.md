@@ -4,8 +4,8 @@ This page describes the files that configure the Bridle harness, the keys you ar
 file may set what, and the validation rules. It is for an engineer setting up or tuning a project. It assumes you
 have installed the `agent` binary as described in [installation.md](installation.md).
 
-> **Status:** Release 1 (native Windows), harness milestones M0 to M6 complete; M7 (Jev) and M8 (LiteLLM) are built and tested, not live. Behaviour described here is
-> implemented and verified on the target machine as of 2026-10-22.
+> **Status:** Release 1 (native Windows). The behaviour described here is implemented and verified on the target
+> machine as of 2026-10-22.
 
 ## Configuration files
 
@@ -50,7 +50,7 @@ value is a parse error.
 | `models.<slot>.launch.cache_ram_mib` | Prompt cache cap (`--cache-ram`); the llama.cpp default is 8192 | 1024 |
 | `context.hard_limit` | Must not exceed the default model's context (rule V21) | 16384 |
 | `security.safe_commands` | Extra command prefixes that may run without asking (machine config or `--config` only) | `[]` |
-| `security.network`, `destructive_commands`, `risky_commands` | Verdicts for those classes; `ask` is denied in release 1 (D3) | `ask` |
+| `security.network`, `destructive_commands`, `risky_commands` | Verdicts for those classes; `ask` is denied in release 1 | `ask` |
 | `security.privileged_commands` | Verdict for PRIVILEGED commands | `deny` |
 | `verification.steps` | Commands the verification tools may run (see below) | none |
 | `tools.adapters` | Declarative adapters exposed as `adapter_<name>` tools (machine config or `--config` only) | none |
@@ -151,10 +151,10 @@ The shipped profiles satisfy these rules, so `agent init` output loads as a proj
 | V28 | the refusal cap is below 1 |
 | V29 | `[agent].max_iterations` below 2, or a retry bound below 1: the first step would already block or escalate |
 
-## Workflow and loop limits (M3)
+## Workflow and loop limits
 
-The loop bounds of §17 are in `[agent]`: `max_iterations` (8), `max_implementation_retries` (3),
-`max_same_failure` (2: the third verification with the same failure is a loop, and the rule fires there). The thresholds that are new in M3 are
+The loop bounds are in `[agent]`: `max_iterations` (8), `max_implementation_retries` (3),
+`max_same_failure` (2: the third verification with the same failure is a loop, and the rule fires there). The loop thresholds are
 in `[workflow]`:
 
 ```toml
@@ -182,16 +182,16 @@ third identical failure, and the deep slot is asked at that failure. Two things 
   the third failure, so it reaches more failures only once `refusal_cap` lets a call through.
 
 A loop rule is evaluated when a verification fails. An escalation taken there is recorded, and its answer applies to the
-calls after it until a verification passes or the task is reset (see [M5](../status/milestones/m5-bonsai.md#escalation-routing-m5-3-2026-10-27)).
+calls after it until a verification passes or the task is reset.
 
 A repository may enable the workflow or tune these values; it cannot switch the workflow off. The rule is enforced in
-`config/trust.rs`. Read-only calls are never refused by a loop rule. See
-[the M3 plan](../status/milestones/m3-state.md#fingerprints-and-loop-rules) for what each rule detects.
+`config/trust.rs`. Read-only calls are never refused by a loop rule. The loop rules are described in the
+[orchestrator module reference](../reference/modules/orchestrator.md).
 
-## Context budget (M6)
+## Context budget
 
-The `[context]` section sets the budget for tool results in each model request. The rules are in
-[M6](../status/milestones/m6-context.md#rules).
+The `[context]` section sets the budget for tool results in each model request. The rules are described in the
+[context module reference](../reference/modules/context.md).
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -206,11 +206,10 @@ Use a lower `hard_limit` for numbered or repetitive output.
 Each request writes one `context` record to `.local-agent/events.jsonl`, with `tool_results`, `changed`, `bytes_before`,
 `bytes_after`, `target_bytes` and `hard_bytes`.
 
-## Subagents: a small model reads a few files (M4b)
+## Subagents: a small model reads a few files
 
 The subagent tier lets a small local model read a few files, or condense one text, and answer one question with cited
-evidence. It is off by default. The design is in [ADR-0009](../decisions/0009-subagents-are-bounded-readers.md); the result is in
-[M4b](../status/milestones/m4b-subagents.md).
+evidence. It is off by default. The design is in [ADR-0009](../decisions/0009-subagents-are-bounded-readers.md).
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -225,7 +224,7 @@ reading, and check the cited lines.
 
 ## Limits
 
-- `ask` verdicts are denied in release 1 (decision D3).
+- `ask` verdicts are denied in release 1.
 - Under the desktop app that hosts OpenCode (an MSIX package), a machine config written by a process the app
   started lands in `%LOCALAPPDATA%\Packages\<app>_<id>\LocalCache\Roaming\local-agent\config.toml`, not in
   `%APPDATA%`. Programs started outside the app do not see it. See
@@ -238,4 +237,4 @@ reading, and check the cited lines.
 - [../concepts/security.md](../concepts/security.md): the policy, redaction and residual risks.
 - [../reference/modules/core-config.md](../reference/modules/core-config.md): reference for the config module.
 - [../reference/modules/cli-commands.md](../reference/modules/cli-commands.md): reference for the `agent` commands.
-- [../status/milestones/m2-tools.md](../status/milestones/m2-tools.md): the M2 deterministic tools, including verification and adapters.
+- [architecture](../concepts/architecture.md#mcp-tools): the MCP tools, including verification and adapters.
