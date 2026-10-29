@@ -295,6 +295,7 @@ fn describe(record: &Record) -> String {
             fingerprints.len()
         ),
         Record::Refused { rule, .. } => format!("refused rule={}", clean(rule)),
+        Record::Escalated { call_id } => format!("escalated to deep at call={}", clean(call_id)),
         Record::Reset { reason } => format!("reset reason={}", clean(reason)),
         Record::Worktree {
             branch,

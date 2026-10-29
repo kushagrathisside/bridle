@@ -436,7 +436,9 @@ fn default_retries() -> u32 {
 pub struct RoutingSection {
     pub enable_micro_decisions: bool,
     pub enable_deep_escalation: bool,
-    /// Minimum decision confidence required to act on an ESCALATE decision.
+    /// Minimum confidence an ESCALATE decision needs before the deep slot is asked. The rules give a repeated failure
+    /// 0.75 at the third identical failure (the default threshold), 0.875 at the fourth and 0.9375 at the fifth. A
+    /// model's answer has no confidence and always goes to the deep slot.
     pub escalation_threshold: f32,
 }
 

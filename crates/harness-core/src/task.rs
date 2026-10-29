@@ -185,7 +185,12 @@ pub struct TaskState {
     pub last_test: Option<String>,
     pub failure_class: Option<String>,
     pub failure_count: u32,
+    /// Escalations to the deep slot this task has used, successful or not (R-18.1).
     pub escalation_count: u32,
+    /// Whether the deep slot's answer still applies to the loop. Set by an escalation; cleared by a passing
+    /// verification and by `agent task reset`. Serde default keeps files written before this field readable.
+    #[serde(default)]
+    pub escalation_open: bool,
     pub context_version: u32,
     pub status: TaskStatus,
     /// Loop refusals since the last call that was not refused. Reset by a successful call and by
@@ -217,6 +222,7 @@ impl TaskState {
             failure_class: None,
             failure_count: 0,
             escalation_count: 0,
+            escalation_open: false,
             context_version: 0,
             status: TaskStatus::Active,
             consecutive_refusals: 0,
