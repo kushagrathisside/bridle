@@ -156,6 +156,22 @@ Checks run on 2026-10-28:
 D still has no task-level result with an escalation. Each escalation costs about 17 to 20 s: the swap (15 s measured) plus
 the deep answer (about 2 s measured). The task-level cost needs a task where an escalation actually fires.
 
+### Escalation timing and confidence (2026-10-29)
+
+The runs above did not escalate because the loop was only evaluated at the agent's next call. An agent that stopped after
+the third identical failure never made that call, so the deep slot was never asked. The escalation is now evaluated when
+the verification fails, and the answer is kept for the next call (see [M5](m5-bonsai.md#escalation-routing-m5-3-2026-10-27)).
+The rules' confidence for a repeated failure grows with the count, so `escalation_threshold` decides when the deep slot is
+asked. The unit tests pass.
+
+Live run, 2026-10-29: condition D on `schema-probe-07` (the impossible task, renamed; the id in `task.toml` changed to
+match) did not reach a failing verification, so the change was not exercised. The run is `evals/bench/results/2026-10-29/deep7`.
+The agent read the README, then made two `glob` calls (`*.sql`, `test_*.py`). The path guard refused both as "escapes the
+workspace through a symlink or junction". No link or junction is in the folder (`dir /AL` finds none). The model then went
+idle, and the run timed out at 901 s with 3 tool calls, 2 blocked, no decision records and `escalation_count` 0. This is the
+same glob false positive the notes above record for the `*.py` glob. Changing it is a policy decision, so it is not changed
+here. A live check of the escalation therefore still needs a run that reaches a failing verification.
+
 ## What remains
 
 - Corpus size. Six tasks is too few to separate the conditions. More tasks need choosing, each with a verify script. That
