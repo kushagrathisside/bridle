@@ -154,7 +154,7 @@ The shipped profiles satisfy these rules, so `agent init` output loads as a proj
 ## Workflow and loop limits (M3)
 
 The loop bounds of §17 are in `[agent]`: `max_iterations` (8), `max_implementation_retries` (3),
-`max_same_failure` (2: the third verification with the same failure escalates). The thresholds that are new in M3 are
+`max_same_failure` (2: the third verification with the same failure is a loop, and the rule fires there). The thresholds that are new in M3 are
 in `[workflow]`:
 
 ```toml
@@ -169,6 +169,20 @@ task_status = false         # offer the task_status tool to the model
 
 `decisions.provider` chooses who decides a stalled loop: `rules` (the default) or `local_lfm`, which asks the micro slot. A
 failure to reach the micro slot falls back to the rules. The model answers only ESCALATE, ASK_USER or REPLAN.
+
+`[routing] escalation_threshold` (0.75) is the confidence an ESCALATE decision needs before the deep slot is asked. It
+applies only when `[routing] enable_deep_escalation` is on. The loop rules give a repeated failure a confidence that grows
+with the number of identical failures in a row: 0.5 for two, 0.75 for three, 0.875 for four and 0.9375 for five. The curve
+is a fixed choice, not a measured probability. With the default `max_same_failure = 2`, the default threshold is met at the
+third identical failure, and the deep slot is asked at that failure. Two things follow from this:
+
+- Lowering `max_same_failure` lowers the confidence at the rule's first firing. With `max_same_failure = 1` the first firing
+  has confidence 0.5, so the default threshold does not send that loop to the deep slot. Set the threshold to match.
+- A threshold above 0.75 holds the deep slot back until more identical failures have happened. The agent is refused after
+  the third failure, so it reaches more failures only once `refusal_cap` lets a call through.
+
+A loop rule is evaluated when a verification fails. An escalation taken there is recorded, and its answer applies to the
+calls after it until a verification passes or the task is reset (see [M5](../status/milestones/m5-bonsai.md#escalation-routing-m5-3-2026-10-27)).
 
 A repository may enable the workflow or tune these values; it cannot switch the workflow off. The rule is enforced in
 `config/trust.rs`. Read-only calls are never refused by a loop rule. See

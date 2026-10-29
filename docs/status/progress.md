@@ -28,6 +28,30 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-29: escalation evaluated at the failing verification; confidence grows with repeats
+
+- Timing: a loop rule is evaluated in the `after` hook when a verification fails, not at the agent's next call. A due
+  escalation is recorded there (`Record::Escalated` in the journal and a decision record), and its answer is kept for the
+  calls after it until a verification passes or the task is reset. The next `before` refuses with that answer and does not
+  ask the deep model again. Built in `crates/harness-cli/src/workflow.rs` (`escalate_on_failure`, `answered_loop`,
+  `decide_for` with `answered`) and `crates/harness-core/src/journal.rs`.
+- Bug fixed: `TaskState::escalation_count` was never incremented, so it read 0 in every run. It is now folded from the
+  journal's escalated records, and the escalation cap reads it.
+- Confidence: the same-failure rule's confidence grows with the count of identical failures in a row (0.5, 0.75, 0.875,
+  0.9375 for two to five). The count now keeps growing after the rule first fires (`loops.rs`). Counter rules keep 1.0.
+  `[routing] escalation_threshold` (0.75) gates whether the deep slot is asked. The curve is a fixed choice, not a
+  measured probability; the default threshold is met at the third identical failure with `max_same_failure = 2`.
+- Checks: `cargo fmt --all -- --check` passes; `cargo test -p harness-core` passes (290, 43 and 19 tests);
+  `cargo test -p harness-cli` passes (78 unit tests with one ignored live test, plus the integration suites);
+  `cargo clippy --workspace --all-targets` prints no warnings. Clippy with `-- -D warnings` cannot run through the
+  Windows wrapper (`D:\cargo-target\wcargo.bat`), because the wrapper appends `--offline` after `--`, and cargo then
+  tries the network. Warnings were checked by reading the output instead.
+- Live (2026-10-29, condition D on `schema-probe-07`, results `evals/bench/results/2026-10-29/deep7`): not exercised. The
+  run timed out at 901 s after two glob calls were refused by the path guard as a symlink escape (no link exists in the
+  folder). No verification failed, so no escalation happened. The glob refusal needs a policy decision before a retry.
+  The model servers were started for the run and stopped afterwards.
+- Not run: a live condition D run on a task that escalates. The task-level cost of the swap is still unmeasured.
+
 ## 2026-10-28 (newest-2): GPU swap for condition D built and checked live
 
 - The escalation to the deep slot now swaps GPU models when the deep slot is not serving: the GPU slots that run are parked, Bonsai
