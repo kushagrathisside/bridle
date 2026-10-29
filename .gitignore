@@ -39,3 +39,9 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+# --- Documentation site (site/) ---
+site/node_modules/
+site/dist/
+site/.astro/
+site/src/content/docs/
