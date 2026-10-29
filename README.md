@@ -12,12 +12,13 @@ repository, under one policy and one event log, on the developer's own hardware,
 
 | Layer | Status | What it does |
 |---|---|---|
-| Harness | Built (M0 to M2) | Policy on every tool call, deterministic tools, output redaction, decision log |
-| Orchestrator | Built (M3 to M7); routing planned | Task state in a journal, loop detection, refusals with the rule named, the micro model for stalled loops with rules fallback, worktree tasks, per-request context compaction |
+| Harness | Built | Policy on every tool call, deterministic tools, output redaction, decision log |
+| Orchestrator | Built; routing between model slots is not built | Task state in a journal, loop detection, refusals with the rule named, the micro model for stalled loops with rules fallback, worktree tasks, per-request context compaction |
 | Local-first application | Goal | Several agents on one repository under one policy and one event log |
 
-Multi-agent execution and model routing do not work yet. The loop rules and task journal (M3), the micro model for stalled loops (M4), the deep model on demand (M5) and the context compaction (M6) are built and were run live. The status of each milestone is in
-[docs/status/progress.md](docs/status/progress.md).
+Multi-agent execution and routing between model slots are not built yet. The loop rules and task journal, the micro model
+for stalled loops, the deep model on demand and the context compaction are built, and they were run live on the tested
+machine. Verified results are dated in the documentation pages linked below.
 
 ## What a decision looks like
 
@@ -68,16 +69,15 @@ Tested on Windows 11, an RTX 4060 Laptop GPU with 8 GB of VRAM, and 16 GB of RAM
 The main and deep models together are estimated at about 12.9 GiB of VRAM, so they cannot run at the same time on 8 GB.
 This figure comes from the GGUF headers and is not measured.
 
-## Milestone M2 end to end
+## End-to-end run
 
-The model, running through OpenCode on a toy project with one planted bug, used these tools in one session:
+The model, running through OpenCode on a toy project with one planted bug, used these tools in one session (2026-10-22):
 
 1. `symbol_search` and `find_references` to locate `add` and its uses.
 2. `run_tests` with the target `test_calc.py`, which the policy allowed.
 3. An edit that fixed `calc.py`, followed by a passing test run.
 
-The run is recorded in [docs/status/milestones/m2-tools.md](docs/status/milestones/m2-tools.md). Two errors in the first
-run were configuration mistakes, and the tool messages named the fix.
+Two errors in the first run were configuration mistakes, and the tool messages named the fix.
 
 ## Quick start (Windows)
 
@@ -145,12 +145,14 @@ policy before it runs. See [docs/guide/configuration.md](docs/guide/configuratio
 - **No approvals.** `ask` is never allowed, so network, destructive and risky commands are denied, not offered for
   confirmation.
 - **Syntactic code index.** `find_references` matches identifiers by spelling. It does not resolve imports, types or
-  overloads. There is no persistent symbol index yet; the M3 orchestrator keeps task state, not a code index.
+  overloads. There is no persistent symbol index yet; the orchestrator keeps task state, not a code index.
 - **Partial manifests.** `dependency_search` does not read CMake `find_package`, or Go and Gradle manifests.
-- **Context budget is an estimate.** Bytes divided by four, over the messages only. The system prompt and the tool definitions are not counted. See [M6](docs/status/milestones/m6-context.md).
-- **The LiteLLM gateway is not live.** The mock test passes; the live check waits for permission to start a local gateway.
+- **Context budget is an estimate.** Bytes divided by four, over the messages only. The system prompt and the tool
+  definitions are not counted.
+- **The LiteLLM gateway backend was checked against a running local gateway** on 2026-10-28. It is an optional route and
+  is off unless configured.
 - **Jev is not live.** The decision backend is built and tested against its contract with a local mock. No Jev service was
-  available, so the contract is unchecked against the real service. See [M7](docs/status/milestones/m7-jev.md).
+  available, so the contract is unchecked against the real service.
 - **One machine, one OS.** Only native Windows on the tested machine is verified. OpenCode's own model catalog fetch is a
   known network exception to local-only operation.
 
@@ -162,31 +164,9 @@ Weights are not included. Download them yourself and check the SHA-256 values in
 
 | Slot | Model | Status |
 |---|---|---|
-| `main` | Qwen3.5-9B, Q4_K_M, on llama.cpp b11756 | In use (release 1) |
-| `micro` | LFM2.5-1.2B-Thinking, Q4_K_M, CPU | Decides stalled loops when `decisions.provider = "local_lfm"` (M4). Research use under the LFM Open License v1.0 |
-| `deep` | Ternary Bonsai 2 27B, PTQ1_0, PrismML llama.cpp fork | Loads on demand, never beside the main model on the GPU (M5). Health 8 of 8; A/B run; escalation routing not built |
-
-## Roadmap
-
-| Milestone | Scope | Status |
-|---|---|---|
-| M0 | Audit and architecture | Done |
-| M1 | Basic integration on Windows: policy, hook, runtime, OpenCode | Done |
-| M2 | Deterministic tools: MCP tools, failure parsing, tree-sitter | Done |
-| M3 | State and loop detection; task journal; refusals; worktree tasks | Done (2026-10-26, verified live) |
-| M4 | The micro model decides stalled loops (LFM2.5, CPU), with rules fallback and an A/B run | Done (2026-10-26) |
-| M4b | The subagent tier: a small model reads a few bounded, redacted files and answers with checked citations | Built (2026-10-27); plugged into the tool list and `agent subagent` |
-| M5 | Deep model on demand (Bonsai); one GPU model at a time | Done (2026-10-26); escalation routing not built |
-| M6 | Context management: compaction of tool results and the state in the system prompt | Done (2026-10-26, verified live) |
-| M7 | Jev decision backend behind the endpoint policy, with TLS | Built (2026-10-27); not live, no Jev service |
-| M8 | LiteLLM gateway as a model provider, behind the policy | Built (2026-10-27); live gateway check pending permission |
-| M9 | Security threat-model tests and egress audit | Built (2026-10-27); 72 of 72 adversarial cases pass; `agent egress` lists the destinations |
-| M10 | Evaluation: a task corpus under two conditions, with a runner and a report | Built; live results pending (runs stalled) |
-| M11 | Open-source release: licence (Apache-2.0), notices, policies, CI | Prepared; CI not run; publication pending approval |
-
-The roadmap as a diagram, with status colours, is the page "Roadmap" in
-[docs/diagrams/bridle-stages.drawio](docs/diagrams/bridle-stages.drawio). The file opens in
-[draw.io](https://app.diagrams.net).
+| `main` | Qwen3.5-9B, Q4_K_M, on llama.cpp b11756 | In use |
+| `micro` | LFM2.5-1.2B-Thinking, Q4_K_M, CPU | Decides stalled loops when `decisions.provider = "local_lfm"`. Research use under the LFM Open License v1.0 |
+| `deep` | Ternary Bonsai 2 27B, PTQ1_0, PrismML llama.cpp fork | Loads on demand, never beside the main model on the GPU. Health 8 of 8. Escalation to it is built and off by default |
 
 ## Documentation
 
@@ -199,9 +179,7 @@ The full index is [docs/README.md](docs/README.md). The main pages:
 | [Troubleshooting](docs/guide/troubleshooting.md) | Problems seen on the tested machine and their fixes |
 | [Architecture](docs/concepts/architecture.md) | Layers, request flow, where state lives |
 | [Security](docs/concepts/security.md) | Policy decisions, command classes, secret handling, residual risks |
-| [Progress log](docs/status/progress.md) | What is verified, with evidence and commit hashes |
 | [Module reference](docs/reference/modules/README.md) | One page per module of the three crates |
-| [Requirements register](docs/reference/requirements-traceability.md) | Each requirement of the brief, with its milestone and status |
 | [Decisions](docs/decisions/) | Architecture decision records |
 
 ## Repository layout
@@ -215,6 +193,7 @@ configs/                 shipped profiles: local-only.toml, development.toml
 examples/                example project used for the end-to-end runs
 evals/                   the adversarial cases (evals/security), the benchmark corpus (evals/tasks) and conditions
 scripts/                 the third-party licence list generator
+site/                    the documentation site (Astro Starlight), built from docs/
 docs/                    guides, concepts, status, reference, decisions, specification
 ```
 
@@ -241,7 +220,7 @@ generated from `Cargo.lock` by `scripts/third_party_licenses.py`. One of them, `
 CDLA-Permissive-2.0 data licence. Model weights are not part of this repository and keep their own licences
 ([docs/guide/models.md](docs/guide/models.md)).
 
-The crates are not published. Publication waits for the maintainer's approval.
+The crates are not published.
 
 ## Authors
 
