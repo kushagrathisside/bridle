@@ -2,12 +2,13 @@
 
 - **Status:** Accepted
 - **Date:** 2026-10-21
-- **Deciders:** Project lead (directive D-1 in the [traceability register](../reference/requirements-traceability.md#pm-directives-received-after-the-brief))
-- **Supersedes:** R-50.2 (TypeScript, ESLint, Prettier and Vitest tooling). Narrows R-31.1 and R-50.3.
+- **Deciders:** Project lead
+- **Supersedes:** The TypeScript tooling of the earlier design (ESLint, Prettier and Vitest). It also narrows the earlier
+  TypeScript and tooling expectations.
 
 ## Context
 
-The brief (§50) prefers TypeScript for the OpenCode extension layer. It warns against a second language
+The earlier design preferred TypeScript for the OpenCode extension layer, and it warned against a second language
 runtime "unless it provides clear value". On 2026-10-21 the project lead directed that **Rust is the
 primary implementation language**.
 
@@ -29,12 +30,12 @@ The open question was how much.
 
    The crate names are neutral on purpose. The temporary product identifier (`local-agent`, binary `agent`,
    state directory `.local-agent/`, environment prefix `LOCAL_AGENT_`) lives in `harness-core::identity` and
-   in the `[[bin]]` and plugin package names. A rename then touches only those places (R-0.7).
+   in the `[[bin]]` and plugin package names. A rename then touches only those places.
 
 2. **Tools are exposed to OpenCode over MCP (stdio), not as TypeScript custom tools.** `agent mcp` is a
    small, hand-written MCP server (JSON-RPC 2.0, newline-delimited). OpenCode loads it through its stable
    `mcp` config key (`type: "local"`, `command: ["agent", "mcp"]`). This does not depend on the host: any
-   MCP-capable harness can use the same tools if OpenCode changes (§66, "design survives OpenCode changes").
+   MCP-capable harness can use the same tools if OpenCode changes (the design is meant to survive OpenCode changes).
 
 3. **The OpenCode plugin is a thin TypeScript shim, with a target of under 200 lines and no logic.** It
    forwards the `tool.execute.before`, `tool.execute.after`, `permission.ask`, `shell.env` and `event`
@@ -42,13 +43,13 @@ The open question was how much.
    throws to block, sets the permission status, or changes the environment or output. It has no runtime npm
    dependencies. The `@opencode-ai/plugin` import is type-only, and Bun erases it.
 
-4. **Configuration is TOML** (`local-agent.toml`, with profiles in `configs/*.toml`). The brief says the
-   format is negotiable (§7). TOML is native to Rust, and the de facto YAML crate (`serde_yaml`) is archived
+4. **Configuration is TOML** (`local-agent.toml`, with profiles in `configs/*.toml`). The earlier design treats the
+   format as negotiable. TOML is native to Rust, and the de facto YAML crate (`serde_yaml`) is archived
    and unmaintained.
 
 5. **Toolchain.** Rust 1.95.0 is pinned in `rust-toolchain.toml`. This version is installed on both the
    Windows host (MSVC) and WSL, so no toolchain download is needed. The quality gates are `rustfmt`,
-   `clippy -D warnings`, `cargo test`, and later `cargo-deny` for the licence and advisory audit (M11). CI
+   `clippy -D warnings`, `cargo test`, and later `cargo-deny` for the licence and advisory audit. CI
    type-checks the TS shim with `tsc --strict --noEmit`.
 
 ### Evidence
@@ -70,20 +71,20 @@ The source records the consequences as risks, each with its mitigation.
 
 | Risk | Mitigation |
 |---|---|
-| A process spawn per hook call adds latency. Rust start-up takes roughly 5 to 15 ms on Windows, against tool calls that take seconds. | Measure in M1 and record the result in telemetry. If the latency matters, switch the shim to a long-lived `agent serve` over a local named pipe, behind the same JSON contract. |
+| A process spawn per hook call adds latency. Rust start-up takes roughly 5 to 15 ms on Windows, against tool calls that take seconds. | Measure it and record the result in telemetry. If the latency matters, switch the shim to a long-lived `agent serve` over a local named pipe, behind the same JSON contract. |
 | The hook bridge fails, for example because the binary is missing. | The shim **fails closed** for `tool.execute.before` and `permission.ask` (block or ask). It fails open only for hooks that carry telemetry alone. |
 | The repository holds two languages. | TS is confined to `opencode-plugin/` (the shim) and holds no business logic. It is reviewed as an adapter, not as a component. |
 | A hand-written MCP server drifts from the specification. | Implement only `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. Negotiate the protocol version. Add a protocol conformance test. The `rmcp` crate remains an option if a richer MCP surface is needed. |
-| Contributors expect a TS plugin package (§31, §51). | Document how §31's module list maps to the Rust modules in [architecture](../concepts/architecture.md). |
+| Contributors may expect a TypeScript plugin package, as the earlier design described. | Document how the earlier design's module list maps to the Rust modules in [architecture](../concepts/architecture.md). |
 
 ## Alternatives considered
 
-- **An all-TypeScript plugin (the brief's default).** Rejected by PM directive D-1.
+- **An all-TypeScript plugin (the earlier design's default).** Rejected by the project lead.
 - **Rust compiled to WASM and loaded inside the plugin.** Process spawning, file system access and HTTP from
   WASM inside Bun would need host shims for everything. That is more complex and slower to build. Rejected.
 - **A Rust N-API addon loaded by Bun.** This ties the build to Bun's Node-API compatibility and to native
-  binaries for each platform inside the plugin. Rejected for M1. It could be revisited if hook latency
-  becomes a measured problem.
+  binaries for each platform inside the plugin. Rejected for the first release. It could be revisited if hook
+  latency becomes a measured problem.
 
 ## Related
 
@@ -91,9 +92,4 @@ The source records the consequences as risks, each with its mitigation.
   amends the environment assumptions in this ADR.
 - [ADR-0003](0003-tree-sitter-for-code-intelligence.md): tree-sitter for the code tools served over the MCP
   server described here.
-- [Progress log](../status/progress.md): the entries "2026-10-21: baseline" (this ADR recorded),
-  "2026-10-21: merges and decisions" (MCP server and TypeScript shim merged) and "2026-10-22 (evening): M1
-  end-to-end on Windows".
-- [Requirements traceability register](../reference/requirements-traceability.md): directive D-1 and row
-  R-50.2.
 - [Architecture](../concepts/architecture.md).

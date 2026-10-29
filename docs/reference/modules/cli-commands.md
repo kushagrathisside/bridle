@@ -5,7 +5,7 @@ only. Logic lives in `harness-core` and `harness-runtime`, and everything OpenCo
 `src/host/opencode_v1.rs` ([cli-host-opencode.md](cli-host-opencode.md)). Commands must not hold policy rules of
 their own.
 
-> **Status:** Built and tested in M1; `agent mcp` serves the M2 tools and adapters. Release 1 runs on native
+> **Status:** Built and tested. `agent mcp` serves the analysis, verification and adapter tools. Release 1 runs on native
 > Windows.
 
 ## Responsibilities
@@ -26,7 +26,7 @@ Global options: `--config <file>` (or `LOCAL_AGENT_CONFIG`) adds the highest-pre
 | `agent health [slot] [--quick] [--json]` | Functional checks per slot ([runtime-serving.md](runtime-serving.md)). A slot whose provider cannot be built is one failed check; the other slots still run | Failure if any check fails |
 | `agent config show` | The effective config, redacted, and the files it came from | |
 | `agent config validate` | Rules V1 to V35 | Failure on any error |
-| `agent egress` | Lists every outbound destination of the configuration and the proxy state; sends nothing (M9) | Always succeeds |
+| `agent egress` | Lists every outbound destination of the configuration and the proxy state; sends nothing | Always succeeds |
 | `agent config paths` | Machine config, repository config, state directory | |
 | `agent init [--profile local-only\|development] [--force]` | Writes `local-agent.toml` (never overwritten), `opencode.json`, `.opencode/plugins/local-agent.ts`, and a `.gitignore` entry | |
 | `agent init --machine --models-dir D:\models --runtimes-dir D:\runtimes --opencode-bin <exe>` | Writes the machine config | |
@@ -56,12 +56,12 @@ config; it loads the config after writing it).
 ### doctor (`commands/doctor.rs`)
 
 - Missing optional pieces are warnings, so `doctor` is safe on a bare machine. It warns when the models directory
-  does not exist or sits on the system drive (D-2), when a model file is missing, and when an endpoint is
+  does not exist or sits on the system drive, when a model file is missing, and when an endpoint is
   unreachable. It checks the OpenCode binary against the pinned version.
 - Verified by hand with missing models and runtimes: runtimes block, models warn, no panic, exit code 1.
 - When a launched slot does not answer, `doctor` tries to bind its port and reports a port held by another program
   (so `serve` would fail) or one the OS refuses (on Windows, usually an excluded port range; it names the `netsh`
-  command to list them) (M1 exit item 4).
+  command to list them).
 
 ### init (`commands/init.rs`)
 

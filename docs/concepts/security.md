@@ -5,9 +5,8 @@ It is for engineers deciding whether to run the harness on a repository. It is a
 audit, and it assumes the architecture in [architecture.md](architecture.md). Read [Residual risks](#residual-risks)
 before you rely on it.
 
-> **Status:** release 1 (native Windows), milestones M0 to M2 done. The policy and checks are in code and covered by
-> tests, including 34 hook fixtures through the real `agent hook` binary; review fixes verified on Windows on
-> 2026-10-22 (see [progress.md](../status/progress.md)).
+> **Status:** release 1 (native Windows). The policy and checks are in code and covered by tests, including 34 hook
+> fixtures through the real `agent hook` binary; review fixes verified on Windows on 2026-10-22.
 
 ## What is protected
 
@@ -20,7 +19,7 @@ before you rely on it.
 
 ## Decisions that shape the policy
 
-- **D3: Ask is never allowed.** Under `--auto`, OpenCode approves anything not denied, so only an explicit Allow
+- **Ask is never allowed.** Under `--auto`, OpenCode approves anything not denied, so only an explicit Allow
   passes. Ask is treated as a denial for tool calls and for permission requests. An unanswered `permission` request
   is `deny`.
 - **Fail closed.** An unrecognised program is EXECUTE_RISKY, which is denied. An unparseable command (for example,
@@ -43,9 +42,9 @@ Commands are classified by the program name and its arguments (`command_risk`). 
 | READ_ONLY | | Allow | Runs | `git status` |
 | WRITE | | Allow | Runs | editing a file |
 | EXECUTE_SAFE | | Allow | Runs | `pytest`, `cargo test` |
-| EXECUTE_RISKY | `security.risky_commands` | Ask | Blocked (D3) | an unknown program, `bin/tool`, `git -c ...`, `make` |
-| NETWORK | `security.network` | Ask | Blocked (D3) | `curl`, `git push`, webfetch |
-| DESTRUCTIVE | `security.destructive_commands` | Ask | Blocked (D3) | `rm -rf`, `git reset --hard`, `git push +main` |
+| EXECUTE_RISKY | `security.risky_commands` | Ask | Blocked | an unknown program, `bin/tool`, `git -c ...`, `make` |
+| NETWORK | `security.network` | Ask | Blocked | `curl`, `git push`, webfetch |
+| DESTRUCTIVE | `security.destructive_commands` | Ask | Blocked | `rm -rf`, `git reset --hard`, `git push +main` |
 | PRIVILEGED | `security.privileged_commands` | Deny | Blocked | `sudo`, `systemctl`, `reg add HKLM`, encoded PowerShell |
 
 Classification rules:
@@ -91,8 +90,7 @@ Fixed since the first list (2026-10-22):
 | MCP output did not reach the after-hook (0 bytes observed in the run of 2026-10-21) | The MCP server redacts every result itself, text and structured content | `9df0aa4` |
 | A `read` call with no file path was allowed | Denied as malformed | `b45b851` |
 
-Fixed on 2026-10-22, after four code reviews (details in [progress.md](../status/progress.md) and the
-[module documentation](../reference/modules/README.md)):
+Fixed on 2026-10-22, after four code reviews (details in the [module documentation](../reference/modules/README.md)):
 
 - Classifier bypasses: substitutions in quotes, `>()`, `>&file`, `git -c`, exec flags, `env -S`, programs named by a
   path, `cmd` quoting.
@@ -105,12 +103,12 @@ Fixed on 2026-10-22, after four code reviews (details in [progress.md](../status
 - Redaction gaps: escaped quotes, `*_KEY`, `-u user:pass`, credential files.
 - `models stop` signalling a reused PID.
 
-### Found by the M9 adversarial run
+### Found by the adversarial suite
 
 The hostile run (`evals/security/cases.json`, now a test) found five gaps, all fixed: a shell escape that hid a secret
 name (`.en\v`), a Windows short name (`ENV~1`), a glob that could name a secret (`.env*`), environment dumps (`env`,
 `printenv`, a bare `set`, `export -p`, PowerShell `Env:` listings), and the order of the secret check and the path guard.
-The `agent egress` command lists every outbound destination. See [M9](../status/milestones/m9-security.md).
+The `agent egress` command lists every outbound destination.
 
 ## Limits
 
@@ -127,7 +125,7 @@ The `agent egress` command lists every outbound destination. See [M9](../status/
    URL passwords, PEM blocks), tested by fixture row 32. A secret in an unrecognised format would still reach the
    model.
 2. **Whole-request timeout.** A very long streamed generation can be cut off by `timeout_ms`. This matters for the
-   deep model (slot `deep`, M5).
+   deep model (slot `deep`).
 3. **Heuristics.** Glob matching uses representative secret names, not the real files. A secret with an unusual file
    name is caught only by output redaction.
 4. **Environment secrets.** Secrets in the Windows environment are visible to every process. Keep them out of the
@@ -135,7 +133,7 @@ The `agent egress` command lists every outbound destination. See [M9](../status/
    and only output redaction remains.
 5. **Not a sandbox.** See [Limits](#limits).
 
-6. **The model can weaken a test to make it pass.** Live run 1 (2026-10-26) removed a contradictory assertion from a
+6. **The model can weaken a test to make it pass.** A live run on 2026-10-26 removed a contradictory assertion from a
    plain test file. Nothing in the policy prevents an edit of a test file. A test kept under a protected path such as
    `.opencode/` cannot be edited by the agent.
 7. **OpenCode stops identical consecutive calls first.** Its `doom_loop` permission ended a live run on the third identical
@@ -162,4 +160,3 @@ The `agent egress` command lists every outbound destination. See [M9](../status/
 - [cli-host-opencode.md](../reference/modules/cli-host-opencode.md): hook protocol, tool mapping and generated `opencode.json`.
 - [configuration.md](../guide/configuration.md): security keys and which file may set what.
 - [troubleshooting.md](../guide/troubleshooting.md): blocked commands, paths and proxy issues.
-- [progress.md](../status/progress.md): verification evidence and review findings.

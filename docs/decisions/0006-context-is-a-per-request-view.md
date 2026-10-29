@@ -1,21 +1,21 @@
 # ADR-0006: Context compaction is a per-request view, decided by rules
 
-- **Status:** Accepted (2026-10-26, with the M6 result)
+- **Status:** Accepted (2026-10-26)
 - **Date:** 2026-10-26
 - **Deciders:** Kushagra Srivastava
 
 ## Context
 
 The local models have a 16384-token context. OpenCode keeps the whole session and sends it on each request, so long tool
-outputs fill the context and the request is rejected. The brief asks for context management with rules first (R-24.2),
-and for the task state to be kept apart from the transcript (R-23.3). OpenCode 1.19.3 offers two experimental hooks
-that change one request and leave the stored session alone.
+outputs fill the context and the request is rejected. The design calls for context management with rules first, and for the
+task state to be kept apart from the transcript. OpenCode 1.19.3 offers two experimental hooks that change one request
+and leave the stored session alone.
 
 ## Decision
 
 1. Compaction changes the request, not the stored session. The transforms run per request, and the next request starts
    again from the stored history.
-2. Rules only. The policy is deterministic: age, size, kind and the budget. No model decides what is kept (R-24.2).
+2. Rules only. The policy is deterministic: age, size, kind and the budget. No model decides what is kept.
 3. The three most recent results are kept whole while the context fits. They are compacted only when the context would
    otherwise not fit the hard limit.
 4. Both transforms fail open. A failure sends the request unchanged. Redaction stays in `tool.execute.after`, so
@@ -32,11 +32,11 @@ that change one request and leave the stored session alone.
 
 ## Alternatives considered
 
-- Rewriting the stored session with a summary. Rejected: it needs a model to summarise (R-24.2), and it changes what the
+- Rewriting the stored session with a summary. Rejected: it needs a model to summarise, and it changes what the
   user's session contains.
-- Keeping the three most recent results whole regardless of size. Rejected after run A overflowed the context.
+- Keeping the three most recent results whole regardless of size. Rejected after an earlier live run overflowed the
+  context.
 
 ## References
 
-- [M6 result](../status/milestones/m6-context.md)
 - [Architecture](../concepts/architecture.md)

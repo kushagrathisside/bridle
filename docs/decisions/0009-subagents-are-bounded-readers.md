@@ -1,14 +1,14 @@
 # ADR-0009: Subagents are bounded readers, checked before the parent sees them
 
-- **Status:** Accepted (2026-10-27, with the M4b result)
+- **Status:** Accepted (2026-10-27)
 - **Date:** 2026-10-27
 - **Deciders:** Kushagra Srivastava
 
 ## Context
 
-The brief plans subagents: a small model that reads part of the work and returns evidence (R-12.2, R-12.3). It returns a
-structured result (R-13.1) and the parent never gets the whole transcript (R-13.2). The small micro model is the first
-candidate (R-5.3). Until now the tier was not built.
+The design includes subagents: a small model that reads part of the work and returns evidence. It returns a
+structured result, and the parent never gets the whole transcript. The small micro model is the first
+candidate. Until now the tier was not built.
 
 ## Decision
 
@@ -29,15 +29,10 @@ candidate (R-5.3). Until now the tier was not built.
   check cited lines before it relies on an answer.
 - The cost of a subagent call is one model call on the small model, with a bounded prompt. Nothing about the main model's
   context grows beyond the answer.
-- The tier is measured on a small sample only. A larger quality measurement is open (checklist row M4b-8).
+- The tier is measured on a small sample only. A larger quality measurement is open.
 
 ## Alternatives considered
 
 - A subagent that edits a copy of the repository and proposes a patch: rejected for now. It needs a diff review step, and
-  the brief keeps the small models away from implementation (R-4.3).
+  the design keeps the small models away from implementation.
 - Numbered input lines to help citations: tried and reverted. The small model misread the numbers.
-
-## References
-
-- [M4b result](../status/milestones/m4b-subagents.md)
-- [Checklist](../status/checklist.md)
