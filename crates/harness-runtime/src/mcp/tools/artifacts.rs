@@ -1,4 +1,4 @@
-//! `inspect_artifact`, `summarize_experiment` and `compare_experiments` (M2 step 7).
+//! `inspect_artifact`, `summarize_experiment` and `compare_experiments`.
 //!
 //! Result files are often untracked (training outputs, benchmark runs), so these tools read by
 //! path rather than through `git ls-files`. Every file they open passes the read policy, and

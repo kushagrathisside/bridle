@@ -1,4 +1,4 @@
-//! The task journal (M3 step 6): the records that describe one task, and the pure fold that turns them
+//! The task journal: the records that describe one task, and the pure fold that turns them
 //! into [`TaskState`] and the ring of recent calls.
 //!
 //! The journal is the source of truth. Each record carries a per-task `seq`, and the fold applies records
@@ -10,7 +10,7 @@ use crate::loops::{CallRecord, RING_SIZE};
 use crate::task::{Phase, TaskState, TaskStatus};
 
 /// One fact about a task. The variants are what the observers can see: the hooks, the MCP server and
-/// the task commands (see the observation table in the M3 plan).
+/// the task commands (see the observation table).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Record {
@@ -45,7 +45,7 @@ pub enum Record {
     /// A person ended the block with `agent task reset`. The loop counters start again.
     Reset { reason: String },
     /// The task runs in its own Git worktree. `base_commit` is where it starts; `dirty_files` counts the
-    /// changes that were already in the repository, taken before the first mutation (R-49.1, R-49.2).
+    /// changes that were already in the repository, taken before the first mutation.
     Worktree {
         branch: String,
         path: String,

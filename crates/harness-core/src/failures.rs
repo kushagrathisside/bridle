@@ -1,4 +1,4 @@
-//! Failure parsing (AC-A5, §21): test, compiler, type-checker and linter output turned into
+//! Failure parsing: test, compiler, type-checker and linter output turned into
 //! structured failures, so the model reads "test_add failed at tests/test_calc.py:5:
 //! assert -1 == 3" instead of scrolling a log.
 //!

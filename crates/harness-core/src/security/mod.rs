@@ -1,4 +1,4 @@
-//! Security policy (§25–§27, §34): what a tool call may do, where it may touch, and what must
+//! Security policy: what a tool call may do, where it may touch, and what must
 //! never reach a model or a log.
 //!
 //! - [`path_guard`]: keeps file operations inside the authorised workspace.
@@ -14,7 +14,7 @@ pub mod tool_policy;
 
 use serde::{Deserialize, Serialize};
 
-/// Tool classes (§25), ordered from least to most risky. A compound command takes the class of
+/// Tool classes, ordered from least to most risky. A compound command takes the class of
 /// its riskiest segment, so the ordering is load-bearing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]

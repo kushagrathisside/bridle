@@ -1,4 +1,4 @@
-//! Host probing for `agent doctor` (§43): OS, CPU, RAM, GPU/VRAM/driver/CUDA, WSL, disk space,
+//! Host probing for `agent doctor`: OS, CPU, RAM, GPU/VRAM/driver/CUDA, WSL, disk space,
 //! and versions of external executables.
 //!
 //! IMPLEMENTATION SPEC (delegated). Every probe is best-effort: failures become `None`/empty,

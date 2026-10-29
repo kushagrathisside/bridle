@@ -1,5 +1,5 @@
 //! `parse_test_failure`: structured failures from test, compiler, type-checker or linter output
-//! (AC-A5). The parsing is `harness_core::failures`; failed verification steps carry the same
+//!. The parsing is `harness_core::failures`; failed verification steps carry the same
 //! result automatically.
 
 use harness_core::failures::{Failure, parse_failures};

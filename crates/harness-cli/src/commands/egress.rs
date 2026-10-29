@@ -1,4 +1,4 @@
-//! `agent egress` (M9): every outbound destination this configuration can reach.
+//! `agent egress`: every outbound destination this configuration can reach.
 //!
 //! Read-only. It reads the config and the names of environment variables. It sends nothing, and it never prints a proxy
 //! address or a key. The list is the audit's first step: the security page says what each destination carries.

@@ -29,12 +29,12 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Check hardware, runtimes, models, endpoints and the OpenCode integration (§43).
+    /// Check hardware, runtimes, models, endpoints and the OpenCode integration.
     Doctor {
         #[arg(long)]
         json: bool,
     },
-    /// Run functional health checks against model endpoints (§44).
+    /// Run functional health checks against model endpoints.
     Health {
         /// Model slot to check (default: every slot).
         slot: Option<String>,
@@ -61,12 +61,12 @@ enum Command {
     Hook { event: host::opencode_v1::HookEvent },
     /// Serve the harness tools over MCP on stdio.
     Mcp,
-    /// Start, resume, inspect, reset, repair and prune tasks (M3).
+    /// Start, resume, inspect, reset, repair and prune tasks.
     Task {
         #[command(subcommand)]
         action: commands::task::TaskAction,
     },
-    /// Explain the recent decisions of a task (R-54.2).
+    /// Explain the recent decisions of a task.
     Explain {
         /// Task id (default: the latest task).
         task: Option<String>,
@@ -74,7 +74,7 @@ enum Command {
         #[arg(long, default_value_t = 10)]
         limit: usize,
     },
-    /// A/B run of the rules and the micro model on recorded loop cases (M4).
+    /// A/B run of the rules and the micro model on recorded loop cases.
     EvalDecisions {
         /// A JSON file of cases: name, task state and loop signals.
         cases: PathBuf,
@@ -85,9 +85,9 @@ enum Command {
         #[arg(long)]
         out: Option<PathBuf>,
     },
-    /// List every outbound destination of this configuration, and the proxy state (M9). Sends nothing.
+    /// List every outbound destination of this configuration, and the proxy state. Sends nothing.
     Egress,
-    /// Ask the subagent tier (M4b): a small local model reads a few bounded inputs and answers with cited evidence.
+    /// Ask the subagent tier: a small local model reads a few bounded inputs and answers with cited evidence.
     Subagent {
         /// `explore` answers a task about the inputs; `summarise` condenses one text.
         #[arg(long)]
@@ -102,12 +102,12 @@ enum Command {
         #[arg(long)]
         text: Option<String>,
     },
-    /// Run a task corpus under a condition, or summarise the results (M10).
+    /// Run a task corpus under a condition, or summarise the results.
     Bench {
         #[command(subcommand)]
         action: commands::bench::BenchAction,
     },
-    /// Show the ordered record of a task (R-54.3).
+    /// Show the ordered record of a task.
     Trace {
         /// Task id (default: the latest task).
         task: Option<String>,

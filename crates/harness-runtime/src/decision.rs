@@ -1,5 +1,5 @@
-//! The LFM decision engine (M4): on a stalled loop, asks the micro slot for one of the answers in
-//! `harness_core::lfm::CHOICES`. Every other case, and every error, is decided by the rules (R-30).
+//! The LFM decision engine: on a stalled loop, asks the micro slot for one of the answers in
+//! `harness_core::lfm::CHOICES`. Every other case, and every error, is decided by the rules.
 //!
 //! The model sees a bounded summary of the task: the phase, the counters, the last action and the names
 //! of the loop signals. It sees no prompt text, no command text and no tool output.
@@ -18,7 +18,7 @@ use crate::providers::{ChatMessage, ChatRequest, ModelProvider};
 /// The name recorded for decisions made by the model.
 pub const PROVIDER_NAME: &str = "local_lfm";
 /// The label of a decision that was escalated to the deep slot, whether the call succeeded or not. Counting the
-/// recorded decisions with this label counts the escalations a task has used (R-18.1).
+/// recorded decisions with this label counts the escalations a task has used.
 pub const ESCALATED_PREFIX: &str = "escalated to deep";
 /// The longest time a deep escalation may take. The hook that asks has a limit of its own (the shim gives up after
 /// 150 s and blocks the call), so the deep slot's own timeout is not used for this call. A GPU swap takes about 20 s

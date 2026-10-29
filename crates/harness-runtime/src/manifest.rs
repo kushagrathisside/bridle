@@ -1,5 +1,5 @@
-//! Model manifests (§38): identity, revision, quantisation, hash, runtime build and hardware,
-//! persisted so benchmark results are comparable (R-41).
+//! Model manifests: identity, revision, quantisation, hash, runtime build and hardware,
+//! persisted so benchmark results are comparable.
 //!
 //! IMPLEMENTATION SPEC (delegated):
 //! - `sha256_file(path)`: streaming SHA-256 (1 MiB buffer) → lowercase hex. Use `sha2` 0.11
@@ -40,7 +40,7 @@ pub struct RuntimeVersion {
     pub commit: Option<String>,
 }
 
-/// Everything recorded about one model slot (§38).
+/// Everything recorded about one model slot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelManifest {
     pub slot: String,

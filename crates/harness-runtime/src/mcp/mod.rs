@@ -1,4 +1,4 @@
-//! A minimal Model Context Protocol server over stdio (ADR-0001 §2).
+//! A minimal Model Context Protocol server over stdio (ADR-0001).
 //!
 //! Only the surface the harness needs: `initialize`, `notifications/initialized`, `ping`,
 //! `tools/list` and `tools/call`. Messages are newline-delimited JSON-RPC 2.0. Any MCP-capable

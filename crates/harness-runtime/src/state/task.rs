@@ -1,4 +1,4 @@
-//! Per-task storage (M3 step 6).
+//! Per-task storage.
 //!
 //! Each task has a directory `.local-agent/tasks/<task_id>/` with:
 //! - `task-events.jsonl`: the journal, the source of truth. Entries carry a `seq`.

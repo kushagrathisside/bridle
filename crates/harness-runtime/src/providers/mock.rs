@@ -1,4 +1,4 @@
-//! Scripted provider for tests (R-7.2 `MockProvider`). Never touches the network.
+//! Scripted provider for tests (`MockProvider`). Never touches the network.
 //!
 //! IMPLEMENTATION SPEC (delegated):
 //! - `MockProvider::echo(model_id)`: every `chat` returns content `"OK"`... more precisely: if the

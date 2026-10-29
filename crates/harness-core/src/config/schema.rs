@@ -1,9 +1,9 @@
-//! The harness configuration schema (R-7.4, R-7.5, R-35.1).
+//! The harness configuration schema.
 //!
-//! One TOML document configures the whole harness. Sections mirror §35 of the brief. Every
+//! One TOML document configures the whole harness. Every
 //! struct rejects unknown keys so typos fail loudly instead of silently falling back to defaults.
 //! Secrets are never stored here: providers name the *environment variable* holding a key
-//! (`api_key_env`), never the key itself (R-35.2).
+//! (`api_key_env`), never the key itself.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -33,9 +33,9 @@ pub struct Config {
     /// Project-specific tools (declarative adapters). Machine or explicit config only: a
     /// repository config may not add tools (see `config::trust`).
     pub tools: ToolsSection,
-    /// The workflow switch and loop thresholds (M3). See [`WorkflowSection`].
+    /// The workflow switch and loop thresholds. See [`WorkflowSection`].
     pub workflow: WorkflowSection,
-    /// The subagent tier: a small local model answers one bounded question (M4b). See [`SubagentsSection`].
+    /// The subagent tier: a small local model answers one bounded question. See [`SubagentsSection`].
     pub subagents: SubagentsSection,
 }
 
@@ -62,7 +62,7 @@ impl Default for Config {
     }
 }
 
-/// Loop bounds (§17). These are starting values to be tuned from trajectories, not constants.
+/// Loop bounds. These are starting values to be tuned from trajectories, not constants.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct AgentSection {
@@ -90,7 +90,7 @@ impl Default for AgentSection {
     }
 }
 
-/// The subagent tier (M4b, R-12.2, R-12.3, R-13.1, R-13.2). Off by default. When on, the `subagent` tool is offered:
+/// The subagent tier. Off by default. When on, the `subagent` tool is offered:
 /// a small local model reads a few bounded, redacted inputs and answers one question with cited evidence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -116,9 +116,9 @@ impl Default for SubagentsSection {
     }
 }
 
-/// The workflow switch and the loop thresholds that are not in `[agent]` (M3 step 5).
+/// The workflow switch and the loop thresholds that are not in `[agent]`.
 ///
-/// `enabled` is false until M3 step 10 passes. Only the machine config may set it to false: a
+/// `enabled` is false by default. Only the machine config may set it to false: a
 /// repository may enable the workflow or tune it, but cannot switch it off (`config::trust`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -134,7 +134,7 @@ pub struct WorkflowSection {
     /// Consecutive loop refusals after which the harness stops refusing on loop grounds and shows
     /// a notice instead (proposed).
     pub refusal_cap: u32,
-    /// Whether the `task_status` tool is offered to the model. Off until M3 step 10 passes, because
+    /// Whether the `task_status` tool is offered to the model. Off by default, because
     /// every tool schema costs prompt tokens on a 16K-context model.
     pub task_status: bool,
 }
@@ -152,7 +152,7 @@ impl Default for WorkflowSection {
     }
 }
 
-/// Machine-specific storage locations (directive D-2: weights live off the system drive).
+/// Machine-specific storage locations (weights live off the system drive).
 ///
 /// Neither path has a default: an unset path is reported by `agent doctor` instead of silently
 /// falling back to a location on the system drive.
@@ -165,13 +165,13 @@ pub struct PathsSection {
     pub runtimes_dir: Option<PathBuf>,
 }
 
-/// The coding-agent host (OpenCode, R-1.2).
+/// The coding-agent host (OpenCode).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct HostSection {
     /// Path to the `opencode` executable. `None` means "look it up on PATH".
     pub opencode_bin: Option<PathBuf>,
-    /// OpenCode version this harness is pinned and tested against (R-41).
+    /// OpenCode version this harness is pinned and tested against.
     pub opencode_version: String,
 }
 
@@ -205,7 +205,7 @@ pub struct RuntimeConfig {
     pub build: Option<String>,
 }
 
-/// How the harness talks to a model endpoint (R-7.2).
+/// How the harness talks to a model endpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
@@ -215,14 +215,14 @@ pub enum ProviderKind {
     LlamaCpp,
     /// PrismML llama.cpp fork serving Bonsai. Same protocol as `llama_cpp`.
     PrismBonsai,
-    /// A LiteLLM gateway (M8). It speaks the OpenAI-compatible protocol, and `id` is the route the gateway serves.
+    /// A LiteLLM gateway. It speaks the OpenAI-compatible protocol, and `id` is the route the gateway serves.
     /// The gateway holds its own provider keys; this config holds only the gateway's key name.
     Litellm,
     /// Scripted responses for tests; never touches the network.
     Mock,
 }
 
-/// What a model slot is for (§5). Routing uses roles and capabilities, never model names (§55).
+/// What a model slot is for. Routing uses roles and capabilities, never model names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelRole {
@@ -234,7 +234,7 @@ pub enum ModelRole {
     DeepReasoning,
     /// Optional secondary reviewer.
     Review,
-    /// Opt-in external/cloud model (§37).
+    /// Opt-in external/cloud model.
     External,
 }
 
@@ -247,7 +247,7 @@ pub enum Hardware {
     Remote,
 }
 
-/// Multi-token prediction / speculative decoding (R-2.7): optional, detected, never required.
+/// Multi-token prediction / speculative decoding: optional, detected, never required.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MtpMode {
@@ -258,7 +258,7 @@ pub enum MtpMode {
     Off,
 }
 
-/// Capabilities a model advertises (§55). Routing operates on these, not on model names.
+/// Capabilities a model advertises. Routing operates on these, not on model names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Capabilities {
@@ -268,7 +268,7 @@ pub struct Capabilities {
     pub structured_output: bool,
     pub streaming: bool,
     pub long_context: bool,
-    /// Runs on this machine. Non-local models need `external.cloud_models.enabled` (R-27.4).
+    /// Runs on this machine. Non-local models need `external.cloud_models.enabled`.
     pub local: bool,
     pub gpu: bool,
 }
@@ -299,7 +299,7 @@ pub struct Sampling {
     pub repeat_penalty: Option<f32>,
 }
 
-/// Reasoning ("thinking") controls. Both Qwen3.5 and Bonsai think by default (audit K-8); the
+/// Reasoning ("thinking") controls. Both Qwen3.5 and Bonsai think by default; the
 /// harness default is off, and profiles opt in per model.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -359,7 +359,7 @@ pub struct LaunchConfig {
     pub extra_args: Vec<String>,
 }
 
-/// Where a model's weights came from, for the manifest (§38). Pin revisions for reproducibility.
+/// Where a model's weights came from, for the manifest. Pin revisions for reproducibility.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ModelSource {
@@ -374,12 +374,12 @@ pub struct ModelSource {
     pub sha256: Option<String>,
     /// Quantisation label, e.g. `Q4_K_M`, `PTQ1_0`.
     pub quantization: String,
-    /// SPDX-ish licence identifier recorded for the licence audit (R-52).
+    /// SPDX-ish licence identifier recorded for the licence audit.
     #[serde(default)]
     pub license: Option<String>,
 }
 
-/// One model slot (R-7.5).
+/// One model slot.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ModelConfig {
@@ -452,7 +452,7 @@ impl Default for RoutingSection {
     }
 }
 
-/// Decision-engine backend (§9). The rest of the system never branches on this.
+/// Decision-engine backend. The rest of the system never branches on this.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DecisionProviderKind {
@@ -465,7 +465,7 @@ pub enum DecisionProviderKind {
 #[serde(default, deny_unknown_fields)]
 pub struct DecisionsSection {
     pub provider: DecisionProviderKind,
-    /// Used whenever the primary backend fails or returns an invalid decision (R-30).
+    /// Used whenever the primary backend fails or returns an invalid decision.
     pub fallback: DecisionProviderKind,
 }
 
@@ -478,7 +478,7 @@ impl Default for DecisionsSection {
     }
 }
 
-/// Named configuration profile (§36). Spelled in TOML as the kebab-case name, e.g. `local-with-jev`.
+/// Named configuration profile. Spelled in TOML as the kebab-case name, e.g. `local-with-jev`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ProfileKind {
@@ -523,7 +523,7 @@ impl Default for ContextSection {
     }
 }
 
-/// A policy verdict (§25). Ordered from most to least permissive.
+/// A policy verdict. Ordered from most to least permissive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Verdict {
@@ -535,7 +535,7 @@ pub enum Verdict {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SecuritySection {
-    /// Autonomous runs must use a git worktree (§26).
+    /// Autonomous runs must use a git worktree.
     pub require_worktree: bool,
     /// Verdict for NETWORK-class operations.
     pub network: Verdict,
@@ -567,7 +567,7 @@ impl Default for SecuritySection {
     }
 }
 
-/// One declarative verification step (§21).
+/// One declarative verification step.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct VerificationStep {
@@ -588,7 +588,7 @@ pub struct VerificationStep {
     pub targets: bool,
 }
 
-/// What a verification step checks (§21).
+/// What a verification step checks.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StepKind {
@@ -617,7 +617,7 @@ impl StepKind {
 #[serde(default, deny_unknown_fields)]
 pub struct VerificationSection {
     pub enabled: bool,
-    /// DONE requires a passing verification run (R-21).
+    /// DONE requires a passing verification run.
     pub required_for_done: bool,
     pub default_timeout_ms: u64,
     pub steps: Vec<VerificationStep>,
@@ -637,7 +637,7 @@ impl Default for VerificationSection {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TelemetryDestination {
-    /// JSONL files under the state directory. The only destination that exists (R-28).
+    /// JSONL files under the state directory. The only destination that exists.
     #[default]
     Local,
 }
@@ -699,7 +699,7 @@ pub struct ExternalSection {
     pub cloud_models: CloudModelsSection,
 }
 
-/// Optional hosted decision engine (§9). Off by default; never required (R-60).
+/// Optional hosted decision engine. Off by default; never required.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct JevSection {
@@ -723,7 +723,7 @@ impl Default for JevSection {
     }
 }
 
-/// Opt-in switch that permits non-local model endpoints (§27, §37).
+/// Opt-in switch that permits non-local model endpoints.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct CloudModelsSection {

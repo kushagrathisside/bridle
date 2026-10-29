@@ -1,10 +1,10 @@
-//! The contract of the LFM decision engine (M4): which answers a stalled loop may take, and how a model
-//! answer is checked (R-9.5, R-20.2, R-30).
+//! The contract of the LFM decision engine: which answers a stalled loop may take, and how a model
+//! answer is checked.
 //!
 //! The model is consulted only when a loop is stalled: the same failure, a repeated command, or a repeated
 //! edit. It may answer ESCALATE, ASK_USER or REPLAN. It never sets a limit, never allows or denies a call,
 //! and never answers for the iteration or retry limits, which stay deterministic. Anything else it returns
-//! is rejected, and the rules decide instead (R-30).
+//! is rejected, and the rules decide instead.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

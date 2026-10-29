@@ -1,9 +1,9 @@
-//! Tool policy (§25, §34): one allow / ask / deny verdict per tool request.
+//! Tool policy: one allow / ask / deny verdict per tool request.
 //!
 //! The policy is host-neutral. Host adapters translate their tool calls (OpenCode's `read`,
 //! `bash`, ...) into a [`ToolRequest`] (a [`ToolKind`], the file paths it touches and the shell
 //! command it runs) and then ask [`ToolPolicy::evaluate`]. The policy inspects the real arguments;
-//! a model cannot talk its way past it (R-25.2, R-59).
+//! a model cannot talk its way past it.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -59,7 +59,7 @@ impl ToolRequest {
     }
 }
 
-/// The policy's answer, with enough detail for `agent explain` and the event log (§54).
+/// The policy's answer, with enough detail for `agent explain` and the event log.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolicyDecision {
     pub verdict: Verdict,
@@ -500,7 +500,7 @@ fn unresolved_denial(word: &str) -> PolicyDecision {
 /// option names one (`--git-dir=/x/.git`). `None` when the expansion is too large to check.
 fn argument_candidates(word: &str) -> Option<Vec<String>> {
     let mut texts = vec![word.to_owned()];
-    // A bash word with escapes names the file the shell sees: `.en\v` is `.env` (M9).
+    // A bash word with escapes names the file the shell sees: `.en\v` is `.env`.
     let unescaped = unescape_shell_word(word);
     if unescaped != word {
         texts.push(unescaped);
@@ -535,7 +535,7 @@ fn unescape_shell_word(word: &str) -> String {
 }
 
 /// Whether a path, as named, may be a secret file: the secret names of `is_secret_file`, or a Windows short
-/// (8.3) name such as `ENV~1`, which can address a file without naming it (M9).
+/// (8.3) name such as `ENV~1`, which can address a file without naming it.
 fn may_name_secret(path: &str) -> bool {
     // A `:` can separate a git revision from a path (`HEAD:.env`) or name an alternate stream, and
     // Windows drops trailing spaces and dots from a name. Each `:`-separated piece is judged with
@@ -556,7 +556,7 @@ fn is_short_name(path: &str) -> bool {
     })
 }
 
-/// Whether a command prints the process environment, which holds the machine's keys (M9, residual risk 4): `env`,
+/// Whether a command prints the process environment, which holds the machine's keys (residual risk 4 in the security concepts page): `env`,
 /// `printenv` or `set` with no operand, `export -p`, a PowerShell `Env:` drive listing, `printenv` of a secret-looking
 /// name, or the .NET call that returns every variable. Each segment is judged alone, so a wrapper such as `env FOO=1 cmd`
 /// is not a dump.
@@ -1000,7 +1000,7 @@ mod tests {
     fn url_arguments_are_not_treated_as_paths() {
         let dir = tempfile::tempdir().expect("tempdir");
         let p = policy(dir.path());
-        // The network rule decides: the policy says Ask, and the hook turns Ask into a block (D3).
+        // The network rule decides: the policy says Ask, and the hook turns Ask into a block.
         let d = p.evaluate(&shell("curl https://example.com"));
         assert_eq!(d.verdict, Verdict::Ask);
         assert_eq!(d.rule, "command_risk");

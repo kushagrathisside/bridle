@@ -19,7 +19,7 @@
 //!   `#[cfg(windows)]`. Missing binary → `LaunchError::MissingBinary(path)`.
 //! - `wait_until_healthy(health_url, timeout, poll) -> Result<Duration, LaunchError>`: poll GET
 //!   `health_url` with ureq (2 s per-request timeout) until HTTP 200, returning elapsed time
-//!   (this is the "model loading" time of R-41); `LaunchError::NotReady(timeout)` on timeout.
+//!   (this is the "model loading" time); `LaunchError::NotReady(timeout)` on timeout.
 //!   Accept an optional `&mut Child` and fail fast with `LaunchError::Exited(status)` if the
 //!   process dies while waiting.
 //! - Unit tests: argument assembly for GPU (Qwen-like) and CPU (LFM-like, `gpu_layers = 0`)

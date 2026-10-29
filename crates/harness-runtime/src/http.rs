@@ -19,7 +19,7 @@ pub fn local_agent(timeout: Duration) -> ureq::Agent {
         .into()
 }
 
-/// Builds an agent for a remote endpoint (M7): the environment's proxy, the system certificate store, the given
+/// Builds an agent for a remote endpoint: the environment's proxy, the system certificate store, the given
 /// whole-request timeout, and non-2xx statuses returned rather than raised.
 pub fn remote_agent(timeout: Duration) -> ureq::Agent {
     ureq::Agent::config_builder()

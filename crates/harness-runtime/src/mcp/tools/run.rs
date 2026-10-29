@@ -1,4 +1,4 @@
-//! `run_command` and `inspect_config` (M2 step 4).
+//! `run_command` and `inspect_config`.
 //!
 //! `run_command` runs one program with arguments and never a shell. Every word must use a small,
 //! unambiguous character set, so the argument list and the command line the policy classifies

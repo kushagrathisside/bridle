@@ -1,5 +1,5 @@
-//! Model providers (§7): every LLM call goes through the [`ModelProvider`] trait, so the harness is
-//! never hard-coded against one server (R-7.1).
+//! Model providers: every LLM call goes through the [`ModelProvider`] trait, so the harness is
+//! never hard-coded against one server.
 //!
 //! The API is synchronous on purpose: the CLI and hook processes are short-lived and make one call
 //! at a time, so an async runtime would add weight without benefit.
@@ -52,7 +52,7 @@ pub struct ToolCall {
     pub id: String,
     /// Function name.
     pub name: String,
-    /// Raw JSON-encoded arguments string, exactly as returned (models can emit invalid JSON, R-59).
+    /// Raw JSON-encoded arguments string, exactly as returned (models can emit invalid JSON).
     pub arguments: String,
 }
 
@@ -115,14 +115,14 @@ pub struct ChatRequest {
     pub enable_thinking: Option<bool>,
 }
 
-/// Token usage reported by the server, when available (R-2.6).
+/// Token usage reported by the server, when available.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Usage {
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
 }
 
-/// Server-side timings (llama.cpp `timings` object), used to separate prefill from generation (R-41).
+/// Server-side timings (llama.cpp `timings` object), used to separate prefill from generation.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct Timings {
     pub prompt_ms: Option<f64>,

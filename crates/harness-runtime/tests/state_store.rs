@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-//! Behaviour of the M3 state store: envelopes, redaction, torn lines, locks and atomic writes.
+//! Behaviour of the state store: envelopes, redaction, torn lines, locks and atomic writes.
 
 use std::fs::{self, File};
 use std::sync::Arc;

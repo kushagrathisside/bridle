@@ -1,12 +1,12 @@
-//! Failure fingerprints (M3 step 3, R-19.1 to R-19.3).
+//! Failure fingerprints.
 //!
 //! A fingerprint identifies one failure across attempts, so that the same failure seen three times
 //! is recognised as a loop even when line numbers, addresses, timestamps or the counts in the message
-//! change. The fields follow R-19.2: the failure kind, the tool, the command, the test identifier,
+//! change. The fields are: the failure kind, the tool, the command, the test identifier,
 //! the source file without its line, the normalised message, and the exit code. The stack-trace
 //! signature is not part of the parsed output, so it is not included; the format version says so.
 //!
-//! Fingerprints are computed on the unredacted text, in memory, before redaction (see the M3 plan).
+//! Fingerprints are computed on the unredacted text, in memory, before redaction.
 //! The format is versioned with the `fp_v1:` prefix, so a later change to the normalisation is visible
 //! in stored records and cannot silently make old hashes match new ones.
 
@@ -102,7 +102,7 @@ pub fn fingerprint_fields(fields: &Fields<'_>, context: Context<'_>) -> String {
 }
 
 /// A short hash of a shell command after whitespace normalisation. Two spellings of one command
-/// hash alike; two different commands do not (the hash is taken before redaction, see the M3 plan).
+/// hash alike; two different commands do not (the hash is taken before redaction).
 pub fn command_hash(command: &str) -> String {
     digest_hex(&collapse(command))[..HASH_HEX_CHARS].to_owned()
 }

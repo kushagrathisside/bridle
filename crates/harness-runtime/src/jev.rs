@@ -1,4 +1,4 @@
-//! The Jev decision engine (M7): asks the configured Jev service about a stalled loop over HTTPS, or over
+//! The Jev decision engine: asks the configured Jev service about a stalled loop over HTTPS, or over
 //! loopback HTTP for a local gateway. Every other case, and every failure, is decided by the rules.
 //!
 //! The request carries the bounded summary the micro model gets: the phase, the counters, the last action and the
@@ -259,8 +259,8 @@ mod tests {
             result.provider
         );
         assert!(!result.provider.contains("secret-123"));
-        // The rules give 1.0 for a loop rule; the fallback keeps that rule confidence.
-        assert_eq!(result.confidence, Some(1.0));
+        // Three identical failures give the same-failure rule 0.75; the fallback keeps that rule confidence.
+        assert_eq!(result.confidence, Some(0.75));
         assert!(!format!("{engine:?}").contains("secret-123"));
     }
 

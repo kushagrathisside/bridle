@@ -1,5 +1,5 @@
-//! The harness's MCP tools. M1 ships `git_status`, `git_diff`, `run_verification` and
-//! `harness_info`; M2 adds the deterministic repository tools.
+//! The harness's MCP tools. The initial set is `git_status`, `git_diff`, `run_verification` and
+//! `harness_info`, followed by the deterministic repository tools.
 //!
 //! IMPLEMENTATION SPEC (delegated). Each tool is a struct implementing [`McpTool`]; all run git or
 //! commands with `std::process::Command` in `ctx.workspace`, never through a shell, except
@@ -723,7 +723,7 @@ struct StepResult {
     output_tail: String,
     /// The last [`OUTPUT_TAIL_BYTES`] of stderr, redacted.
     stderr_tail: String,
-    /// Failures parsed from the step's captured output when it did not pass (AC-A5).
+    /// Failures parsed from the step's captured output when it did not pass.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     failures: Vec<Failure>,
 }

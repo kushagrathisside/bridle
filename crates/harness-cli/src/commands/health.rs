@@ -1,4 +1,4 @@
-//! `agent health` (§44): functional checks against each configured model endpoint.
+//! `agent health`: functional checks against each configured model endpoint.
 //!
 //! Every slot gets the checks from [`harness_runtime::health::run_checks`] (the quick subset with
 //! `--quick`). A slot whose provider cannot be built, for example because its API key variable is
