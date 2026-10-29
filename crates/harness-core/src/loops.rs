@@ -146,28 +146,32 @@ fn repeated_command(ring: &[CallRecord], thresholds: &Thresholds) -> Option<Loop
     })
 }
 
-/// The same failure in the last consecutive verifications, with no pass between them.
+/// The same failure in the last consecutive verifications, with no pass between them. The count is every
+/// consecutive verification that reports the failure, so it keeps growing after the rule first fires.
 fn same_failure(ring: &[CallRecord], thresholds: &Thresholds) -> Option<LoopSignal> {
     let needed = usize::try_from(thresholds.same_failure_verifications).ok()?;
-    let verifications: Vec<&CallRecord> = ring
+    let failing: Vec<&CallRecord> = ring
         .iter()
         .rev()
         .filter(|call| call.verification)
         .take_while(|call| call.passed != Some(true))
-        .take(needed)
         .collect();
-    if verifications.len() < needed {
+    if failing.len() < needed {
         return None;
     }
-    let first = verifications.first()?;
+    let first = failing.first()?;
     let shared = first.fingerprints.iter().find(|fp| {
-        verifications
+        failing[..needed]
             .iter()
             .all(|call| call.fingerprints.contains(fp))
     })?;
+    let count = failing
+        .iter()
+        .take_while(|call| call.fingerprints.contains(shared))
+        .count();
     Some(LoopSignal::SameFailure {
         fingerprint: shared.clone(),
-        count: u32::try_from(verifications.len()).ok()?,
+        count: u32::try_from(count).ok()?,
     })
 }
 
@@ -319,6 +323,23 @@ mod tests {
             vec![LoopSignal::SameFailure {
                 fingerprint: "fp_v1:aaaa".to_owned(),
                 count: 3
+            }]
+        );
+    }
+
+    #[test]
+    fn the_same_failure_count_keeps_growing_after_the_rule_fires() {
+        let ring = vec![
+            verification("1", &["fp_v1:aaaa"]),
+            verification("2", &["fp_v1:aaaa"]),
+            verification("3", &["fp_v1:aaaa"]),
+            verification("4", &["fp_v1:aaaa"]),
+        ];
+        assert_eq!(
+            detect(&ring, &task(), &thresholds()),
+            vec![LoopSignal::SameFailure {
+                fingerprint: "fp_v1:aaaa".to_owned(),
+                count: 4
             }]
         );
     }

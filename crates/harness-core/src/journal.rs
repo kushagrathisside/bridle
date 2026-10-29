@@ -39,6 +39,9 @@ pub enum Record {
     },
     /// A call was refused by a loop rule. It did not run. The iteration limit also blocks the task.
     Refused { call_id: String, rule: String },
+    /// A verification failed and the loop rules sent the case to the deep slot. The task counts the escalation, and
+    /// the answer applies to the calls after it until a verification passes or the task is reset.
+    Escalated { call_id: String },
     /// A person ended the block with `agent task reset`. The loop counters start again.
     Reset { reason: String },
     /// The task runs in its own Git worktree. `base_commit` is where it starts; `dirty_files` counts the
@@ -163,6 +166,7 @@ impl Journal {
                         self.state.consecutive_refusals = 0;
                         self.state.failure_count = 0;
                         self.state.failure_class = None;
+                        self.state.escalation_open = false;
                     }
                     Outcome::Failed => {
                         advance(&mut self.state, Phase::Fail);
@@ -183,11 +187,16 @@ impl Journal {
                 self.state.branch = Some(branch.clone());
                 self.state.worktree = Some(path.clone());
             }
+            Record::Escalated { .. } => {
+                self.state.escalation_count = self.state.escalation_count.saturating_add(1);
+                self.state.escalation_open = true;
+            }
             Record::Reset { .. } => {
                 self.state.status = TaskStatus::Active;
                 self.state.consecutive_refusals = 0;
                 self.state.iteration = 0;
                 self.state.failure_count = 0;
+                self.state.escalation_open = false;
                 self.ring.clear();
             }
         }
@@ -384,6 +393,61 @@ mod tests {
         );
         journal.apply(&entry(4, edit("c4", "calc.py")));
         assert_eq!(journal.state.consecutive_refusals, 0);
+    }
+
+    #[test]
+    fn an_escalation_is_counted_and_stays_open_until_a_pass_or_a_reset() {
+        let mut journal = Journal::new(task());
+        journal.apply(&entry(1, started("c1")));
+        journal.apply(&entry(
+            2,
+            Record::Escalated {
+                call_id: "c1".to_owned(),
+            },
+        ));
+        assert_eq!(journal.state.escalation_count, 1);
+        assert!(journal.state.escalation_open);
+
+        journal.apply(&entry(3, test_run("t1")));
+        journal.apply(&entry(
+            4,
+            Record::VerificationResult {
+                call_id: "t1".to_owned(),
+                outcome: Outcome::Failed,
+                fingerprints: vec!["fp_v1:aaaa".to_owned()],
+            },
+        ));
+        assert!(
+            journal.state.escalation_open,
+            "a failure keeps the answer open"
+        );
+
+        journal.apply(&entry(5, test_run("t2")));
+        journal.apply(&entry(
+            6,
+            Record::VerificationResult {
+                call_id: "t2".to_owned(),
+                outcome: Outcome::Passed,
+                fingerprints: Vec::new(),
+            },
+        ));
+        assert!(!journal.state.escalation_open, "a pass closes the answer");
+        assert_eq!(journal.state.escalation_count, 1, "the count stays");
+
+        journal.apply(&entry(
+            7,
+            Record::Escalated {
+                call_id: "t2".to_owned(),
+            },
+        ));
+        journal.apply(&entry(
+            8,
+            Record::Reset {
+                reason: "test".to_owned(),
+            },
+        ));
+        assert!(!journal.state.escalation_open, "a reset closes the answer");
+        assert_eq!(journal.state.escalation_count, 2);
     }
 
     #[test]

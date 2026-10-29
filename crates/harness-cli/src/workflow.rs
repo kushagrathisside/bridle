@@ -24,7 +24,7 @@ use harness_runtime::jev::JevEngine;
 use harness_runtime::launcher;
 use harness_runtime::mcp::record::is_verification_tool;
 use harness_runtime::providers::provider_for;
-use harness_runtime::state::{DecisionRecord, StateDir};
+use harness_runtime::state::{DecisionRecord, StateDir, Task};
 use serde_json::Value;
 
 use crate::app::App;
@@ -65,15 +65,23 @@ pub fn before(app: &App, input: &Value, read_only: bool) -> Result<Option<String
 
     let thresholds = Thresholds::from_config(&app.config.agent, &app.config.workflow);
     let signals = detect(&journal.ring, &journal.state, &thresholds);
-    let escalations = escalations_used(&task)?;
+    let answered = answered_loop(&task, &journal.state)?;
     let result = decide_for(
         app,
         &DecisionInput {
             state: &journal.state,
             signals: &signals,
         },
-        escalations,
+        journal.state.escalation_count,
+        answered.as_ref(),
     );
+    // An escalation made here, rather than at the failure that caused it, is counted before the call is judged. An
+    // answer that is already open was counted when it was given.
+    if is_escalated(&result) && !journal.state.escalation_open {
+        task.append(Record::Escalated {
+            call_id: call_id.to_owned(),
+        })?;
+    }
 
     // Read-only calls are never refused: they cannot repeat a failure, and the model needs them to read it.
     if !read_only
@@ -180,8 +188,19 @@ fn short(text: &str, max: usize) -> String {
 
 /// The decision for an input. The primary engine decides first (see [`decide_primary`]). An ESCALATE decision that
 /// is due then goes to the deep slot, if routing allows it and the task has escalations left (R-3.6, R-18.1).
-/// `escalations` is the number of escalations the task has already used.
-pub fn decide_for(app: &App, input: &DecisionInput<'_>, escalations: u32) -> DecisionResult {
+/// `escalations` is the number of escalations the task has already used. `answered` is the deep slot's answer for
+/// the loop the task is in, when one applies: it is returned for that loop, and the models are not asked again.
+pub fn decide_for(
+    app: &App,
+    input: &DecisionInput<'_>,
+    escalations: u32,
+    answered: Option<&DecisionResult>,
+) -> DecisionResult {
+    if let Some(answer) = answered
+        .filter(|answer| RulesDecisionEngine.decide(input).reason_code == answer.reason_code)
+    {
+        return answer.clone();
+    }
     let primary = decide_primary(app, input);
     escalate_if_due(app, input, primary, escalations)
 }
@@ -305,14 +324,65 @@ fn with_deep_on_gpu<T>(app: &App, deep: &str, call: impl FnOnce() -> T) -> anyho
     answer
 }
 
-/// The escalations a task has used: every decision that went to the deep slot, successful or not.
-fn escalations_used(task: &harness_runtime::state::Task<'_>) -> Result<u32> {
-    let used = task
+/// Whether a decision came from the deep slot, successful or not.
+fn is_escalated(result: &DecisionResult) -> bool {
+    result.provider.starts_with(ESCALATED_PREFIX)
+}
+
+/// The deep slot's answer for the loop the task is in, while that answer applies (see `TaskState::escalation_open`).
+/// The last decision from the deep slot is the answer: it is written before the journal counts the escalation.
+fn answered_loop(task: &Task<'_>, state: &TaskState) -> Result<Option<DecisionResult>> {
+    if !state.escalation_open {
+        return Ok(None);
+    }
+    let answer = task
         .decisions()?
+        .into_iter()
+        .rev()
+        .find(|record| is_escalated(&record.result))
+        .map(|record| record.result);
+    Ok(answer)
+}
+
+/// Runs the loop rules when a verification has just failed, so a due escalation is taken at the failure rather than
+/// when the agent next makes a call. The answer is kept for the calls after it (see [`answered_loop`]). Nothing happens
+/// unless the call is a failed verification the journal knows, and an answer that is already open is not asked for
+/// again.
+fn escalate_on_failure(app: &App, task: &Task<'_>, call_id: &str) -> Result<()> {
+    let journal = task.snapshot()?;
+    let failed = journal
+        .ring
         .iter()
-        .filter(|record| record.result.provider.starts_with(ESCALATED_PREFIX))
-        .count();
-    Ok(u32::try_from(used).unwrap_or(u32::MAX))
+        .rev()
+        .find(|call| call.call_id == call_id)
+        .is_some_and(|call| call.passed == Some(false));
+    if !failed || journal.state.escalation_open {
+        return Ok(());
+    }
+    let thresholds = Thresholds::from_config(&app.config.agent, &app.config.workflow);
+    let signals = detect(&journal.ring, &journal.state, &thresholds);
+    let result = decide_for(
+        app,
+        &DecisionInput {
+            state: &journal.state,
+            signals: &signals,
+        },
+        journal.state.escalation_count,
+        None,
+    );
+    if !is_escalated(&result) {
+        return Ok(());
+    }
+    task.record_decision(&DecisionRecord {
+        call_id: call_id.to_owned(),
+        signals,
+        result,
+        refused: false,
+    })?;
+    task.append(Record::Escalated {
+        call_id: call_id.to_owned(),
+    })?;
+    Ok(())
 }
 
 /// The rules' decision, labelled as a fallback from the engine that could not decide.
@@ -349,7 +419,7 @@ pub fn after(app: &App, input: &Value) -> Result<()> {
             outcome,
             fingerprints,
         })?;
-        return Ok(());
+        return escalate_on_failure(app, &task, call_id);
     }
 
     // A shell test run: its output is parsed here. The call was marked as a verification before it ran.
@@ -386,7 +456,7 @@ pub fn after(app: &App, input: &Value) -> Result<()> {
         outcome,
         fingerprints,
     })?;
-    Ok(())
+    escalate_on_failure(app, &task, call_id)
 }
 
 /// The refusal text: the rule that fired, why, and the next action that is still allowed.
@@ -518,6 +588,7 @@ mod tests {
                 signals: &signals,
             },
             0,
+            None,
         );
         assert!(
             result.provider.starts_with("rules (fallback from jev:"),
@@ -540,6 +611,7 @@ mod tests {
                 signals: &signals,
             },
             0,
+            None,
         );
         assert_eq!(
             result.provider,
@@ -637,6 +709,7 @@ mod tests {
                 signals,
             },
             escalations,
+            None,
         )
     }
 
@@ -710,6 +783,111 @@ mod tests {
         assert_eq!(
             result.provider, "rules",
             "a diagnose decision is not escalated"
+        );
+    }
+
+    /// The output of a failing test run. Every run of it has the same fingerprint.
+    fn failing_run(call: &str) -> Value {
+        json!({
+            "sessionID": "ses_test",
+            "callID": call,
+            "tool": "bash",
+            "output": "tests/test_calc.py:5: in test_add\nE       assert -1 == 3\nFAILED tests/test_calc.py::test_add - assert -1 == 3\n"
+        })
+    }
+
+    /// Runs the test command `count` times in a row, each run failing, after the edit that starts the task.
+    fn fail_tests_in_a_row(app: &App, count: usize) {
+        before(app, &edit("e0", "calc.py"), false).unwrap();
+        for run in 0..count {
+            let call = format!("t{run}");
+            assert_eq!(
+                before(app, &bash(&call, "python -m pytest -q"), false).unwrap(),
+                None,
+                "run {run}"
+            );
+            after(app, &failing_run(&call)).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_third_failing_verification_is_escalated_at_the_failure_and_not_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = app(dir.path());
+        with_deep_slot(&mut app);
+        app.config.routing.enable_deep_escalation = true;
+        fail_tests_in_a_row(&app, 3);
+        let state = StateDir::open(dir.path()).unwrap();
+        let journal = state.task("task-0001").unwrap().snapshot().unwrap();
+        assert_eq!(journal.state.escalation_count, 1, "counted at the failure");
+        assert!(journal.state.escalation_open);
+        // The next call does not ask the deep slot again: the answer for the loop is what refuses it.
+        let refused = before(&app, &bash("t3", "python -m pytest -q"), false)
+            .unwrap()
+            .expect("refused");
+        assert!(refused.contains("same_failure"), "{refused}");
+        let journal = state.task("task-0001").unwrap().snapshot().unwrap();
+        assert_eq!(journal.state.escalation_count, 1, "no second escalation");
+    }
+
+    #[test]
+    fn the_threshold_decides_whether_the_third_failure_reaches_the_deep_slot() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = app(dir.path());
+        with_deep_slot(&mut app);
+        app.config.routing.enable_deep_escalation = true;
+        app.config.routing.escalation_threshold = 0.9;
+        fail_tests_in_a_row(&app, 3);
+        let state = StateDir::open(dir.path()).unwrap();
+        let journal = state.task("task-0001").unwrap().snapshot().unwrap();
+        assert_eq!(
+            journal.state.escalation_count, 0,
+            "three repeats give 0.75, below 0.9"
+        );
+        assert!(!journal.state.escalation_open);
+    }
+
+    #[test]
+    fn the_answer_of_the_deep_slot_is_kept_for_the_loop_it_answered() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = app(dir.path());
+        let answer = DecisionResult {
+            decision: Decision::AskUser,
+            confidence: None,
+            reason_code: ReasonCode::SameFailure,
+            provider: format!("{ESCALATED_PREFIX} (deep-mock)"),
+            latency_ms: 0,
+            model_reason: Some("the schema cannot hold both rules".to_owned()),
+        };
+        let state = TaskState::new("task-0001", "repo", "fix");
+        let same = same_failure();
+        let kept = decide_for(
+            &app,
+            &DecisionInput {
+                state: &state,
+                signals: &same,
+            },
+            1,
+            Some(&answer),
+        );
+        assert_eq!(kept, answer);
+        let other = [LoopSignal::RepeatedEdit {
+            file: "a.py".to_owned(),
+            count: 4,
+        }];
+        let decided_afresh = decide_for(
+            &app,
+            &DecisionInput {
+                state: &state,
+                signals: &other,
+            },
+            1,
+            Some(&answer),
+        );
+        assert_eq!(
+            decided_afresh.reason_code,
+            ReasonCode::RepeatedEdit,
+            "another loop is decided afresh"
         );
     }
 

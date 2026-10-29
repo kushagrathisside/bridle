@@ -64,8 +64,8 @@ pub enum ReasonCode {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DecisionResult {
     pub decision: Decision,
-    /// Rules give a deterministic confidence of 1.0 when a loop rule fired, and none when the phase
-    /// decided (R-9.5: rules give a deterministic confidence or nothing).
+    /// Rules give a deterministic confidence when a loop rule fired: 1.0 for a counter, and a curve for a
+    /// repeated failure (see [`same_failure_confidence`]). None when the phase decided (R-9.5).
     pub confidence: Option<f32>,
     pub reason_code: ReasonCode,
     /// The engine that made the decision.
@@ -105,32 +105,40 @@ impl DecisionEngine for RulesDecisionEngine {
 
     fn decide(&self, input: &DecisionInput<'_>) -> DecisionResult {
         // A finished task is not going round a loop: DONE comes before any loop rule.
-        let (decision, reason_code) = if input.state.phase == Phase::Done {
-            (Decision::TaskComplete, ReasonCode::PhaseDefault)
+        let (decision, reason_code, confidence) = if input.state.phase == Phase::Done {
+            (Decision::TaskComplete, ReasonCode::PhaseDefault, None)
         } else {
             match first_signal(input.signals) {
                 Some(LoopSignal::IterationLimit { .. }) => {
-                    (Decision::TaskBlocked, ReasonCode::IterationLimit)
+                    (Decision::TaskBlocked, ReasonCode::IterationLimit, Some(1.0))
                 }
-                Some(LoopSignal::ImplementationRetries { .. }) => {
-                    (Decision::Escalate, ReasonCode::ImplementationRetries)
-                }
-                Some(LoopSignal::SameFailure { .. }) => {
-                    (Decision::Escalate, ReasonCode::SameFailure)
-                }
+                Some(LoopSignal::ImplementationRetries { .. }) => (
+                    Decision::Escalate,
+                    ReasonCode::ImplementationRetries,
+                    Some(1.0),
+                ),
+                Some(LoopSignal::SameFailure { count, .. }) => (
+                    Decision::Escalate,
+                    ReasonCode::SameFailure,
+                    Some(same_failure_confidence(*count)),
+                ),
                 Some(LoopSignal::RepeatedEdit { .. }) => {
-                    (Decision::AskUser, ReasonCode::RepeatedEdit)
+                    (Decision::AskUser, ReasonCode::RepeatedEdit, Some(1.0))
                 }
                 Some(LoopSignal::RepeatedCommand { .. }) => (
                     Decision::Next {
                         action: NextAction::Diagnose,
                     },
                     ReasonCode::RepeatedCommand,
+                    Some(1.0),
                 ),
-                None => (phase_decision(input.state.phase), ReasonCode::PhaseDefault),
+                None => (
+                    phase_decision(input.state.phase),
+                    ReasonCode::PhaseDefault,
+                    None,
+                ),
             }
         };
-        let confidence = (reason_code != ReasonCode::PhaseDefault).then_some(1.0);
         DecisionResult {
             decision,
             confidence,
@@ -151,9 +159,19 @@ pub fn refuses(result: &DecisionResult, consecutive_refusals: u32, refusal_cap: 
         && consecutive_refusals < refusal_cap
 }
 
-/// Whether a decision is due for escalation to the deep slot (R-3.6, R-18.1). An ESCALATE decision is acted on when
-/// its confidence reaches `threshold`. A decision with no confidence (the micro model's answers) is acted on: the
-/// model answered for the case, and there is no number to compare.
+/// The confidence of the same-failure rule after `count` identical failures in a row. Each repeat after the first
+/// halves the doubt: two identical failures give 0.5, three give 0.75 and four give 0.875. The curve is a fixed choice,
+/// not a measured probability. It is picked so the default threshold (0.75) is met at the third identical failure,
+/// which is the R-17.3 limit with `max_same_failure = 2`.
+fn same_failure_confidence(count: u32) -> f32 {
+    let repeats = i32::try_from(count.saturating_sub(1)).unwrap_or(i32::MAX);
+    1.0 - 0.5_f32.powi(repeats)
+}
+
+/// Whether a decision is due for escalation to the deep slot (R-3.6, R-18.1). An ESCALATE decision is sent to the deep
+/// slot when its confidence reaches `threshold`: the threshold is the evidence needed before the deep model is asked.
+/// A decision with no confidence (the micro model's answers) is always sent: the model answered for the case, and
+/// there is no number to compare.
 pub fn escalation_due(result: &DecisionResult, threshold: f32) -> bool {
     result.decision == Decision::Escalate && result.confidence.is_none_or(|c| c >= threshold)
 }
@@ -232,7 +250,27 @@ mod tests {
         let result = decide(&state(Phase::Verify), &signals);
         assert_eq!(result.decision, Decision::Escalate);
         assert_eq!(result.reason_code, ReasonCode::SameFailure);
-        assert_eq!(result.confidence, Some(1.0));
+        assert_eq!(result.confidence, Some(0.75));
+    }
+
+    #[test]
+    fn the_same_failure_confidence_grows_with_each_repeat() {
+        assert_eq!(same_failure_confidence(2), 0.5);
+        assert_eq!(same_failure_confidence(3), 0.75);
+        assert_eq!(same_failure_confidence(4), 0.875);
+        assert!(same_failure_confidence(5) > same_failure_confidence(4));
+    }
+
+    #[test]
+    fn a_counter_rule_keeps_full_confidence() {
+        let signals = [LoopSignal::ImplementationRetries {
+            entries: 4,
+            limit: 3,
+        }];
+        assert_eq!(
+            decide(&state(Phase::Implement), &signals).confidence,
+            Some(1.0)
+        );
     }
 
     #[test]
@@ -371,5 +409,23 @@ mod tests {
             ..escalate(Some(1.0))
         };
         assert!(!escalation_due(&replan, 0.75), "only ESCALATE is escalated");
+    }
+
+    #[test]
+    fn the_threshold_asks_for_more_repeats_before_the_deep_model() {
+        let after = |count| DecisionResult {
+            decision: Decision::Escalate,
+            confidence: Some(same_failure_confidence(count)),
+            reason_code: ReasonCode::SameFailure,
+            provider: "rules".to_owned(),
+            latency_ms: 0,
+            model_reason: None,
+        };
+        assert!(
+            escalation_due(&after(3), 0.75),
+            "the default: three repeats"
+        );
+        assert!(!escalation_due(&after(3), 0.9), "three is not enough");
+        assert!(escalation_due(&after(5), 0.9), "five repeats are enough");
     }
 }
