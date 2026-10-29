@@ -1,4 +1,4 @@
-//! Code-intelligence tools (M2 step 5, brief §14 and §15): `repo_map`, `file_summary`,
+//! Code-intelligence tools: `repo_map`, `file_summary`,
 //! `symbol_search` and `find_references`. The syntax analysis is `crate::code`; this module
 //! decides which files are read.
 //!

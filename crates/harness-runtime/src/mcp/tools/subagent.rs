@@ -1,4 +1,4 @@
-//! The `subagent` MCP tool (M4b): asks the small model for a checked answer about a few files, or a condensed text.
+//! The `subagent` MCP tool: asks the small model for a checked answer about a few files, or a condensed text.
 //!
 //! The tool is offered only when `[subagents] enabled = true` (see `harness-cli/src/commands/mcp.rs`). It cannot edit a
 //! file or run a command. Its answer is a reading of redacted inputs, and the text says so.

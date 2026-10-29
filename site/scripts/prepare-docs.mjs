@@ -21,8 +21,7 @@ const ROOT = path.resolve(DOCS, '..');
 const OUT = path.join(SITE, 'src', 'content', 'docs');
 const REPO = 'https://github.com/kushagrathisside/bridle';
 
-// Paths under docs/ that stay on GitHub and are not published on the site: the status records (the progress log,
-// the milestone records and the checklist), the project brief, the requirements register and the archive.
+// Paths under docs/ that are kept off the site.
 // A folder ends with "/".
 const UNPUBLISHED = ['archive/', 'status/', 'spec/', 'reference/requirements-traceability.md'];
 

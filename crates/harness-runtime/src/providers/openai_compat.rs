@@ -1,4 +1,4 @@
-//! OpenAI-compatible `/v1/chat/completions` client over `ureq` (plain HTTP in M1).
+//! OpenAI-compatible `/v1/chat/completions` client over `ureq` (plain HTTP).
 //!
 //! Covers non-streaming and SSE streaming chat, model listing and a liveness probe. Connection
 //! failures and HTTP 503 are retried with a short backoff; every other failure is returned at
@@ -25,7 +25,7 @@ const ERROR_BODY_LIMIT: usize = 2048;
 
 type HttpResponse = ureq::http::Response<ureq::Body>;
 
-/// Secret holder whose `Debug` output never reveals the value (R-35.2).
+/// Secret holder whose `Debug` output never reveals the value.
 struct ApiKey(String);
 
 impl fmt::Debug for ApiKey {
@@ -54,7 +54,7 @@ impl OpenAiCompatProvider {
     /// counts as no key.
     pub fn new(model: &ModelConfig, api_key: Option<String>) -> Self {
         let timeout = Duration::from_millis(model.timeout_ms);
-        // A loopback endpoint never goes through a proxy; any other host uses the environment's proxy and TLS (M7, M8).
+        // A loopback endpoint never goes through a proxy; any other host uses the environment's proxy and TLS.
         let agent = if harness_core::config::endpoint_is_loopback(&model.endpoint) {
             crate::http::local_agent(timeout)
         } else {

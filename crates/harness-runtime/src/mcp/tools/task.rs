@@ -1,6 +1,6 @@
-//! `task_status` (M3 step 7): the state of a task, for the model and for the person.
+//! `task_status`: the state of a task, for the model and for the person.
 //!
-//! The tool is offered only when `[workflow].task_status = true` (off until M3 step 10 passes). It reads the
+//! The tool is offered only when `[workflow].task_status = true` (off by default). It reads the
 //! task cache through the same snapshot the loop rules use, and it returns only fields that are already
 //! bounded: no prompt, no command text, no tool output. The output is redacted like every other tool.
 

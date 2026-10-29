@@ -1,8 +1,8 @@
-//! Records verification results for the orchestrator (M3 step 6).
+//! Records verification results for the orchestrator.
 //!
 //! The after-hook of the host does not see MCP output, so the server writes each verification result to the
 //! workspace state itself, and the host's after-hook for the same call claims it. The fingerprints are
-//! computed here, on the raw output and before redaction (see the M3 plan). Only the hashes are stored.
+//! computed here, on the raw output and before redaction. Only the hashes are stored.
 
 use harness_core::fingerprint::{Context, Fields, args_hash, fingerprint_fields};
 use harness_core::journal::Outcome;

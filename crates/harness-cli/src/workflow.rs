@@ -1,8 +1,8 @@
-//! The orchestrator's hook glue (M3 step 6).
+//! The orchestrator's hook glue.
 //!
 //! Before a call runs, the loop rules look at the task's recent calls and may refuse the call. After a
 //! call, the result of a verification is recorded. Both run only when `[workflow].enabled` is true, and
-//! only after the M2 policy has allowed the call, so the policy keeps the final say. The OpenCode payload
+//! only after the policy has allowed the call, so the policy keeps the final say. The OpenCode payload
 //! mapping lives here and in `host::opencode_v1`; the rules and the records live in `harness-core`.
 
 use std::time::Duration;
@@ -128,7 +128,7 @@ pub fn before(app: &App, input: &Value, read_only: bool) -> Result<Option<String
     Ok(None)
 }
 
-/// The task state for the system prompt (M6, R-23.1). Only when the workflow is enabled and the session is bound to
+/// The task state for the system prompt. Only when the workflow is enabled and the session is bound to
 /// a task: a session without one gets no block, and nothing is created.
 pub fn system_block(app: &App, input: &Value) -> Result<Option<String>> {
     if !app.config.workflow.enabled {
@@ -187,7 +187,7 @@ fn short(text: &str, max: usize) -> String {
 }
 
 /// The decision for an input. The primary engine decides first (see [`decide_primary`]). An ESCALATE decision that
-/// is due then goes to the deep slot, if routing allows it and the task has escalations left (R-3.6, R-18.1).
+/// is due then goes to the deep slot, if routing allows it and the task has escalations left.
 /// `escalations` is the number of escalations the task has already used. `answered` is the deep slot's answer for
 /// the loop the task is in, when one applies: it is returned for that loop, and the models are not asked again.
 pub fn decide_for(
@@ -207,7 +207,7 @@ pub fn decide_for(
 
 /// The primary engine's decision. With `decisions.provider = "local_lfm"` and `routing.enable_micro_decisions`, a
 /// stalled loop is decided by the micro slot; every other case, and every failure to reach the model, is decided by
-/// the rules (R-30).
+/// the rules.
 fn decide_primary(app: &App, input: &DecisionInput<'_>) -> DecisionResult {
     let env = |name: &str| std::env::var(name).ok();
     if app.config.decisions.provider == DecisionProviderKind::Jev {
@@ -240,9 +240,9 @@ fn decide_primary(app: &App, input: &DecisionInput<'_>) -> DecisionResult {
 const DEEP_START_WAIT: Duration = Duration::from_secs(45);
 const PARKED_RESTORE_WAIT: Duration = Duration::from_secs(45);
 
-/// Sends a due escalation to the deep slot (R-3.6, R-18.1). Routing must be on, the task must have escalations left,
+/// Sends a due escalation to the deep slot. Routing must be on, the task must have escalations left,
 /// and a deep slot must be defined (validation V39). When the deep slot runs on the GPU and is not serving, the GPU
-/// slots that run are parked for the call and started again afterwards (R-45.1, R-45.3). Any failure keeps the escalated
+/// slots that run are parked for the call and started again afterwards. Any failure keeps the escalated
 /// decision, which goes to the person.
 fn escalate_if_due(
     app: &App,

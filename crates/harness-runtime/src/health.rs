@@ -1,4 +1,4 @@
-//! Functional health checks (§44): an HTTP 200 is not evidence of compatibility.
+//! Functional health checks: an HTTP 200 is not evidence of compatibility.
 //!
 //! IMPLEMENTATION SPEC (delegated). `run_checks(provider, model, opts)` runs, in order, and
 //! returns one [`CheckResult`] per check (never panics, never returns early except: if `Health`
@@ -17,7 +17,7 @@
 //!    `get_weather(city: string, required)` with `tool_choice: "auto"` and prompt `What is the
 //!    weather in Paris? Use the get_weather tool.` Pass if the first tool call is named
 //!    `get_weather` and its arguments parse as a JSON object whose `city` contains "Paris"
-//!    (case-insensitive); Warn if a tool call is present but malformed (record why — K-9);
+//!    (case-insensitive); Warn if a tool call is present but malformed (record why);
 //!    Fail if no tool call.
 //! 6. `StructuredOutput` (only if `capabilities.structured_output`, else Skip) — `response_format`
 //!    `{"type":"json_schema","json_schema":{"name":"decision","strict":true,"schema":{"type":
@@ -101,7 +101,7 @@ const ALL_CHECKS: [CheckKind; 8] = [
 
 /// Runs the functional checks against `provider` for the slot described by `model`.
 ///
-/// Returns one result per check, in §44 order. A failed health check skips every later check.
+/// Returns one result per check, in check order. A failed health check skips every later check.
 /// Quick mode returns only the first three results.
 pub fn run_checks(
     provider: &dyn ModelProvider,

@@ -1,4 +1,4 @@
-//! `agent doctor` (§43): one read-only report on the host, the configured runtimes and model files,
+//! `agent doctor`: one read-only report on the host, the configured runtimes and model files,
 //! each endpoint's quick health, the OpenCode binary and the config issues.
 //!
 //! Missing optional pieces are warnings. The exit code is a failure only when a configured runtime
@@ -222,10 +222,7 @@ fn classify_disk(free: Option<u64>, on_system_drive: bool) -> (Level, String) {
         ),
         (Some(bytes), true) => (
             Level::Warn,
-            format!(
-                "{} free, but on the system drive (V18, directive D-2)",
-                gib(bytes)
-            ),
+            format!("{} free, but on the system drive (V18)", gib(bytes)),
         ),
         (Some(bytes), false) => (Level::Ok, format!("{} free", gib(bytes))),
     }

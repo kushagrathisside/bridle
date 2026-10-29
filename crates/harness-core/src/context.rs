@@ -1,6 +1,6 @@
-//! Context management (M6, R-23 and R-24): decides what the model sees of each tool result.
+//! Context management: decides what the model sees of each tool result.
 //!
-//! Pure rules over sizes, ages and kinds, against a budget from `[context]`. No model decides here (R-24.2).
+//! Pure rules over sizes, ages and kinds, against a budget from `[context]`. No model decides here.
 //! The caller applies the actions: [`Action::Compact`] keeps a head, a tail or the failure lines of a result,
 //! and [`Action::Drop`] replaces it with a one-line stub. Nothing is ever added to a result.
 

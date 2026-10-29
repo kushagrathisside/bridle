@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-//! The subagent tier through the real binary (M4b). The tool is offered only when the tier is on; the command refuses
+//! The subagent tier through the real binary. The tool is offered only when the tier is on; the command refuses
 //! when it is off; an unreachable model is reported as unavailable, never answered; a bad role is refused before any call.
 
 use std::io::Write;

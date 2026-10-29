@@ -1,4 +1,4 @@
-//! Append-only JSONL event log under the state directory (§28). Local only, redacted on write.
+//! Append-only JSONL event log under the state directory. Local only, redacted on write.
 //!
 //! Several short-lived hook processes may append concurrently. Each event is serialised to a
 //! single line and written with one `write_all` on a file opened in append mode, which keeps lines
@@ -12,7 +12,7 @@ use harness_core::identity;
 use harness_core::security::redact::Redactor;
 use harness_core::telemetry::{Event, EventKind};
 
-/// Log file for tool and permission events (R-16.1 `tool-events.jsonl`).
+/// Log file for tool and permission events (`tool-events.jsonl`).
 pub const TOOL_EVENTS: &str = "tool-events.jsonl";
 /// Log file for everything else.
 pub const EVENTS: &str = "events.jsonl";

@@ -1,18 +1,18 @@
-//! Decisions for the next step (M3 step 5, R-9.2 to R-9.5, R-10).
+//! Decisions for the next step.
 //!
-//! A [`DecisionEngine`] turns a task state and the loop signals into a [`DecisionResult`]. M3 has one
+//! A [`DecisionEngine`] turns a task state and the loop signals into a [`DecisionResult`]. This module has one
 //! engine, [`RulesDecisionEngine`], which is deterministic: the same input always gives the same result.
-//! The M4 micro model and the M7 Jev backend implement the same trait later, and the rest of the
-//! harness never branches on which engine is active (R-9.3).
+//! The micro model and the Jev backend implement the same trait, and the rest of the
+//! harness never branches on which engine is active.
 //!
-//! The vocabulary is closed (R-10.3). A decision is one of the variants below, never free text.
+//! The vocabulary is closed. A decision is one of the variants below, never free text.
 
 use serde::{Deserialize, Serialize};
 
 use crate::loops::LoopSignal;
 use crate::task::{Phase, TaskState};
 
-/// The next action the model should take (R-10.2 `NEXT_ACTION`).
+/// The next action the model should take (`NEXT_ACTION`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum NextAction {
@@ -27,7 +27,7 @@ pub enum NextAction {
     Done,
 }
 
-/// A decision (R-10.1). The variants are the controlled vocabulary of M3.
+/// A decision. The variants are the controlled vocabulary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "decision", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Decision {
@@ -35,11 +35,11 @@ pub enum Decision {
     Next { action: NextAction },
     /// Retry the last action once.
     Retry,
-    /// Stop going round the loop and escalate. In M3 there is no deep model yet, so this asks the user.
+    /// Stop going round the loop and escalate. Without a deep model, this asks the user.
     Escalate,
     /// A person must decide before the task continues.
     AskUser,
-    /// Plan again from the current state (R-20.2 REPLAN). Only a stalled loop can ask for it.
+    /// Plan again from the current state (REPLAN). Only a stalled loop can ask for it.
     Replan,
     /// The task cannot continue within its limits.
     TaskBlocked,
@@ -60,12 +60,12 @@ pub enum ReasonCode {
     RepeatedCommand,
 }
 
-/// The result of one decision (R-9.4).
+/// The result of one decision.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DecisionResult {
     pub decision: Decision,
     /// Rules give a deterministic confidence when a loop rule fired: 1.0 for a counter, and a curve for a
-    /// repeated failure (see [`same_failure_confidence`]). None when the phase decided (R-9.5).
+    /// repeated failure (see [`same_failure_confidence`]). None when the phase decided.
     pub confidence: Option<f32>,
     pub reason_code: ReasonCode,
     /// The engine that made the decision.
@@ -93,7 +93,7 @@ pub trait DecisionEngine {
     fn decide(&self, input: &DecisionInput<'_>) -> DecisionResult;
 }
 
-/// The rules engine of M3. It takes the first loop rule that fired, in priority order, and otherwise
+/// The rules engine. It takes the first loop rule that fired, in priority order, and otherwise
 /// follows the phase.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RulesDecisionEngine;
@@ -152,7 +152,7 @@ impl DecisionEngine for RulesDecisionEngine {
 
 /// Whether a loop refusal may be shown for `result`. A refusal is shown only for a loop rule, and only
 /// until `refusal_cap` consecutive refusals have been shown. After that the harness shows a notice
-/// instead of refusing (proposed; see the M3 plan, decision 4).
+/// instead of refusing (proposed).
 pub fn refuses(result: &DecisionResult, consecutive_refusals: u32, refusal_cap: u32) -> bool {
     result.reason_code != ReasonCode::PhaseDefault
         && result.decision != Decision::TaskComplete
@@ -162,13 +162,13 @@ pub fn refuses(result: &DecisionResult, consecutive_refusals: u32, refusal_cap: 
 /// The confidence of the same-failure rule after `count` identical failures in a row. Each repeat after the first
 /// halves the doubt: two identical failures give 0.5, three give 0.75 and four give 0.875. The curve is a fixed choice,
 /// not a measured probability. It is picked so the default threshold (0.75) is met at the third identical failure,
-/// which is the R-17.3 limit with `max_same_failure = 2`.
+/// which is the limit with `max_same_failure = 2`.
 fn same_failure_confidence(count: u32) -> f32 {
     let repeats = i32::try_from(count.saturating_sub(1)).unwrap_or(i32::MAX);
     1.0 - 0.5_f32.powi(repeats)
 }
 
-/// Whether a decision is due for escalation to the deep slot (R-3.6, R-18.1). An ESCALATE decision is sent to the deep
+/// Whether a decision is due for escalation to the deep slot. An ESCALATE decision is sent to the deep
 /// slot when its confidence reaches `threshold`: the threshold is the evidence needed before the deep model is asked.
 /// A decision with no confidence (the micro model's answers) is always sent: the model answered for the case, and
 /// there is no number to compare.

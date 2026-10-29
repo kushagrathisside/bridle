@@ -1,4 +1,4 @@
-//! Shell command risk classification (§25, R-25.2): the policy inspects the *actual* command text,
+//! Shell command risk classification: the policy inspects the *actual* command text,
 //! so a model cannot bypass it with creative arguments.
 //!
 //! IMPLEMENTATION SPEC (delegated). Pure function, no I/O, never panics on any input.
@@ -32,7 +32,7 @@
 //! `git restore` (without `--staged`), `git push` with `--force`/`-f`/`--force-with-lease`/`--delete`/`:<ref>`,
 //! `git branch -D`/`--delete --force`, `git rebase`, `git filter-branch`, `git filter-repo`,
 //! `git reflog expire`, `git gc --prune`, `git stash drop|clear`, `git update-ref -d`,
-//! `git commit --amend` (history rewrite, §49); `mkfs*`, `dd`, `shred`, `wipefs`, `format`,
+//! `git commit --amend` (history rewrite); `mkfs*`, `dd`, `shred`, `wipefs`, `format`,
 //! `Format-Volume`, `Clear-Disk`, `cipher /w`; `find … -delete` or `find … -exec rm`;
 //! `truncate`; output redirection `>` (not `>>`) onto an existing-looking path outside the
 //! workspace is out of scope here — redirection is WRITE (see below).

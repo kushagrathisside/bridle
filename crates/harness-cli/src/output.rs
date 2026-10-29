@@ -1,4 +1,4 @@
-//! Human-readable status lines for `doctor` and `health` (§43 example format).
+//! Human-readable status lines for `doctor` and `health` (example format).
 
 use std::fmt::Display;
 

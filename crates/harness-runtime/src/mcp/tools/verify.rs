@@ -1,5 +1,5 @@
 //! `run_tests`, `run_linter` and `run_typechecker`: the declared verification steps of one kind
-//! (§21, R-21.2, R-21.5).
+//!.
 //!
 //! Steps come only from config and are classified before they run (see `run_step`). `run_tests`
 //! may append targets to steps that declare `targets = true`. A target is a test file, a node id

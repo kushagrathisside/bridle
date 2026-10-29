@@ -1,4 +1,4 @@
-//! `agent task`, `agent explain` and `agent trace` (M3 step 8, R-54.2, R-54.3).
+//! `agent task`, `agent explain` and `agent trace`.
 //!
 //! Output is plain text, one fact per line. Anything that came from the model or the host passes through
 //! [`clean`], so a control character cannot rewrite the terminal.
@@ -24,7 +24,7 @@ pub enum TaskAction {
         /// The task's objective. Stored redacted.
         #[arg(long, default_value = "")]
         prompt: String,
-        /// Run the task in its own Git worktree under `.worktrees/` (R-26.1).
+        /// Run the task in its own Git worktree under `.worktrees/`.
         #[arg(long)]
         worktree: bool,
     },

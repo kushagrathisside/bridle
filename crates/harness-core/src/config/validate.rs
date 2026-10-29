@@ -8,7 +8,7 @@
 //! | V1 | Error | `models` is empty |
 //! | V2 | Error | `agent.default_model` is not a key of `models` |
 //! | V3 | Error | an endpoint does not start with `http://` or `https://`, or has an empty host |
-//! | V4 | Error | an endpoint host is not loopback (`127.0.0.0/8`, `localhost`, `[::1]`) unless `external.cloud_models.enabled` and the scheme is `https`; or `capabilities.local == false` while `external.cloud_models.enabled == false` (local-first, R-27.4) |
+//! | V4 | Error | an endpoint host is not loopback (`127.0.0.0/8`, `localhost`, `[::1]`) unless `external.cloud_models.enabled` and the scheme is `https`; or `capabilities.local == false` while `external.cloud_models.enabled == false` (local-first) |
 //! | V5 | Error | `context == 0`, or `max_output_tokens >= context` |
 //! | V6 | Error | `launch.runtime` is not a key of `runtimes` |
 //! | V7 | Error | provider `prism_bonsai` with a launch runtime whose kind is not `prism_llama_cpp`; or a ternary quantisation (`PTQ1_0`/`PQ2_0` in `source.quantization` or in the `launch.model_file` name, case-insensitive) launched with a `llama_cpp` runtime |
@@ -16,14 +16,14 @@
 //! | V9 | Error | `context.target_tokens > context.hard_limit` |
 //! | V10 | Error | `routing.escalation_threshold` outside `[0, 1]` |
 //! | V11 | Error | `decisions.provider` or `decisions.fallback` is `jev` while `external.jev.enabled == false` |
-//! | V12 | Error | `external.jev.enabled` or `external.cloud_models.enabled` while `profile == "local-only"` (R-36.2) |
+//! | V12 | Error | `external.jev.enabled` or `external.cloud_models.enabled` while `profile == "local-only"` |
 //! | V13 | Error | `sampling.temperature` outside `[0, 2]`, `top_p` outside `(0, 1]`, `min_p` outside `[0, 1]` |
 //! | V14 | Warning | `kv_cache` not one of `f16, bf16, q8_0, q4_0, q4_1, q5_0, q5_1, iq4_nl` |
 //! | V15 | Warning | `verification.enabled && required_for_done && steps.is_empty()` — DONE can never be verified |
 //! | V16 | Error | a launch `model_file` is relative and `paths.models_dir` is `None` (same for runtime `server_bin` / `paths.runtimes_dir`) |
 //! | V17 | Warning | two model slots share the same endpoint |
-//! | V18 | Warning | `paths.models_dir` is on the system drive (`env.system_drive`, compare case-insensitively on the drive prefix such as `C:`) — directive D-2 |
-//! | V19 | Warning | `decisions.fallback != rules` — the fallback should be deterministic (R-30) |
+//! | V18 | Warning | `paths.models_dir` is on the system drive (`env.system_drive`, compare case-insensitively on the drive prefix such as `C:`) |
+//! | V19 | Warning | `decisions.fallback != rules` — the fallback should be deterministic |
 //! | V20 | Error | provider `mock` in any profile other than `test` |
 //! | V21 | Error | `context.hard_limit > models[agent.default_model].context` (skipped when the default model is missing) |
 //! | V22 | Error | `launch.extra_args` contains a reserved flag ([`super::RESERVED_LAUNCH_FLAGS`]: listener, model, alias, context, key, served or written paths), as `--flag` or `--flag=value` |
@@ -564,7 +564,7 @@ fn check_runtimes(cfg: &Config, report: &mut Report) {
     }
 }
 
-/// V12: the local-only profile forbids every external opt-in (R-36.2).
+/// V12: the local-only profile forbids every external opt-in.
 fn check_profile(cfg: &Config, report: &mut Report) {
     if cfg.profile != ProfileKind::LocalOnly {
         return;
@@ -680,7 +680,7 @@ fn check_decisions(cfg: &Config, report: &mut Report) {
         report.warning(
             "V19",
             "decisions.fallback",
-            "the fallback should be the deterministic `rules` engine (R-30)",
+            "the fallback should be the deterministic `rules` engine",
         );
     }
 }
@@ -827,7 +827,7 @@ fn check_adapters(cfg: &Config, report: &mut Report) {
     }
 }
 
-/// V18: the models directory should not sit on the system drive (D-2).
+/// V18: the models directory should not sit on the system drive.
 fn check_paths(cfg: &Config, env: &ValidationEnv, report: &mut Report) {
     if let Some(system_drive) = env.system_drive.as_deref()
         && let Some(models_dir) = cfg.paths.models_dir.as_deref()
@@ -836,7 +836,7 @@ fn check_paths(cfg: &Config, env: &ValidationEnv, report: &mut Report) {
         report.warning(
             "V18",
             "paths.models_dir",
-            "models_dir is on the system drive; keep weights on a data drive (D-2)",
+            "models_dir is on the system drive; keep weights on a data drive",
         );
     }
 }

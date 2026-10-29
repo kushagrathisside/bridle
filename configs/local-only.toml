@@ -1,11 +1,11 @@
-# local-only profile (§36): Qwen + LFM + Bonsai on this machine, deterministic tools, no network.
+# local-only profile: Qwen + LFM + Bonsai on this machine, deterministic tools, no network.
 #
 # Machine-specific locations (where weights and runtimes live) are NOT set here. Put them in the
 # machine config with:
 #   agent init --machine --models-dir D:\models --runtimes-dir D:\runtimes --opencode-bin <path>
 # Relative model_file / server_bin paths below resolve against those directories.
 #
-# Numeric values marked DEF are initial engineering defaults to be tuned by benchmark (§3, §17).
+# Numeric values marked DEF are initial engineering defaults to be tuned by benchmark.
 
 profile = "local-only"
 
@@ -27,7 +27,7 @@ kind = "prism_llama_cpp"
 server_bin = "llama.cpp-prism/prism-b10787-cuda12.4/llama-server.exe"
 build = "prism-b10787-73bfe6c"
 
-# --- MAIN ENGINEER (§2.1) -------------------------------------------------------------------
+# --- MAIN ENGINEER -------------------------------------------------------------------
 [models.main]
 provider = "llama_cpp"
 id = "qwen3.5-9b"
@@ -37,7 +37,7 @@ endpoint = "http://127.0.0.1:8001/v1"
 context = 16384                 # DEF
 max_output_tokens = 4096
 kv_cache = "q8_0"
-mtp = "auto"                    # optional, detected (R-2.7)
+mtp = "auto"                    # optional, detected
 timeout_ms = 600000
 retries = 1
 hardware = "gpu"
@@ -47,7 +47,7 @@ temperature = 0.7
 top_p = 0.8
 top_k = 20
 
-[models.main.reasoning]         # thinking off for iteration speed (audit K-8); benchmark both
+[models.main.reasoning]         # thinking off for iteration speed; benchmark both
 enabled = false
 
 [models.main.capabilities]
@@ -77,7 +77,7 @@ sha256 = "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8"
 quantization = "Q4_K_M"
 license = "Apache-2.0"
 
-# --- MICRO-ORCHESTRATOR (§4) — CPU-resident, used from M4 -----------------------------------
+# --- MICRO-ORCHESTRATOR — CPU-resident -----------------------------------
 [models.micro]
 provider = "llama_cpp"
 id = "lfm2.5-1.2b-thinking"
@@ -90,7 +90,7 @@ timeout_ms = 120000
 retries = 1
 hardware = "cpu"
 
-[models.micro.sampling]         # Liquid's documented low-temperature settings (§4)
+[models.micro.sampling]         # Liquid's documented low-temperature settings
 temperature = 0.05
 top_k = 50
 repeat_penalty = 1.05
@@ -121,14 +121,14 @@ sha256 = "7223a2202405b02e8e1e6c5baa543c43dc98c1d9741a5c2a0ee1583212e1231b"
 quantization = "Q4_K_M"
 license = "lfm1.0"
 
-# --- DEEP REASONER (§3) — loaded on demand, never alongside main (§45), used from M5 ---------
+# --- DEEP REASONER — loaded on demand, never alongside main ---------
 [models.deep]
 provider = "prism_bonsai"
 id = "bonsai-2-27b"
 display_name = "Ternary Bonsai 2 27B PTQ1_0"
 role = "deep_reasoning"
 endpoint = "http://127.0.0.1:8003/v1"
-context = 16384                 # DEF: 16K-24K "normal deep task"; start low on 8 GB (audit K-4)
+context = 16384                 # DEF: 16K-24K "normal deep task"; start low on 8 GB
 max_output_tokens = 8192
 kv_cache = "q8_0"
 timeout_ms = 1800000
@@ -143,7 +143,7 @@ min_p = 0.05
 
 [models.deep.reasoning]
 enabled = true
-budget_tokens = 8192            # M5: raised from 4096 (truncated answers); 16384 would leave no room in a 16K context
+budget_tokens = 8192            # raised from 4096 (truncated answers); 16384 would leave no room in a 16K context
 
 [models.deep.capabilities]
 tool_calling = true
@@ -169,7 +169,7 @@ sha256 = "53107f530aa52eb00912263ab1ee29bd199261c87cd7b4ad4ca1318c1fe33ee3"
 quantization = "PTQ1_0"
 license = "Apache-2.0"
 
-# --- Orchestration: Phase 1 has no routing (§57) ---------------------------------------------
+# --- Orchestration: No routing between model slots ---------------------------------------------
 [routing]
 enable_micro_decisions = false
 enable_deep_escalation = false

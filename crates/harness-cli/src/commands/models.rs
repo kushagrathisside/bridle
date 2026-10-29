@@ -1,4 +1,4 @@
-//! `agent models list|serve|stop|manifest` (§38, §43).
+//! `agent models list|serve|stop|manifest`.
 //!
 //! `serve` starts a slot's inference server from its `[models.<slot>.launch]` section. The PID is
 //! recorded under `<state>/servers/<slot>.pid` so `stop` can find the process later, and the output
@@ -90,7 +90,7 @@ fn list(app: &App) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Where a slot's server stands, as seen from outside the process (R-45.2). `loaded`, `idle` and
+/// Where a slot's server stands, as seen from outside the process. `loaded`, `idle` and
 /// `unloading` need signals this command does not have (weights resident, time since the last
 /// request, a stop in progress), so they are not reported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -235,7 +235,7 @@ fn serve(app: &App, slot: &str, detach: bool, wait_secs: u64) -> anyhow::Result<
     Ok(exit_code_for(status))
 }
 
-/// One GPU model at a time (M3 to M5 plan, R-7): a GPU slot may start only when no other GPU slot's server
+/// One GPU model at a time: a GPU slot may start only when no other GPU slot's server
 /// is running. The person stops the other one first; nothing is stopped automatically.
 fn check_one_gpu_model(app: &App, slot: &str) -> anyhow::Result<()> {
     let is_gpu = |name: &str| {

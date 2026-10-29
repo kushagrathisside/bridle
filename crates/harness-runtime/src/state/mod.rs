@@ -1,4 +1,4 @@
-//! Persistent task state under `.local-agent/` (M3 step 1).
+//! Persistent task state under `.local-agent/`.
 //!
 //! Every file is a versioned envelope, `{"schema": 1, "data": ...}`. Readers tolerate unknown fields
 //! inside `data`, refuse a newer schema by name, and skip a torn last line of a JSON Lines file.

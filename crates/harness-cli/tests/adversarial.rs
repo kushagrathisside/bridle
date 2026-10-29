@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-//! The adversarial regression suite (M9, R-57.9): hostile tool calls through the real `agent hook tool-before`.
+//! The adversarial regression suite: hostile tool calls through the real `agent hook tool-before`.
 //!
 //! The cases are in `evals/security/cases.json`. Each names the verdict the policy must give: `block` (denied or
 //! asked, so OpenCode would not run it), or `allow`. A case the policy allows on purpose is written as `allow` with a
