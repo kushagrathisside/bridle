@@ -76,6 +76,7 @@ finished. `open` means not built.
 | M4b-6 | M4b | Subagent command for manual use | built | crates/harness-cli/src/commands/subagent.rs | the_command_refuses_when_the_tier_is_off, an_unreachable_model_is_reported_as_unavailable_and_nothing_is_answered | crates/harness-cli/src/main.rs::Command::Subagent | R-12.2 |
 | M4b-7 | M4b | Subagent live check against the micro model | built | docs/status/milestones/m4b-subagents.md | | crates/harness-cli/src/commands/subagent.rs::run | R-12.3 |
 | M4b-8 | M4b | Subagent quality measured over repeated runs | built | evals/subagent/cases.json, evals/subagent/results/2026-10-27-micro.json | | evals/subagent/run.py::main | R-12.3 |
+| UI-1 | UI | Control Center (`agent tui`) | partial | crates/harness-cli/src/tui/mod.rs, crates/harness-cli/src/tui/state.rs, crates/harness-cli/src/tui/ui.rs, crates/harness-cli/src/tui/data.rs, crates/harness-cli/src/tui/events.rs, crates/harness-cli/src/tui/jobs.rs, crates/harness-cli/src/tui/watch.rs, docs/guide/tui.md | start_requires_confirmation_and_stop_needs_a_record, parses_decisions_and_skips_malformed_and_partial_lines, appending_to_a_log_is_a_change_and_idle_is_not, origins_name_the_highest_precedence_layer_per_key | crates/harness-cli/src/main.rs::Command::Tui | |
 
 ## Open requirements without a row above
 

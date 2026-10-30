@@ -96,6 +96,15 @@ the answer. On any internal error, including a config with errors, it prints `fa
 blocks policy hooks (fail closed) and lets telemetry hooks pass. `commands/mcp.rs` requires a valid config, builds
 the tool context (workspace, config, verification, policy, redactor), adds adapter tools, and runs the stdio server.
 
+### tui (`tui/`)
+
+`agent tui` opens the Control Center (see [../../guide/tui.md](../../guide/tui.md)). `state.rs` holds the state and the key
+handling and does no I/O; `ui.rs` draws it; `data.rs` and `events.rs` collect configuration, slots and the event logs
+without contacting any endpoint; `watch.rs` detects changed files for auto-refresh; `jobs.rs` runs doctor, health checks and
+server start or stop on a worker thread through `doctor::gather`, `health::check_slot` and `models::start_checked` and
+`models::stop_server`. The TUI loads the configuration itself, so a broken config is shown as a state. It refuses to start
+without a terminal.
+
 ## Tests
 
 - `tests/hook_fixtures.rs`: 34 black-box rows (`every_hook_fixture_row_matches_the_policy`) that run the real

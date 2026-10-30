@@ -177,6 +177,7 @@ The full index is [docs/README.md](docs/README.md). The main pages:
 | [Installation](docs/guide/installation.md) | Prerequisites, folder layout, build, first run |
 | [Configuration](docs/guide/configuration.md) | Machine and project config, profiles, verification steps, validation rules |
 | [Troubleshooting](docs/guide/troubleshooting.md) | Problems seen on the tested machine and their fixes |
+| [Control Center](docs/guide/tui.md) | `agent tui`: configuration, slots, events and decisions in one terminal view |
 | [Architecture](docs/concepts/architecture.md) | Layers, request flow, where state lives |
 | [Security](docs/concepts/security.md) | Policy decisions, command classes, secret handling, residual risks |
 | [Module reference](docs/reference/modules/README.md) | One page per module of the three crates |
