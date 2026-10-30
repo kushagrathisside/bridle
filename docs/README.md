@@ -10,6 +10,7 @@ was made.
 |---|---|
 | Install Bridle and run the first task | [guide/installation.md](guide/installation.md) |
 | Change the machine or repository configuration | [guide/configuration.md](guide/configuration.md) |
+| Open the interactive control center | [guide/tui.md](guide/tui.md) |
 | Fix a problem seen on the tested machine | [guide/troubleshooting.md](guide/troubleshooting.md) |
 | Know which models and runtimes are used, and where to get them | [guide/models.md](guide/models.md) |
 | Understand the layers and the path of a tool call | [concepts/architecture.md](concepts/architecture.md) |
