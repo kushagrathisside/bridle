@@ -81,6 +81,10 @@ pub struct ChatState {
     /// Lines scrolled up from the bottom; 0 follows the newest.
     pub scroll: usize,
     pub running: bool,
+    /// What the model is doing while it writes no text (a long tool call, reasoning).
+    pub activity: Option<String>,
+    /// A stop was asked for and the turn has not ended yet.
+    pub stopping: bool,
     pub started: Option<Instant>,
     pub cancel: Arc<AtomicBool>,
     pub agent: Option<Box<Agent>>,
@@ -105,6 +109,8 @@ impl ChatState {
             cursor: 0,
             scroll: 0,
             running: false,
+            activity: None,
+            stopping: false,
             started: None,
             cancel: Arc::new(AtomicBool::new(false)),
             agent: None,
@@ -134,6 +140,8 @@ impl ChatState {
         let slot = self.current_slot(slots, default)?;
         self.cancel = Arc::new(AtomicBool::new(false));
         self.running = true;
+        self.stopping = false;
+        self.activity = None;
         self.started = Some(Instant::now());
         Some(Turn {
             text,
@@ -143,13 +151,11 @@ impl ChatState {
         })
     }
 
-    /// Asks the running turn to stop after the step in progress.
+    /// Asks the running turn to stop. A model call is dropped at once; a tool that is running finishes
+    /// first. The status line shows it, and one notice is added when the turn has ended.
     pub fn stop(&mut self) {
         if self.running && !self.cancel.swap(true, Ordering::Relaxed) {
-            self.push(Item::Notice(
-                Sev::Warn,
-                "stopping after the step in progress…".to_owned(),
-            ));
+            self.stopping = true;
         }
     }
 
@@ -173,8 +179,14 @@ impl ChatState {
             ChatMsg::Finished { agent, end } => {
                 self.running = false;
                 self.started = None;
+                self.activity = None;
+                let was_stopping = std::mem::take(&mut self.stopping);
                 self.agent = agent;
                 match end {
+                    TurnEnd::Done if was_stopping => self.push(Item::Notice(
+                        Sev::Warn,
+                        "the turn had already finished when you pressed Ctrl+C".to_owned(),
+                    )),
                     TurnEnd::Done => {}
                     TurnEnd::Stopped => {
                         self.push(Item::Notice(Sev::Warn, "stopped".to_owned()));
@@ -191,6 +203,8 @@ impl ChatState {
             ChatMsg::Failed(text) => {
                 self.running = false;
                 self.started = None;
+                self.activity = None;
+                self.stopping = false;
                 self.push(Item::Notice(Sev::Fail, text));
             }
         }
@@ -198,19 +212,24 @@ impl ChatState {
 
     fn apply_event(&mut self, event: Event) {
         match event {
+            Event::Working(text) => self.activity = Some(clean_stream(&text)),
             Event::Delta(text) => {
+                self.activity = None;
                 let text = clean_stream(&text);
                 match self.items.last_mut() {
                     Some(Item::Assistant(current)) => current.push_str(&text),
                     _ => self.push(Item::Assistant(text)),
                 }
             }
-            Event::ToolStart { id, name, summary } => self.push(Item::Tool {
-                id,
-                name,
-                summary,
-                state: ToolState::Running,
-            }),
+            Event::ToolStart { id, name, summary } => {
+                self.activity = None;
+                self.push(Item::Tool {
+                    id,
+                    name,
+                    summary,
+                    state: ToolState::Running,
+                });
+            }
             Event::ToolBlocked {
                 id,
                 name,
@@ -825,13 +844,49 @@ mod tests {
     }
 
     #[test]
-    fn stopping_and_failures_are_shown() {
+    fn a_stop_is_shown_once_and_resolved_when_the_turn_ends() {
         let mut chat = ChatState::new();
         chat.running = true;
         chat.stop();
         chat.stop();
-        assert!(chat.cancel.load(Ordering::Relaxed));
-        assert_eq!(chat.items.len(), 1, "asking twice adds one notice");
+        assert!(chat.cancel.load(Ordering::Relaxed) && chat.stopping);
+        assert!(
+            chat.items.is_empty(),
+            "nothing is added to the transcript while stopping"
+        );
+        chat.apply(ChatMsg::Event(Event::Delta("partial".into())));
+        chat.apply(ChatMsg::Finished {
+            agent: None,
+            end: TurnEnd::Stopped,
+        });
+        assert!(!chat.stopping && !chat.running);
+        assert_eq!(
+            chat.items.len(),
+            2,
+            "the text, then one notice: {:?}",
+            chat.items
+        );
+        assert!(matches!(chat.items.last(), Some(Item::Notice(Sev::Warn, t)) if t == "stopped"));
+    }
+
+    #[test]
+    fn a_stop_that_arrives_after_the_answer_says_so() {
+        let mut chat = ChatState::new();
+        chat.running = true;
+        chat.stop();
+        chat.apply(ChatMsg::Finished {
+            agent: None,
+            end: TurnEnd::Done,
+        });
+        assert!(
+            matches!(chat.items.last(), Some(Item::Notice(_, t)) if t.contains("already finished"))
+        );
+    }
+
+    #[test]
+    fn failures_are_shown() {
+        let mut chat = ChatState::new();
+        chat.running = true;
         chat.apply(ChatMsg::Finished {
             agent: None,
             end: TurnEnd::Failed("cannot reach the server".into()),
@@ -841,6 +896,34 @@ mod tests {
         );
         chat.apply(ChatMsg::Failed("boom".into()));
         assert!(!chat.running);
+    }
+
+    #[test]
+    fn activity_shows_while_a_call_is_written_and_clears_with_text_or_a_result() {
+        let mut chat = ChatState::new();
+        chat.running = true;
+        chat.apply(ChatMsg::Event(Event::Working(
+            "writing a call to write_file\u{1b}[2J (10 characters so far)".into(),
+        )));
+        assert_eq!(
+            chat.activity.as_deref(),
+            Some("writing a call to write_file[2J (10 characters so far)")
+        );
+        chat.apply(ChatMsg::Event(Event::Delta("text".into())));
+        assert!(chat.activity.is_none());
+        chat.apply(ChatMsg::Event(Event::Working("thinking".into())));
+        chat.apply(ChatMsg::Event(Event::ToolStart {
+            id: "1".into(),
+            name: "x".into(),
+            summary: String::new(),
+        }));
+        assert!(chat.activity.is_none());
+        chat.apply(ChatMsg::Event(Event::Working("thinking".into())));
+        chat.apply(ChatMsg::Finished {
+            agent: None,
+            end: TurnEnd::Done,
+        });
+        assert!(chat.activity.is_none());
     }
 
     #[test]

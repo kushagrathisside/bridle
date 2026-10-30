@@ -1108,7 +1108,7 @@ fn draw_models(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
         )
     } else {
         (
-            &["Slot", "Model", "File", "Server", "Health", "Status"],
+            &["Slot", "Model", "File", "Managed", "Health", "Status"],
             &[
                 Constraint::Length(8),
                 Constraint::Min(10),
@@ -1680,7 +1680,7 @@ fn draw_chat(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
             let server = match (&row.server, row.launchable) {
                 (ServerState::Running { .. }, _) => "server running",
                 (_, false) => "external server",
-                (_, true) => "server not started",
+                (_, true) => "server not started by Bridle",
             };
             let place = if row.loopback {
                 ""
@@ -1762,12 +1762,28 @@ fn draw_chat(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
     }
 
     // Status line under the input.
-    let line = if chat.running {
-        let secs = chat.started.map_or(0, |at| at.elapsed().as_secs());
+    let line = if chat.running && chat.stopping {
         Line::from(Span::styled(
             format!(
-                " {} working · {secs}s · Ctrl+C stops after the current step",
+                " {} stopping… (a tool that is running finishes first)",
                 spinner(ui, theme)
+            ),
+            theme.sev(Sev::Warn),
+        ))
+    } else if chat.running {
+        let secs = chat.started.map_or(0, |at| at.elapsed().as_secs());
+        let activity = chat
+            .activity
+            .as_deref()
+            .map(|a| format!(" · {a}"))
+            .unwrap_or_default();
+        Line::from(Span::styled(
+            trunc(
+                &format!(
+                    " {} working · {secs}s{activity} · Ctrl+C stops",
+                    spinner(ui, theme)
+                ),
+                usize::from(area.width).saturating_sub(1),
             ),
             theme.accent(),
         ))
@@ -1834,7 +1850,7 @@ fn chat_welcome(ui: &Ui, theme: Theme, width: usize) -> Vec<Line<'static>> {
             text.push((plain, String::new()));
             text.push((
                 theme.sev(Sev::Warn),
-                format!("The `{}` server is not started. Tab, then 6, then s starts it (it asks first).", row.name),
+                format!("Bridle has not started the `{}` server. If it is running already, just send a message; otherwise Tab, then 6, then s starts it (it asks first).", row.name),
             ));
         }
     }
@@ -1956,8 +1972,9 @@ fn transcript_lines(ui: &Ui, theme: Theme, width: usize) -> Vec<Line<'static>> {
             Some(Item::User(_) | Item::Tool { .. })
         )
     {
+        let doing = ui.chat.activity.as_deref().unwrap_or("thinking…");
         out.push(Line::from(Span::styled(
-            format!("  {spin} thinking…"),
+            format!("  {spin} {doing}"),
             theme.dim(),
         )));
     }
@@ -2065,11 +2082,31 @@ mod tests {
         let out = render(&chat_ui(), 100, 30);
         assert!(out.contains("Ask about this repository"), "{out}");
         assert!(
-            out.contains("main (m)") && out.contains("server not started"),
+            out.contains("main (m)") && out.contains("server not started by Bridle"),
             "{out}"
         );
         assert!(out.contains("Message Bridle"), "{out}");
         assert!(out.contains("Ctrl+P"), "{out}");
+    }
+
+    #[test]
+    fn the_status_line_names_what_the_model_is_doing_and_shows_a_stop() {
+        let mut ui = chat_ui();
+        ui.chat.running = true;
+        ui.chat.started = Some(std::time::Instant::now());
+        ui.chat.items = vec![Item::User("write it".to_owned())];
+        ui.chat.activity = Some("writing a call to write_file (3200 characters so far)".to_owned());
+        let out = render(&ui, 110, 30);
+        assert!(
+            out.matches("write_file (3200 characters so far)").count() >= 2,
+            "status line and transcript: {out}"
+        );
+        ui.chat.stopping = true;
+        let stopping = render(&ui, 110, 30);
+        assert!(
+            stopping.contains("stopping…") && !stopping.contains("Ctrl+C stops"),
+            "{stopping}"
+        );
     }
 
     #[test]
