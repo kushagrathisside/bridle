@@ -23,6 +23,9 @@ The project has not been published; versions are for the repository only.
 - Subagent tier: a small model reads a few bounded, redacted files and answers with checked citations (M4b).
 - Benchmark runner and corpus, with a report (M10). The live results are not yet recorded.
 - A checklist of every stage, checked against the code by `scripts/check_checklist.py`.
+- Control Center: `agent tui`, a terminal application with a chat on the home screen and views of tasks, events,
+  decisions, slots, diagnostics, configuration and destinations. The chat sends every tool call through the hook's policy
+  path; the views are read-only and write nothing.
 - Licence (Apache-2.0), NOTICE, third-party licence list, security and contributing guides, and CI (M11).
 
 ### Known limits

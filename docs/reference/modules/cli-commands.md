@@ -96,14 +96,20 @@ the answer. On any internal error, including a config with errors, it prints `fa
 blocks policy hooks (fail closed) and lets telemetry hooks pass. `commands/mcp.rs` requires a valid config, builds
 the tool context (workspace, config, verification, policy, redactor), adds adapter tools, and runs the stdio server.
 
-### tui (`tui/`)
+### tui and chat (`tui/`, `chat.rs`)
 
-`agent tui` opens the Control Center (see [../../guide/tui.md](../../guide/tui.md)). `state.rs` holds the state and the key
-handling and does no I/O; `ui.rs` draws it; `data.rs` and `events.rs` collect configuration, slots and the event logs
-without contacting any endpoint; `watch.rs` detects changed files for auto-refresh; `jobs.rs` runs doctor, health checks and
-server start or stop on a worker thread through `doctor::gather`, `health::check_slot` and `models::start_checked` and
-`models::stop_server`. The TUI loads the configuration itself, so a broken config is shown as a state. It refuses to start
-without a terminal.
+`agent tui` opens the Control Center (see [../../guide/tui.md](../../guide/tui.md)). `tui/state.rs` holds the state and the key
+handling and does no I/O; `tui/chat.rs` is the chat screen's state (transcript, input, history, slash commands); `tui/ui.rs`
+draws; `tui/data.rs` and `tui/events.rs` collect configuration, slots, tasks and the event logs without contacting any
+endpoint or writing a file (`StateDir::open_existing` and `Task::peek` are the read-only accessors); `tui/watch.rs` detects
+changed files for auto-refresh; `tui/jobs.rs` runs the doctor, the health checks, server start or stop and chat turns on worker
+threads, through `doctor::gather`, `health::check_slot`, `models::start_checked` and `models::stop_server`.
+
+`chat.rs` is the agent loop. A turn sends the conversation and the tool list (`mcp::tools_for` plus `file_tools()`) to a slot,
+runs the calls, and repeats until the model answers without one. Each call goes through `hook::answer_with` before and after, the
+same function `agent hook` uses, and runs through the MCP `Server`'s own `tools/call`, so the policy, the loop rules, the task
+journal, the verification records and the redaction are the ones OpenCode gets. The TUI loads the configuration itself, so a
+broken config is shown as a state. It refuses to start without a terminal.
 
 ## Tests
 

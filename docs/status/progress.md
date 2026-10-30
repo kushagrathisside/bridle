@@ -28,6 +28,41 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-31: Control Center and chat (`agent tui`), built and tested on Linux; not run on Windows
+
+- What it is: `agent tui` opens a terminal application. The home screen is a chat with one model slot. The model calls the
+  tools that `agent mcp` offers plus five file tools (`read_file`, `list_files`, `search_text`, `write_file`,
+  `edit_file`). Eight more views show the tasks, events, decisions, slots, diagnostics, configuration and destinations.
+  Guide: [guide/tui.md](../guide/tui.md).
+- Same path as OpenCode: every chat tool call runs `commands::hook::answer_with` before and after, the function behind
+  `agent hook`, and the tools run through the MCP server's own `tools/call`. The policy, the loop rules, the task
+  journal, the verification records, the redaction and the event log are therefore the ones OpenCode gets. A blocked call
+  is answered to the model with its rule and shown; `ask` counts as blocked; nothing in the interface can approve it.
+- Read-only views: the Tasks view reads the journal through `StateDir::open_existing` and `Task::peek`, which create no
+  directory, take no lock and write nothing (a test compares the file listing before and after). The Configuration view
+  shows which layer set each value (`LoadedConfig::origins`); the merge and the trust check do not read it.
+- Verified, in one run each at 120x40, 90x28 and 80x24 (Linux, WSL2, the real binary in a pseudo-terminal, a scripted
+  OpenAI-compatible server that streams text and tool calls; 22 checks each, all passed): the model lists files, reads a
+  file, is refused `.env` (`secret_file`), writes and edits `out/hello.txt` (the file ends as `goodbye from chat`), has
+  `curl` refused inside `run_command` (`command_risk`) and a write to `local-agent.toml` refused (`protected_path`); a
+  turn is stopped with Ctrl+C; a bracketed paste with a line break is text, not "send"; the chat session is `task-0001` in
+  `agent trace` (8 records) and the later requests carry the task state block; no state file holds the secret; the
+  terminal is restored (exit 0, alternate screen left, bracketed paste off). A second run: the server down is explained,
+  Start and Stop of a stand-in server go through the confirmation screens, and no process is left behind.
+- Tests: 171 in the CLI crate, among them `a_tool_call_runs_and_the_answer_follows`,
+  `a_secret_file_is_blocked_and_the_model_is_told_the_rule`,
+  `the_loop_rule_refuses_endless_edits_in_the_chat_as_it_does_for_opencode`,
+  `with_the_workflow_on_the_session_becomes_a_task_the_next_request_names`,
+  `real_tasks_are_read_without_writing_and_fold_in_their_sessions`; the file tools have ten, among them
+  `read_file_refuses_secrets_outside_paths_binaries_and_directories` and
+  `writes_are_atomic_leave_no_temp_files_and_keep_permissions`.
+- Not verified: native Windows (the Windows console's paste is handled by a burst heuristic that has only a unit-level
+  basis); a real model (none could be reached from this machine: WSL2 here uses NAT networking, so a Windows-side server on
+  loopback is not reachable, and no Linux runtime was installed). Tool-call streaming of llama.cpp is covered by the
+  provider's own tests and by the scripted server, not by a live run in the chat.
+- Limits: a stop takes effect after the step in progress; a turn makes at most 30 model calls; the configuration is read
+  when a conversation starts.
+
 ## 2026-10-29: escalation evaluated at the failing verification; confidence grows with repeats
 
 - Timing: a loop rule is evaluated in the `after` hook when a verification fails, not at the agent's next call. A due

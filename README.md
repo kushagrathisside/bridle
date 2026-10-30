@@ -6,8 +6,9 @@
 code. The policy decides what runs, what is read, and what the model is allowed to see. A secret value never reaches
 the model, and no shell command runs without a verdict.
 
-Bridle runs inside [OpenCode](https://opencode.ai), which owns the agent loop and the interface. Bridle is built for one
-developer's daily work first. It is designed to grow into a local-first application: several agents working on one
+Bridle runs inside [OpenCode](https://opencode.ai), which owns the agent loop and the interface. `agent tui` is a second,
+smaller host: a terminal chat that sends every tool call through the same policy, loop rules and event log
+([docs/guide/tui.md](docs/guide/tui.md)). Bridle is built for one developer's daily work first. It is designed to grow into a local-first application: several agents working on one
 repository, under one policy and one event log, on the developer's own hardware, with no required cloud service.
 
 | Layer | Status | What it does |
@@ -177,7 +178,7 @@ The full index is [docs/README.md](docs/README.md). The main pages:
 | [Installation](docs/guide/installation.md) | Prerequisites, folder layout, build, first run |
 | [Configuration](docs/guide/configuration.md) | Machine and project config, profiles, verification steps, validation rules |
 | [Troubleshooting](docs/guide/troubleshooting.md) | Problems seen on the tested machine and their fixes |
-| [Control Center](docs/guide/tui.md) | `agent tui`: configuration, slots, events and decisions in one terminal view |
+| [Control Center](docs/guide/tui.md) | `agent tui`: a chat with a model slot, and views of tasks, events, decisions, slots and configuration |
 | [Architecture](docs/concepts/architecture.md) | Layers, request flow, where state lives |
 | [Security](docs/concepts/security.md) | Policy decisions, command classes, secret handling, residual risks |
 | [Module reference](docs/reference/modules/README.md) | One page per module of the three crates |
