@@ -10,6 +10,7 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
+use harness_core::identity;
 use harness_core::security::redact::Redactor;
 use harness_runtime::event_log::{EVENTS, TOOL_EVENTS};
 use serde_json::Value;
@@ -211,7 +212,11 @@ fn view(map: &serde_json::Map<String, Value>, file: &'static str, r: &Redactor) 
         kind: text("kind").unwrap_or_else(|| "unknown".to_owned()),
         task_id: text("task_id"),
         session_id: text("session_id"),
-        tool: text("tool"),
+        // The prefix OpenCode adds to this server's tools is noise in a table.
+        tool: text("tool").map(|name| {
+            name.strip_prefix(&format!("{}_", identity::MCP_SERVER_NAME))
+                .map_or_else(|| name.clone(), str::to_owned)
+        }),
         tool_class: text("tool_class"),
         decision,
         status: text("status"),
@@ -335,6 +340,22 @@ mod tests {
                 .unwrap_or("")
                 .contains("sk-live-0123456789abcdefghij")
         );
+    }
+
+    #[test]
+    fn the_hosts_prefix_is_dropped_from_this_servers_tool_names() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let line = serde_json::json!({
+            "timestamp": "2026-01-01T00:00:00.000Z", "kind": "tool_before",
+            "tool": format!("{}_run_tests", identity::MCP_SERVER_NAME),
+        });
+        let other = serde_json::json!({
+            "timestamp": "2026-01-01T00:00:01.000Z", "kind": "tool_before", "tool": "bash",
+        });
+        write(dir.path(), TOOL_EVENTS, &format!("{line}\n{other}\n"));
+        let events = read_logs(dir.path()).events;
+        assert_eq!(events[0].tool.as_deref(), Some("run_tests"));
+        assert_eq!(events[1].tool.as_deref(), Some("bash"));
     }
 
     #[test]

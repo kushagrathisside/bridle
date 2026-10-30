@@ -10,6 +10,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState, Wrap};
 
 use crate::commands::models::ServerState;
+use crate::tui::chat::{Item, ToolState, wrap};
 use crate::tui::data::{self, FileState, Sev, SlotRow};
 use crate::tui::events::{EventView, short_time};
 use crate::tui::state::{Confirm, DecisionFilter, Focus, Overlay, Ui, View};
@@ -61,9 +62,9 @@ impl Theme {
         }
     }
 
-    /// Symbol and word, e.g. `✓ ok` or `x fail`.
-    fn mark(self, sev: Sev) -> String {
-        let sym = match (self.unicode, sev) {
+    /// The status symbol alone: `✓`, or `+` without Unicode.
+    fn symbol(self, sev: Sev) -> &'static str {
+        match (self.unicode, sev) {
             (true, Sev::Ok) => "✓",
             (true, Sev::Warn) => "⚠",
             (true, Sev::Fail) => "✗",
@@ -74,8 +75,12 @@ impl Theme {
             (false, Sev::Fail) => "x",
             (false, Sev::Info) => "-",
             (false, Sev::Unknown) => "?",
-        };
-        format!("{sym} {}", sev.word())
+        }
+    }
+
+    /// Symbol and word, e.g. `✓ ok` or `x fail`.
+    fn mark(self, sev: Sev) -> String {
+        format!("{} {}", self.symbol(sev), sev.word())
     }
 
     fn selected(self, focused: bool) -> Style {
@@ -118,6 +123,7 @@ pub fn draw(frame: &mut Frame, ui: &Ui, theme: Theme) {
         content
     };
     match ui.view {
+        View::Chat => draw_chat(frame, content, ui, theme),
         View::Overview => draw_overview(frame, content, ui, theme),
         View::Tasks => draw_tasks(frame, content, ui, theme),
         View::Activity => draw_activity(frame, content, ui, theme),
@@ -137,7 +143,7 @@ pub fn draw(frame: &mut Frame, ui: &Ui, theme: Theme) {
 
 fn draw_header(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
     let (sev, word, _) = ui.readiness();
-    let status = format!("{} {}", theme.mark(sev), word);
+    let status = format!("{} {}", theme.symbol(sev), word);
     // The status always fits; the workspace path takes whatever room is left.
     let room = usize::from(area.width)
         .saturating_sub(24 + status.chars().count() + 3)
@@ -178,22 +184,72 @@ fn draw_sidebar(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
+/// The navigation row for narrow terminals: every view if the names fit, shorter names if not, and
+/// otherwise the current view with as many neighbours as there is room for.
 fn draw_tabs(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
     let focused = ui.focus == Focus::Nav;
+    let width = usize::from(area.width);
+    let label = |i: usize, short: bool| {
+        let v = View::ALL[i];
+        format!(" {} {} ", i + 1, if short { v.short() } else { v.title() })
+    };
+    let total = |short: bool| {
+        (0..View::ALL.len())
+            .map(|i| label(i, short).chars().count())
+            .sum::<usize>()
+    };
+    let last = View::ALL.len() - 1;
+    let (short, lo, hi) = if total(false) <= width {
+        (false, 0, last)
+    } else if total(true) <= width {
+        (true, 0, last)
+    } else {
+        let current = ui.view.index();
+        let (mut lo, mut hi) = (current, current);
+        let mut used = label(current, true).chars().count() + 2;
+        loop {
+            let mut grew = false;
+            if lo > 0 {
+                let n = label(lo - 1, true).chars().count();
+                if used + n <= width {
+                    lo -= 1;
+                    used += n;
+                    grew = true;
+                }
+            }
+            if hi < last {
+                let n = label(hi + 1, true).chars().count();
+                if used + n <= width {
+                    hi += 1;
+                    used += n;
+                    grew = true;
+                }
+            }
+            if !grew {
+                break;
+            }
+        }
+        (true, lo, hi)
+    };
+    let (left, right) = if theme.unicode {
+        ("‹", "›")
+    } else {
+        ("<", ">")
+    };
     let mut spans = Vec::new();
-    for (i, v) in View::ALL.iter().enumerate() {
-        let style = if *v == ui.view {
+    if lo > 0 {
+        spans.push(Span::styled(left, theme.dim()));
+    }
+    for i in lo..=hi {
+        let style = if View::ALL[i] == ui.view {
             theme.selected(focused)
         } else {
             theme.dim()
         };
-        // Narrow rows show only the number for views other than the current one.
-        let label = if area.width < 90 && *v != ui.view {
-            format!(" {} ", i + 1)
-        } else {
-            format!(" {}:{} ", i + 1, v.title())
-        };
-        spans.push(Span::styled(label, style));
+        spans.push(Span::styled(label(i, short), style));
+    }
+    if hi < last {
+        spans.push(Span::styled(right, theme.dim()));
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
@@ -211,37 +267,47 @@ fn draw_footer(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
     } else {
         ui.notice.clone()
     };
-    let [l, r] = Layout::horizontal([Constraint::Min(20), Constraint::Percentage(55)]).areas(area);
+    // The right side takes what it needs and the hints get the rest, cut with an ellipsis.
+    let (right_style, right) = match status {
+        Some((sev, text)) => (theme.sev(sev), text),
+        None if ui.in_chat_input() => (theme.dim(), "F1 help  Tab menu ".to_owned()),
+        None => {
+            let wide = area.width >= 100;
+            let text = match (ui.auto, wide) {
+                (false, _) => "? help  r refresh  p resume auto (PAUSED)  q quit ",
+                (true, true) => "? help  r refresh  p pause auto  q quit ",
+                (true, false) => "? help  r refresh  q quit ",
+            };
+            (theme.dim(), text.to_owned())
+        }
+    };
+    let right_width = right.chars().count().min(usize::from(area.width) * 6 / 10);
+    let [l, r] = Layout::horizontal([
+        Constraint::Min(8),
+        Constraint::Length(u16::try_from(right_width).unwrap_or(0)),
+    ])
+    .areas(area);
+    let room = usize::from(l.width).saturating_sub(2);
     frame.render_widget(
-        Paragraph::new(Span::styled(format!(" {hints}"), theme.dim())),
+        Paragraph::new(Span::styled(
+            format!(" {}", trunc(&hints, room)),
+            theme.dim(),
+        )),
         l,
     );
-    if let Some((sev, text)) = status {
-        frame.render_widget(
-            Paragraph::new(Span::styled(text, theme.sev(sev))).alignment(Alignment::Right),
-            r,
-        );
-    } else {
-        frame.render_widget(
-            Paragraph::new(Span::styled(
-                if ui.auto {
-                    "? help  r refresh  p pause auto  q quit "
-                } else {
-                    "? help  r refresh  p resume auto (PAUSED)  q quit "
-                },
-                theme.dim(),
-            ))
+    frame.render_widget(
+        Paragraph::new(Span::styled(trunc(&right, right_width), right_style))
             .alignment(Alignment::Right),
-            r,
-        );
-    }
+        r,
+    );
 }
 
 fn view_hints(ui: &Ui) -> String {
     if ui.focus == Focus::Nav {
-        return "Up/Down choose view · Enter open · Tab content".to_owned();
+        return "1-9 jump · Up/Down · Enter open · Tab back".to_owned();
     }
     match ui.view {
+        View::Chat => "Type a message · Enter sends · /help lists commands",
         View::Overview => "Enter open · d doctor · h health",
         View::Tasks => "Enter events · / search",
         View::Activity => "/ search · v verdict · t task · c clear · Enter task",
@@ -284,9 +350,17 @@ fn ltrunc(s: &str, n: usize) -> String {
     }
 }
 
-fn split_list_detail(area: Rect) -> [Rect; 2] {
-    let detail = if area.height >= 24 { 11 } else { 7 };
-    Layout::vertical([Constraint::Min(4), Constraint::Length(detail)]).areas(area)
+/// Splits a view into a list and a detail pane. The list takes what its rows need and the detail pane
+/// the rest, so the screen is not left empty below a short list.
+fn split_list_detail(area: Rect, rows: usize) -> [Rect; 2] {
+    let detail_min: u16 = if area.height >= 28 { 12 } else { 8 };
+    let wanted = u16::try_from(rows + 2).unwrap_or(u16::MAX);
+    let list = wanted.clamp(4, area.height.saturating_sub(detail_min).max(4));
+    Layout::vertical([
+        Constraint::Length(list),
+        Constraint::Min(detail_min.min(area.height)),
+    ])
+    .areas(area)
 }
 
 fn empty_note(frame: &mut Frame, area: Rect, theme: Theme, title: &str, lines: &[&str]) {
@@ -458,27 +532,40 @@ fn draw_overview(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
     let rows = ui.overview_rows();
     let decisions = ui.overview_decisions();
     let (sev, word, reason) = ui.readiness();
-    let [summary, status, recent] = Layout::vertical([
+    let steps = if area.height >= 24 {
+        ui.next_steps()
+    } else {
+        Vec::new()
+    };
+    let step_width = usize::from(area.width).saturating_sub(6).max(10);
+    let step_lines: Vec<Vec<String>> = steps.iter().map(|s| wrap(s, step_width)).collect();
+    let steps_h = if steps.is_empty() {
+        0
+    } else {
+        u16::try_from(step_lines.iter().map(Vec::len).sum::<usize>() + 2).unwrap_or(u16::MAX)
+    };
+    let [summary, status, steps_area, recent] = Layout::vertical([
         Constraint::Length(4),
-        Constraint::Length(rows.len() as u16 + 2),
+        Constraint::Length(u16::try_from(rows.len() + 2).unwrap_or(u16::MAX)),
+        Constraint::Length(steps_h),
         Constraint::Min(4),
     ])
     .areas(area);
 
     let mut lines = vec![
         Line::from(vec![Span::styled(
-            format!("  {} {}", theme.mark(sev), word.to_uppercase()),
+            format!("  {} {}", theme.symbol(sev), word.to_uppercase()),
             theme.sev(sev),
         )]),
         Line::from(format!(
             "  {}",
-            trunc(&reason, area.width.saturating_sub(4) as usize)
+            trunc(&reason, usize::from(area.width).saturating_sub(4))
         )),
     ];
     if ui.snap.config_error.is_none() {
         lines.push(Line::from(Span::styled(
             format!(
-                "  {} model slot(s) · {} decision(s) logged · {} blocked · data as of {}",
+                "  {} model slot(s) · {} decision(s) logged · {} blocked · updated {}",
                 ui.snap.slots.len(),
                 ui.snap
                     .log
@@ -513,10 +600,28 @@ fn draw_overview(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
             }
         })
         .collect();
-    let table = Table::new(items, [Constraint::Length(11), Constraint::Min(20)])
+    let table = Table::new(items, [Constraint::Length(14), Constraint::Min(20)])
         .block(panel("Status (Enter opens details)", theme))
         .column_spacing(1);
     frame.render_widget(table, status);
+
+    if !steps.is_empty() {
+        let mut text = Vec::new();
+        for group in &step_lines {
+            for (n, line) in group.iter().enumerate() {
+                let arrow = if n == 0 {
+                    if theme.unicode { "→ " } else { "> " }
+                } else {
+                    "  "
+                };
+                text.push(Line::from(format!("  {arrow}{line}")));
+            }
+        }
+        frame.render_widget(
+            Paragraph::new(text).block(panel("What to do next", theme)),
+            steps_area,
+        );
+    }
 
     if decisions.is_empty() {
         empty_note(
@@ -526,7 +631,7 @@ fn draw_overview(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
             "Recent decisions",
             &[
                 "No policy decisions recorded yet.",
-                "Decisions appear here once OpenCode runs with the Bridle plugin and tools are called.",
+                "They appear here when you chat (key 1) or run OpenCode with the Bridle plugin and tools are called.",
             ],
         );
         return;
@@ -567,34 +672,58 @@ fn draw_overview(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
 fn draw_tasks(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
     let tasks = ui.visible_tasks();
     if tasks.is_empty() {
-        let mut lines = vec![
-            "No tasks or sessions found in the event logs.",
-            "Bridle has no task store yet: this view groups logged events by task id (or session id).",
-            "Run OpenCode with the Bridle plugin and events will appear here.",
-        ];
-        if !ui.filter.text.is_empty() {
-            lines = vec!["No task matches the search. Esc clears it."];
-        }
+        let lines: Vec<&str> = if ui.filter.text.is_empty() {
+            vec![
+                "No tasks yet.",
+                "A task starts with the first tool call of a chat or an OpenCode session when [workflow] is enabled.",
+                "Without it, sessions that appear in the event logs are listed here instead.",
+            ]
+        } else {
+            vec!["No task matches the search. Esc clears it."]
+        };
         empty_note(frame, area, theme, "Tasks", &lines);
         return;
     }
-    let [list, detail] = split_list_detail(area);
+    let [list, detail] = split_list_detail(area, tasks.len());
     let rows: Vec<Row> = tasks
         .iter()
         .map(|t| {
+            let status = if !t.status.is_empty() {
+                t.status.clone()
+            } else if t.is_task {
+                "task".to_owned()
+            } else {
+                "session".to_owned()
+            };
+            let dash = |s: &str| {
+                if s.is_empty() {
+                    "-".to_owned()
+                } else {
+                    s.to_owned()
+                }
+            };
             Row::new(vec![
                 Cell::from(t.id.clone()),
-                Cell::from(if t.is_task { "task" } else { "session" }),
+                Cell::from(status),
+                Cell::from(dash(&t.phase)),
                 Cell::from(t.events.to_string()),
-                Cell::from(t.allowed.to_string()),
                 Cell::from(t.blocked.to_string()).style(if t.blocked > 0 {
                     theme.sev(Sev::Fail)
                 } else {
                     Style::default()
                 }),
-                Cell::from(t.failed.to_string()),
-                Cell::from(short_time(&t.last)),
-                Cell::from(t.last_kind.clone()),
+                Cell::from(if t.last.is_empty() {
+                    "-".to_owned()
+                } else {
+                    short_time(&t.last)
+                }),
+                Cell::from(if !t.objective.is_empty() {
+                    t.objective.clone()
+                } else if t.is_task {
+                    "-".to_owned()
+                } else {
+                    "(session, no task)".to_owned()
+                }),
             ])
         })
         .collect();
@@ -605,50 +734,97 @@ fn draw_tasks(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
         TableSpec {
             title: &format!("Tasks · {}", tasks.len()),
             header: &[
-                "Id",
-                "Kind",
+                "Task",
+                "Status",
+                "Phase",
                 "Events",
-                "Allowed",
                 "Blocked",
-                "Failed",
                 "Last",
-                "Last event",
+                "Objective",
             ],
             widths: &[
-                Constraint::Min(16),
-                Constraint::Length(8),
+                Constraint::Length(16),
+                Constraint::Length(10),
+                Constraint::Length(10),
                 Constraint::Length(7),
                 Constraint::Length(8),
-                Constraint::Length(8),
-                Constraint::Length(7),
                 Constraint::Length(14),
-                Constraint::Length(12),
+                Constraint::Min(10),
             ],
         },
         rows,
         (ui.selected(), ui.focus == Focus::Content),
     );
     if let Some(t) = tasks.get(ui.selected()) {
-        let lines = vec![
-            kv(theme, "id", t.id.clone()),
-            kv(theme, "first seen", t.first.clone()),
-            kv(theme, "last seen", t.last.clone()),
-            kv(
+        let mut lines = vec![kv(theme, "id", t.id.clone())];
+        if !t.objective.is_empty() {
+            lines.push(kv(theme, "objective", t.objective.clone()));
+        }
+        if t.is_task && !t.status.is_empty() {
+            lines.push(kv(
                 theme,
-                "decisions",
-                format!("{} allowed, {} blocked", t.allowed, t.blocked),
-            ),
-            kv(theme, "failures", t.failed.to_string()),
-            kv(
+                "state",
+                format!(
+                    "{} · phase {} · iteration {}",
+                    t.status, t.phase, t.iteration
+                ),
+            ));
+            lines.push(kv(
                 theme,
-                "last status",
-                t.last_status.clone().unwrap_or_else(|| "-".to_owned()),
+                "last action",
+                if t.last_action.is_empty() {
+                    "none".to_owned()
+                } else {
+                    t.last_action.clone()
+                },
+            ));
+            lines.push(kv(
+                theme,
+                "last test",
+                if t.last_test.is_empty() {
+                    "none".to_owned()
+                } else {
+                    t.last_test.clone()
+                },
+            ));
+            lines.push(kv(
+                theme,
+                "loops",
+                format!(
+                    "{} failure(s) in a row · {} refusal(s) in a row",
+                    t.failures, t.refusals
+                ),
+            ));
+        }
+        if let Some(w) = &t.worktree {
+            lines.push(kv(theme, "worktree", w.clone()));
+        }
+        lines.push(kv(
+            theme,
+            "decisions",
+            format!(
+                "{} allowed, {} blocked · {} event(s){}",
+                t.allowed,
+                t.blocked,
+                t.events,
+                if t.sessions.is_empty() {
+                    String::new()
+                } else {
+                    format!(" from {} session(s)", t.sessions.len())
+                }
             ),
-            Line::from(Span::styled(
-                "Derived from event logs only: no title, workflow progress or worktree is recorded. Enter lists its events.",
-                theme.dim(),
-            )),
-        ];
+        ));
+        if !t.first.is_empty() {
+            lines.push(kv(
+                theme,
+                "seen",
+                format!("{} to {}", short_time(&t.first), short_time(&t.last)),
+            ));
+        }
+        lines.push(Line::from(Span::styled(
+            "Enter lists this task's events in Activity. `agent trace` shows its full record.",
+            theme.dim(),
+        )));
         detail_pane(frame, detail, theme, "Selected", lines);
     }
 }
@@ -700,7 +876,7 @@ fn draw_activity(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
         empty_note(frame, rest, theme, "Activity", text);
         return;
     }
-    let [list, detail] = split_list_detail(rest);
+    let [list, detail] = split_list_detail(rest, visible.len());
     let rows: Vec<Row> = visible
         .iter()
         .map(|&i| {
@@ -809,7 +985,7 @@ fn draw_policy(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
         );
         return;
     }
-    let [list, detail] = split_list_detail(rest);
+    let [list, detail] = split_list_detail(rest, events.len());
     let rows: Vec<Row> = events
         .iter()
         .map(|&i| {
@@ -871,7 +1047,7 @@ fn file_word(s: &FileState) -> String {
 
 fn server_word(s: &ServerState) -> String {
     match s {
-        ServerState::NotManaged => "not managed".to_owned(),
+        ServerState::NotManaged => "not started by Bridle".to_owned(),
         ServerState::Running { pid } => format!("running (pid {pid})"),
         ServerState::Stale { pid } => format!("stale (pid {pid})"),
         ServerState::Reused { pid, .. } => format!("pid {pid} reused"),
@@ -887,55 +1063,70 @@ fn draw_models(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
             theme,
             "Models",
             &[
-                "No model slots configured.",
-                "Add [models.<slot>] sections to the machine config (see docs/models.md).",
+                "No model slots are configured.",
+                "Create your machine settings: agent init --machine --models-dir <weights folder> --runtimes-dir <runtimes folder>",
+                "Then, in your repository: agent init --profile local-only. See docs/guide/models.md.",
             ],
         );
         return;
     }
-    let [list, detail] = split_list_detail(area);
+    let [list, detail] = split_list_detail(area, ui.snap.slots.len());
+    let wide = area.width >= 96;
     let rows: Vec<Row> = (0..ui.snap.slots.len())
         .map(|i| {
             let s = &ui.snap.slots[i];
             let (sev, _) = ui.slot_summary(i);
-            Row::new(vec![
-                Cell::from(s.name.clone()),
-                Cell::from(s.model_id.clone()),
-                Cell::from(s.role.clone()),
-                Cell::from(file_word(&s.model_state)),
-                Cell::from(server_word(&s.server)),
-                Cell::from(match ui.health.get(&s.name) {
-                    Some(h) => format!("{:?}", h.status).to_lowercase(),
-                    None => "not checked".to_owned(),
-                }),
-                Cell::from(theme.mark(sev)).style(theme.sev(sev)),
-            ])
+            let health = match ui.health.get(&s.name) {
+                Some(h) => format!("{:?}", h.status).to_lowercase(),
+                None => "-".to_owned(),
+            };
+            let mut cells = vec![Cell::from(s.name.clone()), Cell::from(s.model_id.clone())];
+            if wide {
+                cells.push(Cell::from(s.role.clone()));
+            }
+            cells.push(Cell::from(file_short(&s.model_state)));
+            cells.push(Cell::from(server_short(&s.server)));
+            cells.push(Cell::from(health));
+            cells.push(Cell::from(theme.mark(sev)).style(theme.sev(sev)));
+            Row::new(cells)
         })
         .collect();
+    let (header, widths): (&[&str], &[Constraint]) = if wide {
+        (
+            &[
+                "Slot", "Model", "Role", "File", "Server", "Health", "Status",
+            ],
+            &[
+                Constraint::Length(10),
+                Constraint::Min(14),
+                Constraint::Length(14),
+                Constraint::Length(10),
+                Constraint::Length(12),
+                Constraint::Length(8),
+                Constraint::Length(13),
+            ],
+        )
+    } else {
+        (
+            &["Slot", "Model", "File", "Server", "Health", "Status"],
+            &[
+                Constraint::Length(8),
+                Constraint::Min(10),
+                Constraint::Length(8),
+                Constraint::Length(11),
+                Constraint::Length(7),
+                Constraint::Length(12),
+            ],
+        )
+    };
     render_table(
         frame,
         list,
         theme,
         TableSpec {
             title: "Model slots",
-            header: &[
-                "Slot",
-                "Model",
-                "Role",
-                "Model file",
-                "Server",
-                "Health",
-                "Status",
-            ],
-            widths: &[
-                Constraint::Length(10),
-                Constraint::Min(14),
-                Constraint::Length(14),
-                Constraint::Length(18),
-                Constraint::Length(18),
-                Constraint::Length(12),
-                Constraint::Length(10),
-            ],
+            header,
+            widths,
         },
         rows,
         (ui.selected(), ui.focus == Focus::Content),
@@ -946,12 +1137,37 @@ fn draw_models(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
             detail,
             theme,
             &format!("Slot {}", s.name),
-            slot_detail(ui, s, theme),
+            slot_detail(ui, s, theme, usize::from(detail.width)),
         );
     }
 }
 
-fn slot_detail(ui: &Ui, s: &SlotRow, theme: Theme) -> Vec<Line<'static>> {
+/// Table words: one short word per cell, the details are in the pane below.
+fn file_short(s: &FileState) -> &'static str {
+    match s {
+        FileState::NotManaged => "-",
+        FileState::Unresolved => "unresolved",
+        FileState::Present(_) => "present",
+        FileState::Missing => "MISSING",
+    }
+}
+
+fn server_short(s: &ServerState) -> &'static str {
+    match s {
+        ServerState::NotManaged => "not started",
+        ServerState::Running { .. } => "running",
+        ServerState::Stale { .. } => "stale",
+        ServerState::Reused { .. } => "pid reused",
+        ServerState::Unreadable(_) => "unreadable",
+    }
+}
+
+fn slot_detail(ui: &Ui, s: &SlotRow, theme: Theme, width: usize) -> Vec<Line<'static>> {
+    // A path keeps its tail on one line; the label and the state words take the rest.
+    let path_and = |path: Option<&str>, state: &str| -> String {
+        let room = width.saturating_sub(13 + state.chars().count() + 3).max(12);
+        format!("{} · {state}", ltrunc(path.unwrap_or("-"), room))
+    };
     let mut l = vec![
         kv(
             theme,
@@ -970,20 +1186,15 @@ fn slot_detail(ui: &Ui, s: &SlotRow, theme: Theme) -> Vec<Line<'static>> {
         kv(
             theme,
             "model file",
-            format!(
-                "{} · {}",
-                s.model_file.clone().unwrap_or_else(|| "-".into()),
-                file_word(&s.model_state)
-            ),
+            path_and(s.model_file.as_deref(), &file_word(&s.model_state)),
         ),
         kv(
             theme,
             "runtime",
             format!(
-                "{} · {} · {}",
-                s.runtime.clone().unwrap_or_else(|| "-".into()),
-                s.runtime_bin.clone().unwrap_or_else(|| "-".into()),
-                file_word(&s.runtime_state)
+                "{} · {}",
+                s.runtime.as_deref().unwrap_or("-"),
+                path_and(s.runtime_bin.as_deref(), &file_word(&s.runtime_state))
             ),
         ),
         kv(theme, "server", server_word(&s.server)),
@@ -998,7 +1209,11 @@ fn slot_detail(ui: &Ui, s: &SlotRow, theme: Theme) -> Vec<Line<'static>> {
         _ => {}
     }
     if s.launchable {
-        l.push(kv(theme, "log", s.log_path.clone()));
+        l.push(kv(
+            theme,
+            "log",
+            ltrunc(&s.log_path, width.saturating_sub(14).max(12)),
+        ));
     }
     match ui.health.get(&s.name) {
         None => l.push(kv(
@@ -1053,7 +1268,7 @@ fn draw_diagnostics(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
         );
         return;
     }
-    let [list, detail] = split_list_detail(rest);
+    let [list, detail] = split_list_detail(rest, items.len());
     let rows: Vec<Row> = items
         .iter()
         .map(|i| {
@@ -1279,37 +1494,59 @@ fn popup(frame: &mut Frame, area: Rect, title: &str, lines: Vec<Line>, theme: Th
 
 fn draw_help(frame: &mut Frame, area: Rect, theme: Theme) {
     let rows = [
-        ("q", "quit (Ctrl+C always quits)"),
-        ("?", "toggle this help"),
         (
-            "Tab / Shift+Tab",
-            "move focus between navigation and content",
+            "1",
+            "Chat: talk to the model; it reads, edits and tests the repository",
         ),
-        ("Up / Down", "choose a view (nav) or a row (content)"),
-        ("PgUp / PgDn / Home / End", "move faster in lists"),
-        ("1-8", "jump to a view"),
+        (
+            "Enter / Ctrl+J",
+            "Chat: send / new line (Alt+Enter also works)",
+        ),
+        (
+            "Ctrl+C",
+            "Chat: stop the running turn (clears the text, then quits)",
+        ),
+        (
+            "Ctrl+P · /model",
+            "Chat: switch the model slot · /clear starts a new chat",
+        ),
+        ("Tab · Shift+Tab", "move between the menu and the screen"),
+        (
+            "2-9",
+            "jump to a view (from the menu, or outside the chat input)",
+        ),
+        (
+            "Up Down PgUp PgDn",
+            "move; in the chat PgUp/PgDn scroll the conversation",
+        ),
         ("Enter", "open the selected item"),
-        ("Esc", "clear filter / back to navigation / close"),
-        ("/", "search (Activity, Tasks)"),
-        ("r", "refresh local state now (reads files only)"),
+        ("Esc", "clear a filter, or go back to the menu"),
         (
-            "p",
-            "pause or resume auto-refresh (a stat every 2 s; re-reads only on change)",
+            "/ · v · t · c",
+            "Activity: search, verdict filter, one task, clear",
         ),
-        ("v t c", "Activity: verdict filter, task filter, clear"),
-        ("d h H", "doctor, quick health, full health"),
-        ("s x", "Models: start or stop a managed server (asks first)"),
+        (
+            "r · p",
+            "re-read local state now · pause or resume auto-refresh",
+        ),
+        ("d · h · H", "doctor · quick health · full health"),
+        (
+            "s · x",
+            "Models: start or stop the selected slot's server (asks first)",
+        ),
+        ("F1 · ?", "this help"),
+        ("q", "quit (outside the chat input)"),
     ];
-    let mut lines: Vec<Line> = rows.iter().map(|(k, d)| kv(theme, k, *d)).collect();
+    let mut lines: Vec<Line> = rows.iter().map(|(k, d)| kv_w(theme, 19, k, *d)).collect();
     for l in &mut lines {
-        l.spans[0] = Span::styled(format!("{:<26}", l.spans[0].content), theme.accent());
+        l.spans[0] = Span::styled(l.spans[0].content.to_string(), theme.accent());
     }
     lines.push(Line::raw(""));
     lines.push(Line::from(Span::styled(
-        "This interface inspects Bridle. Coding sessions run in OpenCode. Config is read-only here.",
+        "Every action the chat takes is checked by the same policy as OpenCode's. A blocked action is shown and logged; nothing here can approve it.",
         theme.dim(),
     )));
-    popup(frame, area, "Help", lines, theme, 84);
+    popup(frame, area, "Help", lines, theme, 96);
 }
 
 fn draw_confirm(frame: &mut Frame, area: Rect, ui: &Ui, c: &Confirm, theme: Theme) {
@@ -1323,19 +1560,21 @@ fn draw_confirm(frame: &mut Frame, area: Rect, ui: &Ui, c: &Confirm, theme: Them
         lines.push(kv(theme, "model", r.model_id.clone()));
         lines.push(kv(theme, "endpoint", r.endpoint.clone()));
         if verb {
+            // The popup is 80 wide; a path keeps its tail on its label's line.
+            let state = file_word(&r.model_state);
+            let room = 80usize.saturating_sub(16 + state.chars().count());
             lines.push(kv(
                 theme,
                 "model file",
                 format!(
-                    "{} · {}",
-                    r.model_file.clone().unwrap_or_default(),
-                    file_word(&r.model_state)
+                    "{} · {state}",
+                    ltrunc(r.model_file.as_deref().unwrap_or("-"), room)
                 ),
             ));
             lines.push(kv(
                 theme,
                 "runtime",
-                r.runtime_bin.clone().unwrap_or_default(),
+                ltrunc(r.runtime_bin.as_deref().unwrap_or("-"), 80 - 16),
             ));
         } else {
             lines.push(kv(theme, "server", server_word(&r.server)));
@@ -1361,10 +1600,375 @@ fn draw_confirm(frame: &mut Frame, area: Rect, ui: &Ui, c: &Confirm, theme: Them
     popup(frame, area, title, lines, theme, 80);
 }
 
+// ---- chat ------------------------------------------------------------------------------------
+
+const SPINNER_UNICODE: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const SPINNER_ASCII: [&str; 4] = ["|", "/", "-", "\\"];
+
+fn spinner(ui: &Ui, theme: Theme) -> &'static str {
+    let tick = ui.chat.started.map_or(0, |at| {
+        usize::try_from(at.elapsed().as_millis() / 100).unwrap_or(0)
+    });
+    if theme.unicode {
+        SPINNER_UNICODE[tick % SPINNER_UNICODE.len()]
+    } else {
+        SPINNER_ASCII[tick % SPINNER_ASCII.len()]
+    }
+}
+
+/// The input text cut into display rows of `width` characters, each with the index of its first
+/// character. Line breaks start a new row.
+fn input_rows(input: &str, width: usize) -> Vec<(usize, String)> {
+    let width = width.max(1);
+    let mut rows = Vec::new();
+    let mut index = 0usize;
+    for (n, line) in input.split('\n').enumerate() {
+        if n > 0 {
+            index += 1;
+        }
+        let chars: Vec<char> = line.chars().collect();
+        if chars.is_empty() {
+            rows.push((index, String::new()));
+            continue;
+        }
+        for chunk in chars.chunks(width) {
+            rows.push((index, chunk.iter().collect()));
+            index += chunk.len();
+        }
+    }
+    rows
+}
+
+/// Row and column of the cursor in the rows of [`input_rows`]. A cursor at the end of a full row is on
+/// the next, empty row.
+fn cursor_cell(rows: &[(usize, String)], cursor: usize, width: usize) -> (usize, usize) {
+    let at = rows
+        .iter()
+        .rposition(|(start, _)| *start <= cursor)
+        .unwrap_or(0);
+    let col = cursor.saturating_sub(rows[at].0);
+    if col >= width.max(1) && at + 1 == rows.len() {
+        (at + 1, 0)
+    } else {
+        (at, col)
+    }
+}
+
+fn draw_chat(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
+    let chat = &ui.chat;
+    let slots = ui.slot_names();
+    let slot = chat.current_slot(&slots, ui.snap.default_slot.as_deref());
+    let text_width = usize::from(area.width).saturating_sub(4).max(8);
+    let rows = input_rows(&chat.input, text_width);
+    let (cursor_row, cursor_col) = cursor_cell(&rows, chat.cursor, text_width);
+    let total_rows = rows.len().max(cursor_row + 1);
+    let shown_rows = total_rows.clamp(1, 5);
+    let [head, transcript, input_area, status] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Min(3),
+        Constraint::Length(u16::try_from(shown_rows).unwrap_or(5) + 1),
+        Constraint::Length(1),
+    ])
+    .areas(area);
+
+    // Head: the slot, the model and the server's state.
+    let head_text = match slot
+        .as_deref()
+        .and_then(|s| ui.snap.slots.iter().find(|r| r.name == s))
+    {
+        Some(row) => {
+            let server = match (&row.server, row.launchable) {
+                (ServerState::Running { .. }, _) => "server running",
+                (_, false) => "external server",
+                (_, true) => "server not started",
+            };
+            let place = if row.loopback {
+                ""
+            } else {
+                " · REMOTE endpoint"
+            };
+            format!(" {} ({}) · {server}{place}", row.name, row.model_id)
+        }
+        None => " no model slot".to_owned(),
+    };
+    let hint = if area.width >= 72 {
+        "Ctrl+P switch model · /help "
+    } else {
+        ""
+    };
+    let [head_left, head_right] = Layout::horizontal([
+        Constraint::Min(10),
+        Constraint::Length(u16::try_from(hint.chars().count()).unwrap_or(0)),
+    ])
+    .areas(head);
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(" Chat ", theme.accent()),
+            Span::raw(trunc(
+                &head_text,
+                usize::from(head_left.width).saturating_sub(7),
+            )),
+        ])),
+        head_left,
+    );
+    frame.render_widget(Paragraph::new(Span::styled(hint, theme.dim())), head_right);
+
+    // Transcript.
+    let lines = if chat.items.is_empty() {
+        chat_welcome(ui, theme, usize::from(transcript.width).saturating_sub(4))
+    } else {
+        transcript_lines(ui, theme, usize::from(transcript.width).saturating_sub(4))
+    };
+    let height = usize::from(transcript.height);
+    let max_scroll = lines.len().saturating_sub(height);
+    let scroll = chat.scroll.min(max_scroll);
+    let start = lines.len().saturating_sub(height + scroll);
+    let window: Vec<Line> = lines.into_iter().skip(start).take(height).collect();
+    frame.render_widget(Paragraph::new(window), transcript);
+
+    // Input.
+    let first = (cursor_row + 1).saturating_sub(shown_rows);
+    let mut input_lines = Vec::new();
+    if chat.input.is_empty() {
+        input_lines.push(Line::from(vec![
+            Span::styled(if theme.unicode { "› " } else { "> " }, theme.accent()),
+            Span::styled("Message Bridle…", theme.dim()),
+        ]));
+    } else {
+        for (n, (_, text)) in rows.iter().enumerate().skip(first).take(shown_rows) {
+            let prefix = if n == 0 {
+                Span::styled(if theme.unicode { "› " } else { "> " }, theme.accent())
+            } else {
+                Span::raw("  ")
+            };
+            input_lines.push(Line::from(vec![prefix, Span::raw(text.clone())]));
+        }
+    }
+    frame.render_widget(
+        Paragraph::new(input_lines).block(panel(
+            if ui.in_chat_input() {
+                "Message"
+            } else {
+                "Message (Enter returns here)"
+            },
+            theme,
+        )),
+        input_area,
+    );
+    if ui.in_chat_input() {
+        let x = input_area.x + 2 + u16::try_from(cursor_col).unwrap_or(0);
+        let y = input_area.y + 1 + u16::try_from(cursor_row - first).unwrap_or(0);
+        frame.set_cursor_position((x.min(input_area.right().saturating_sub(1)), y));
+    }
+
+    // Status line under the input.
+    let line = if chat.running {
+        let secs = chat.started.map_or(0, |at| at.elapsed().as_secs());
+        Line::from(Span::styled(
+            format!(
+                " {} working · {secs}s · Ctrl+C stops after the current step",
+                spinner(ui, theme)
+            ),
+            theme.accent(),
+        ))
+    } else if scroll > 0 {
+        Line::from(Span::styled(
+            format!(" scrolled up {scroll} line(s) · PgDn returns to the newest"),
+            theme.dim(),
+        ))
+    } else {
+        Line::from(Span::styled(
+            " Enter send · Ctrl+J new line · PgUp scroll · /clear new chat",
+            theme.dim(),
+        ))
+    };
+    frame.render_widget(Paragraph::new(line), status);
+}
+
+/// Shown before the first message: what the chat is, how to use it, and what is missing if it cannot start.
+fn chat_welcome(ui: &Ui, theme: Theme, width: usize) -> Vec<Line<'static>> {
+    let mut text: Vec<(Style, String)> = Vec::new();
+    let plain = Style::default();
+    let dim = theme.dim();
+    if !ui.loaded {
+        text.push((dim, "Loading…".to_owned()));
+    } else if let Some(error) = &ui.snap.config_error {
+        text.push((
+            theme.sev(Sev::Fail),
+            "The configuration could not be loaded, so there is no model to talk to.".to_owned(),
+        ));
+        text.push((plain, error.clone()));
+        text.push((
+            dim,
+            "Open Diagnostics (Tab, then 7) for the exact problem and the fix.".to_owned(),
+        ));
+    } else if ui.snap.slots.is_empty() {
+        text.push((
+            theme.sev(Sev::Warn),
+            "No model is configured yet.".to_owned(),
+        ));
+        text.push((plain, "1. Create your machine settings (once): agent init --machine --models-dir <weights folder> --runtimes-dir <runtimes folder>".to_owned()));
+        text.push((
+            plain,
+            "2. In your repository: agent init --profile local-only".to_owned(),
+        ));
+        text.push((plain, "3. Start a model server from the Models view (Tab, then 6, then s), and come back here.".to_owned()));
+        text.push((dim, "Details: docs/guide/installation.md and docs/guide/models.md. The other screens work without a model.".to_owned()));
+    } else {
+        text.push((
+            theme.accent(),
+            "Ask about this repository, or say what to change.".to_owned(),
+        ));
+        text.push((plain, "It can read and edit files, search code, run your tests and look at git history. Every action goes through the same policy as OpenCode's, and a blocked action is shown here and logged.".to_owned()));
+        text.push((plain, String::new()));
+        text.push((dim, "Try:  \"Summarize this repository\"  ·  \"Where is the config loaded?\"  ·  \"Run the tests and fix what fails\"".to_owned()));
+        text.push((plain, String::new()));
+        text.push((dim, "Enter sends · Ctrl+J new line · Ctrl+C stops a turn · Ctrl+P switches model · /help lists commands".to_owned()));
+        if let Some(slot) = ui
+            .chat
+            .current_slot(&ui.slot_names(), ui.snap.default_slot.as_deref())
+            && let Some(row) = ui.snap.slots.iter().find(|r| r.name == slot)
+            && row.launchable
+            && !matches!(row.server, ServerState::Running { .. })
+        {
+            text.push((plain, String::new()));
+            text.push((
+                theme.sev(Sev::Warn),
+                format!("The `{}` server is not started. Tab, then 6, then s starts it (it asks first).", row.name),
+            ));
+        }
+    }
+    let mut out = vec![Line::raw("")];
+    for (style, line) in text {
+        for piece in wrap(&line, width) {
+            out.push(Line::from(Span::styled(format!("  {piece}"), style)));
+        }
+    }
+    out
+}
+
+/// The conversation as display lines, wrapped to `width`.
+fn transcript_lines(ui: &Ui, theme: Theme, width: usize) -> Vec<Line<'static>> {
+    let mut out: Vec<Line<'static>> = Vec::new();
+    let body = width.saturating_sub(2).max(8);
+    let spin = spinner(ui, theme);
+    let mut previous_was_tool = false;
+    for item in &ui.chat.items {
+        if matches!(item, Item::Assistant(_)) && previous_was_tool {
+            out.push(Line::raw(""));
+        }
+        previous_was_tool = matches!(item, Item::Tool { .. });
+        match item {
+            Item::User(text) => {
+                for (n, line) in wrap(text, body).into_iter().enumerate() {
+                    let prefix = if n == 0 {
+                        Span::styled(if theme.unicode { "› " } else { "> " }, theme.accent())
+                    } else {
+                        Span::raw("  ")
+                    };
+                    out.push(Line::from(vec![
+                        prefix,
+                        Span::styled(line, Style::default().add_modifier(Modifier::BOLD)),
+                    ]));
+                }
+                out.push(Line::raw(""));
+            }
+            Item::Assistant(text) => {
+                for line in wrap(text.trim_end(), body) {
+                    out.push(Line::raw(format!("  {line}")));
+                }
+                out.push(Line::raw(""));
+            }
+            Item::Tool {
+                name,
+                summary,
+                state,
+                ..
+            } => {
+                let (mark, style) = match state {
+                    ToolState::Running => (spin, theme.accent()),
+                    ToolState::Done { ok: true, .. } => {
+                        (if theme.unicode { "✓" } else { "+" }, theme.sev(Sev::Ok))
+                    }
+                    ToolState::Done { ok: false, .. } => {
+                        (if theme.unicode { "✗" } else { "x" }, theme.sev(Sev::Fail))
+                    }
+                    ToolState::Blocked { .. } => {
+                        (if theme.unicode { "⊘" } else { "X" }, theme.sev(Sev::Fail))
+                    }
+                };
+                let label = match state {
+                    ToolState::Blocked { .. } => " — blocked",
+                    _ => "",
+                };
+                out.push(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(mark, style),
+                    Span::raw(" "),
+                    Span::styled(name.clone(), Style::default().add_modifier(Modifier::BOLD)),
+                    Span::styled(format!(" {summary}"), theme.dim()),
+                    Span::styled(label, theme.sev(Sev::Fail)),
+                ]));
+                let detail = match state {
+                    ToolState::Running => None,
+                    ToolState::Done { preview, .. } => Some((preview.clone(), 1)),
+                    ToolState::Blocked { rule, message } => {
+                        let text = if message.contains(rule.as_str()) {
+                            message.clone()
+                        } else {
+                            format!("{message} [{rule}]")
+                        };
+                        Some((text, 3))
+                    }
+                };
+                if let Some((text, max_lines)) = detail {
+                    for line in wrap(&text, body.saturating_sub(4))
+                        .into_iter()
+                        .take(max_lines)
+                    {
+                        out.push(Line::from(Span::styled(
+                            format!("      {line}"),
+                            theme.dim(),
+                        )));
+                    }
+                }
+            }
+            Item::Notice(sev, text) => {
+                for (n, line) in wrap(text, body.saturating_sub(2)).into_iter().enumerate() {
+                    out.push(Line::from(Span::styled(
+                        format!(
+                            "  {}{line}",
+                            if n == 0 {
+                                if theme.unicode { "· " } else { "- " }
+                            } else {
+                                "  "
+                            }
+                        ),
+                        theme.sev(*sev),
+                    )));
+                }
+            }
+        }
+    }
+    if ui.chat.running
+        && matches!(
+            ui.chat.items.last(),
+            Some(Item::User(_) | Item::Tool { .. })
+        )
+    {
+        out.push(Line::from(Span::styled(
+            format!("  {spin} thinking…"),
+            theme.dim(),
+        )));
+    }
+    out
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use crate::tui::data::TaskRow;
     use crate::tui::state::tests::{key, loaded_ui};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -1414,7 +2018,7 @@ mod tests {
                 .next()
                 .unwrap_or_default()
                 .to_owned();
-            assert!(first.contains("Unverified"), "{w}: {first}");
+            assert!(first.contains("Not checked"), "{w}: {first}");
         }
     }
 
@@ -1447,6 +2051,279 @@ mod tests {
         );
     }
 
+    use crate::tui::chat::{Item, ToolState};
+
+    fn chat_ui() -> Ui {
+        let mut ui = loaded_ui();
+        ui.view = View::Chat;
+        ui
+    }
+
+    #[test]
+    fn the_chat_is_the_home_screen_and_explains_itself() {
+        assert_eq!(Ui::new().view, View::Chat);
+        let out = render(&chat_ui(), 100, 30);
+        assert!(out.contains("Ask about this repository"), "{out}");
+        assert!(
+            out.contains("main (m)") && out.contains("server not started"),
+            "{out}"
+        );
+        assert!(out.contains("Message Bridle"), "{out}");
+        assert!(out.contains("Ctrl+P"), "{out}");
+    }
+
+    #[test]
+    fn the_chat_without_a_model_tells_how_to_set_one_up() {
+        let mut ui = chat_ui();
+        ui.snap.slots.clear();
+        let out = render(&ui, 110, 30);
+        assert!(out.contains("No model is configured yet"), "{out}");
+        assert!(out.contains("agent init --machine"), "{out}");
+    }
+
+    #[test]
+    fn the_transcript_shows_messages_calls_blocks_and_notices() {
+        let mut ui = chat_ui();
+        let tool = |id: &str, name: &str, summary: &str, state| Item::Tool {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            summary: summary.to_owned(),
+            state,
+        };
+        ui.chat.items = vec![
+            Item::User("read the notes and .env".to_owned()),
+            tool(
+                "1",
+                "read_file",
+                "notes.txt",
+                ToolState::Done {
+                    ok: true,
+                    preview: "hello from the notes".into(),
+                },
+            ),
+            tool(
+                "2",
+                "read_file",
+                ".env",
+                ToolState::Blocked {
+                    rule: "secret_file".into(),
+                    message: ".env may contain credentials and is never sent to a model".into(),
+                },
+            ),
+            Item::Assistant("The notes say hello. I cannot read .env.".to_owned()),
+            Item::Notice(Sev::Warn, "stopped".to_owned()),
+        ];
+        let out = render(&ui, 110, 34);
+        for needle in [
+            "read the notes and .env",
+            "read_file notes.txt",
+            "hello from the notes",
+            "blocked",
+            "never sent to a model",
+            "secret_file",
+            "The notes say hello",
+            "stopped",
+        ] {
+            assert!(out.contains(needle), "{needle}\n{out}");
+        }
+    }
+
+    #[test]
+    fn a_running_turn_shows_progress_and_how_to_stop_it() {
+        let mut ui = chat_ui();
+        ui.chat.running = true;
+        ui.chat.started = Some(std::time::Instant::now());
+        ui.chat.items = vec![Item::User("go".to_owned())];
+        let out = render(&ui, 100, 30);
+        assert!(out.contains("working") && out.contains("Ctrl+C"), "{out}");
+        assert!(out.contains("thinking"), "{out}");
+    }
+
+    #[test]
+    fn the_input_wraps_grows_and_scrolling_is_announced() {
+        let mut ui = chat_ui();
+        ui.chat.input = format!("{}\nsecond line", "word ".repeat(40));
+        ui.chat.cursor = ui.chat.input.chars().count();
+        let out = render(&ui, 80, 24);
+        assert!(
+            out.contains("second line") && out.contains("word word"),
+            "{out}"
+        );
+        ui.chat.input.clear();
+        ui.chat.cursor = 0;
+        ui.chat.items = (0..60)
+            .map(|n| Item::Assistant(format!("line number {n}")))
+            .collect();
+        ui.chat.scroll = 10;
+        let scrolled = render(&ui, 80, 24);
+        assert!(scrolled.contains("scrolled up"), "{scrolled}");
+        ui.chat.scroll = 0;
+        assert!(render(&ui, 80, 24).contains("line number 59"));
+    }
+
+    #[test]
+    fn input_rows_and_the_cursor_cell_agree() {
+        let rows = input_rows("abcdef\n\nxy", 4);
+        assert_eq!(
+            rows,
+            vec![
+                (0, "abcd".to_owned()),
+                (4, "ef".to_owned()),
+                (7, String::new()),
+                (8, "xy".to_owned())
+            ]
+        );
+        assert_eq!(cursor_cell(&rows, 0, 4), (0, 0));
+        assert_eq!(
+            cursor_cell(&rows, 4, 4),
+            (1, 0),
+            "the start of a wrapped row"
+        );
+        assert_eq!(
+            cursor_cell(&rows, 6, 4),
+            (1, 2),
+            "the end of a line before a break"
+        );
+        assert_eq!(cursor_cell(&rows, 8, 4), (3, 0));
+        assert_eq!(cursor_cell(&rows, 10, 4), (3, 2));
+        let full = input_rows("abcd", 4);
+        assert_eq!(
+            cursor_cell(&full, 4, 4),
+            (1, 0),
+            "a full last row puts the cursor on a new one"
+        );
+    }
+
+    #[test]
+    fn the_navigation_row_adapts_to_the_width() {
+        let mut ui = chat_ui();
+        ui.view = View::Models;
+        let first_two = |w: u16| -> String {
+            render(&ui, w, 24)
+                .lines()
+                .nth(1)
+                .unwrap_or_default()
+                .to_owned()
+        };
+        let wide = first_two(98);
+        assert!(
+            wide.contains("1 Chat") && wide.contains("9 Network"),
+            "{wide}"
+        );
+        let mid = first_two(80);
+        assert!(
+            mid.contains("6 Models") && mid.contains("7 Checks"),
+            "{mid}"
+        );
+        let narrow = first_two(62);
+        assert!(
+            narrow.contains("6 Models"),
+            "the current view is always shown: {narrow}"
+        );
+        assert!(narrow.contains('<') || narrow.contains('>'), "{narrow}");
+    }
+
+    #[test]
+    fn real_tasks_are_listed_with_their_state() {
+        let mut ui = loaded_ui();
+        ui.view = View::Tasks;
+        ui.snap.tasks = vec![TaskRow {
+            id: "task-0003".into(),
+            is_task: true,
+            objective: "fix the failing test in calc.py".into(),
+            status: "active".into(),
+            phase: "verify".into(),
+            iteration: 2,
+            last_action: "edit calc.py".into(),
+            last_test: "failed".into(),
+            failures: 1,
+            sessions: vec!["ses_1".into()],
+            events: 7,
+            blocked: 2,
+            allowed: 5,
+            last: "2026-10-30T10:00:00.000Z".into(),
+            ..TaskRow::default()
+        }];
+        let out = render(&ui, 130, 36);
+        for needle in [
+            "task-0003",
+            "active",
+            "verify",
+            "fix the failing test",
+            "edit calc.py",
+            "1 failure(s) in a row",
+        ] {
+            assert!(out.contains(needle), "{needle}\n{out}");
+        }
+    }
+
+    #[test]
+    fn the_footer_keeps_its_hints_whole_at_narrow_widths() {
+        let last_line = |ui: &Ui, w: u16, h: u16| -> String {
+            render(ui, w, h)
+                .lines()
+                .last()
+                .unwrap_or_default()
+                .to_owned()
+        };
+        let mut ui = loaded_ui();
+        ui.view = View::Activity;
+        let activity = last_line(&ui, 80, 24);
+        assert!(
+            activity.contains("Enter task") && activity.contains("q quit"),
+            "{activity}"
+        );
+        ui.view = View::Chat;
+        let chat = last_line(&ui, 80, 24);
+        assert!(
+            chat.contains("/help lists commands") && chat.contains("F1 help"),
+            "{chat}"
+        );
+        ui.view = View::Overview;
+        ui.focus = Focus::Nav;
+        let nav = last_line(&ui, 70, 24);
+        assert!(nav.contains("Tab back") && nav.contains("q quit"), "{nav}");
+    }
+
+    #[test]
+    fn the_policy_panel_fits_beside_its_neighbour_at_80_columns() {
+        let mut ui = loaded_ui();
+        ui.view = View::Policy;
+        ui.snap.policy = Some(crate::tui::data::PolicyInfo {
+            rows: vec![
+                (
+                    "destructive commands".to_owned(),
+                    "ask (blocked)".to_owned(),
+                ),
+                ("network commands".to_owned(), "deny".to_owned()),
+            ],
+            allowed_paths: vec![],
+        });
+        let out = render(&ui, 80, 24);
+        let line = out
+            .lines()
+            .find(|l| l.contains("destructive commands"))
+            .unwrap_or_default();
+        assert!(line.contains("ask (blocked)"), "{line}");
+    }
+
+    #[test]
+    fn long_paths_in_the_slot_detail_stay_on_their_labels_line() {
+        let mut ui = loaded_ui();
+        ui.view = View::Models;
+        ui.snap.slots[0].model_file =
+            Some(format!("/{}/model.gguf", "very-long-folder/".repeat(10)));
+        let out = render(&ui, 90, 30);
+        let line = out
+            .lines()
+            .find(|l| l.contains("model file"))
+            .unwrap_or_default();
+        assert!(
+            line.contains("model.gguf") && line.contains("present"),
+            "{out}"
+        );
+    }
+
     #[test]
     fn too_small_terminal_says_so() {
         let out = render(&loaded_ui(), 40, 10);
@@ -1456,7 +2333,7 @@ mod tests {
     #[test]
     fn overview_shows_readiness_reason_and_decisions() {
         let out = render(&loaded_ui(), 120, 40);
-        assert!(out.contains("UNVERIFIED"), "{out}");
+        assert!(out.contains("NOT CHECKED"), "{out}");
         assert!(out.contains("health not checked"));
         assert!(out.contains("BLOCK"));
         assert!(out.contains("because"));
@@ -1467,6 +2344,13 @@ mod tests {
         let mut ui = Ui::new();
         ui.loaded = true;
         ui.snap.config_error = Some("loading configuration: bad toml".into());
+        // The home screen says why there is nothing to talk to.
+        let chat = render(&ui, 120, 40);
+        assert!(
+            chat.contains("could not be loaded") && chat.contains("bad toml"),
+            "{chat}"
+        );
+        ui.view = View::Overview;
         let out = render(&ui, 120, 40);
         assert!(
             out.contains("NOT READY") && out.contains("bad toml"),
@@ -1481,9 +2365,9 @@ mod tests {
         let mut ui = Ui::new();
         ui.loaded = true;
         for (v, text) in [
-            (View::Tasks, "No tasks or sessions"),
+            (View::Tasks, "No tasks yet"),
             (View::Activity, "No events recorded yet"),
-            (View::Models, "No model slots configured"),
+            (View::Models, "No model slots are configured"),
             (View::Policy, "No policy decisions"),
         ] {
             ui.view = v;

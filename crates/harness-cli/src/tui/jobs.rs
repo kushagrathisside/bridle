@@ -12,9 +12,11 @@ use std::time::Duration;
 
 use harness_runtime::health::{CheckResult, Status, summarize};
 
+use crate::chat::{Agent, TurnEnd};
 use crate::commands::doctor;
 use crate::commands::health::check_slot;
 use crate::commands::models::{self, ServerState, StopOutcome};
+use crate::tui::chat::{ChatMsg, Turn};
 use crate::tui::data::{LoadArgs, Snapshot};
 use crate::tui::diag::{self, DiagItem};
 
@@ -63,6 +65,8 @@ pub struct SlotHealth {
 
 #[derive(Debug)]
 pub enum JobMsg {
+    /// Progress of a chat turn.
+    Chat(ChatMsg),
     Snapshot(Box<Snapshot>),
     Doctor {
         items: Vec<DiagItem>,
@@ -188,4 +192,68 @@ fn run(job: &Job, args: &LoadArgs, tx: &Sender<JobMsg>) -> Result<String, String
             })
             .map_err(|e| format!("{e:#}")),
     }
+}
+
+/// Runs one chat turn on a worker thread. The conversation (the agent) is built on the first message and
+/// handed back with the last event, so the next turn continues it.
+pub fn spawn_chat(turn: Turn, args: LoadArgs, tx: Sender<JobMsg>) {
+    let spawned = thread::Builder::new()
+        .name(WORKER_THREAD.to_owned())
+        .spawn({
+            let tx = tx.clone();
+            move || {
+                let crashed =
+                    catch_unwind(AssertUnwindSafe(|| run_chat(turn, &args, &tx))).is_err();
+                if crashed {
+                    let _ = tx.send(JobMsg::Chat(ChatMsg::Failed(
+                        "the chat crashed; the next message starts a new conversation".to_owned(),
+                    )));
+                }
+            }
+        });
+    if let Err(error) = spawned {
+        let _ = tx.send(JobMsg::Chat(ChatMsg::Failed(format!(
+            "cannot start a worker thread: {error}"
+        ))));
+    }
+}
+
+fn run_chat(turn: Turn, args: &LoadArgs, tx: &Sender<JobMsg>) {
+    let Turn {
+        text,
+        slot,
+        agent,
+        cancel,
+    } = turn;
+    let mut agent = match agent {
+        Some(agent) => agent,
+        None => match args
+            .load_app()
+            .map_err(|error| format!("{error:#}"))
+            .and_then(Agent::new)
+        {
+            Ok(agent) => Box::new(agent),
+            Err(error) => {
+                let _ = tx.send(JobMsg::Chat(ChatMsg::Failed(error)));
+                return;
+            }
+        },
+    };
+    let (provider, model) = match agent.provider(&slot) {
+        Ok(pair) => pair,
+        Err(error) => {
+            let _ = tx.send(JobMsg::Chat(ChatMsg::Finished {
+                agent: Some(agent),
+                end: TurnEnd::Failed(error),
+            }));
+            return;
+        }
+    };
+    let end = agent.run_turn(provider.as_ref(), &model, &text, &cancel, &mut |event| {
+        let _ = tx.send(JobMsg::Chat(ChatMsg::Event(event)));
+    });
+    let _ = tx.send(JobMsg::Chat(ChatMsg::Finished {
+        agent: Some(agent),
+        end,
+    }));
 }

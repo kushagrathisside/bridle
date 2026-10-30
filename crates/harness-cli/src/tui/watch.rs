@@ -10,6 +10,7 @@ use std::time::{Duration, Instant, SystemTime};
 use harness_core::config::machine_config_path;
 use harness_core::identity;
 use harness_runtime::event_log::{EVENTS, TOOL_EVENTS};
+use harness_runtime::state::{INDEX_FILE, JOURNAL_FILE, TASKS_DIR};
 
 use crate::app;
 use crate::tui::data::{LoadArgs, Snapshot};
@@ -68,6 +69,13 @@ pub fn fingerprint(args: &LoadArgs, snap: &Snapshot) -> Fingerprint {
         if let Ok(entries) = std::fs::read_dir(state.join("servers")) {
             paths.extend(entries.flatten().map(|e| e.path()));
         }
+        // The session index and the journals of the newest tasks: a change to one changes the Tasks view.
+        paths.push(state.join(INDEX_FILE));
+        if let Ok(entries) = std::fs::read_dir(state.join(TASKS_DIR)) {
+            let mut dirs: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
+            dirs.sort();
+            paths.extend(dirs.iter().rev().take(8).map(|dir| dir.join(JOURNAL_FILE)));
+        }
     }
     paths.sort();
     paths.dedup();
@@ -122,6 +130,28 @@ mod tests {
         let servers = dir.path().join(identity::STATE_DIR).join("servers");
         std::fs::create_dir_all(&servers).expect("mkdir");
         std::fs::write(servers.join("main.pid"), "pid=1\n").expect("write");
+        assert_ne!(before, fingerprint(&a, &snap));
+    }
+
+    #[test]
+    fn a_task_journal_append_is_a_change() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let task = dir
+            .path()
+            .join(identity::STATE_DIR)
+            .join(TASKS_DIR)
+            .join("task-0001");
+        std::fs::create_dir_all(&task).expect("mkdir");
+        let journal = task.join(JOURNAL_FILE);
+        std::fs::write(&journal, "{}\n").expect("write");
+        let a = args(dir.path());
+        let snap = Snapshot::default();
+        let before = fingerprint(&a, &snap);
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&journal)
+            .and_then(|mut f| f.write_all(b"{\"x\":1}\n"))
+            .expect("append");
         assert_ne!(before, fingerprint(&a, &snap));
     }
 

@@ -9,12 +9,14 @@ use std::collections::HashMap;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::commands::models::ServerState;
+use crate::tui::chat::{ChatMsg, ChatState, Outcome, Turn};
 use crate::tui::data::{Sev, Snapshot, TaskRow};
 use crate::tui::diag::{self, DiagItem};
 use crate::tui::jobs::{Job, JobMsg, SlotHealth};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum View {
+    Chat,
     Overview,
     Tasks,
     Activity,
@@ -26,7 +28,8 @@ pub enum View {
 }
 
 impl View {
-    pub const ALL: [View; 8] = [
+    pub const ALL: [View; 9] = [
+        View::Chat,
         View::Overview,
         View::Tasks,
         View::Activity,
@@ -39,6 +42,7 @@ impl View {
 
     pub fn title(self) -> &'static str {
         match self {
+            Self::Chat => "Chat",
             Self::Overview => "Overview",
             Self::Tasks => "Tasks",
             Self::Activity => "Activity",
@@ -47,6 +51,15 @@ impl View {
             Self::Diagnostics => "Diagnostics",
             Self::Config => "Configuration",
             Self::Network => "Network",
+        }
+    }
+
+    /// A shorter name for narrow navigation rows.
+    pub fn short(self) -> &'static str {
+        match self {
+            Self::Diagnostics => "Checks",
+            Self::Config => "Config",
+            other => other.title(),
         }
     }
 
@@ -110,6 +123,8 @@ pub struct OvRow {
 pub enum Effect {
     Quit,
     Run(Job),
+    /// A chat message is queued: take it with [`Ui::take_chat_turn`] and start the turn.
+    ChatSend,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -126,7 +141,8 @@ pub struct Ui {
     pub view: View,
     pub focus: Focus,
     pub overlay: Option<Overlay>,
-    pub sel: [usize; 8],
+    pub sel: [usize; 9],
+    pub chat: ChatState,
     pub filter: Filter,
     pub editing_search: bool,
     pub policy_blocked_only: bool,
@@ -147,10 +163,11 @@ impl Ui {
         Self {
             snap: Snapshot::default(),
             loaded: false,
-            view: View::Overview,
+            view: View::Chat,
             focus: Focus::Content,
             overlay: None,
-            sel: [0; 8],
+            sel: [0; 9],
+            chat: ChatState::new(),
             filter: Filter::default(),
             editing_search: false,
             policy_blocked_only: false,
@@ -168,6 +185,7 @@ impl Ui {
     /// Indices into `snap.log.events` that pass the filter, newest first.
     pub fn visible_events(&self) -> Vec<usize> {
         let needle = self.filter.text.to_lowercase();
+        let group_ids = self.filter.group.as_deref().map(|g| self.group_ids(g));
         (0..self.snap.log.events.len())
             .rev()
             .filter(|&i| {
@@ -177,11 +195,12 @@ impl Ui {
                     Some(DecisionFilter::Blocked) => e.is_blocked(),
                     Some(DecisionFilter::Allowed) => e.decision.is_some() && !e.is_blocked(),
                 };
-                let by_group = self
-                    .filter
-                    .group
-                    .as_deref()
-                    .is_none_or(|g| e.group_key().is_some_and(|(id, _)| id == g));
+                let by_group = group_ids.as_ref().is_none_or(|ids| {
+                    ids.iter().any(|id| {
+                        e.task_id.as_deref() == Some(id.as_str())
+                            || e.session_id.as_deref() == Some(id.as_str())
+                    })
+                });
                 let by_text = needle.is_empty()
                     || [
                         Some(e.kind.as_str()),
@@ -198,6 +217,53 @@ impl Ui {
                 by_decision && by_group && by_text
             })
             .collect()
+    }
+
+    /// The ids an event may carry to belong to `group`: the task id and the sessions bound to it.
+    fn group_ids(&self, group: &str) -> Vec<String> {
+        let mut ids = vec![group.to_owned()];
+        if let Some(task) = self.snap.tasks.iter().find(|t| t.id == group) {
+            ids.extend(task.sessions.iter().cloned());
+        }
+        ids
+    }
+
+    /// The task (or session) an event belongs to, as the Tasks view names it.
+    fn canonical_group(&self, event: &crate::tui::events::EventView) -> Option<String> {
+        let (id, _) = event.group_key()?;
+        let task = self
+            .snap
+            .tasks
+            .iter()
+            .find(|t| t.id == id || t.sessions.iter().any(|s| s == id));
+        Some(task.map_or_else(|| id.to_owned(), |t| t.id.clone()))
+    }
+
+    /// Slot names in configuration order.
+    pub fn slot_names(&self) -> Vec<String> {
+        self.snap.slots.iter().map(|s| s.name.clone()).collect()
+    }
+
+    /// Whether typed characters go to the chat input (so global letter shortcuts must not fire).
+    pub fn in_chat_input(&self) -> bool {
+        self.view == View::Chat
+            && self.focus == Focus::Content
+            && self.overlay.is_none()
+            && !self.editing_search
+    }
+
+    /// Text pasted into the terminal.
+    pub fn handle_paste(&mut self, text: &str) {
+        if self.in_chat_input() {
+            self.chat.paste(text);
+        }
+    }
+
+    /// The turn queued by the last Enter, ready for a worker thread.
+    pub fn take_chat_turn(&mut self) -> Option<Turn> {
+        let slots = self.slot_names();
+        let default = self.snap.default_slot.clone();
+        self.chat.take_turn(&slots, default.as_deref())
     }
 
     /// Tasks (or sessions) matching the search text.
@@ -320,8 +386,8 @@ impl Ui {
         if unverified {
             return (
                 Sev::Unknown,
-                "Unverified",
-                "files look right, but no health check has run for every slot (press h)".to_owned(),
+                "Not checked",
+                "the files look right, but the servers have not been checked. Press h".to_owned(),
             );
         }
         if self
@@ -331,22 +397,67 @@ impl Ui {
         {
             return (
                 Sev::Warn,
-                "Degraded",
+                "Needs attention",
                 "a health check reported warnings".to_owned(),
             );
         }
         if self.snap.warning_count() > 0 {
             return (
                 Sev::Warn,
-                "Degraded",
+                "Needs attention",
                 format!("{} configuration warning(s)", self.snap.warning_count()),
             );
         }
         (
             Sev::Ok,
             "Ready",
-            "configuration valid, files present, health checks passed".to_owned(),
+            "the configuration is valid, the files are present and the servers answered".to_owned(),
         )
+    }
+
+    /// What to do next, in plain words, for the Overview. Empty when there is nothing to suggest.
+    pub fn next_steps(&self) -> Vec<String> {
+        if !self.loaded {
+            return Vec::new();
+        }
+        if self.snap.config_error.is_some() {
+            return vec![
+                "Open Diagnostics (key 7): it names the problem in the configuration and how to fix it."
+                    .to_owned(),
+            ];
+        }
+        if self.snap.slots.is_empty() {
+            return vec![
+                "No model is configured yet. Create your machine settings once: agent init --machine --models-dir <weights folder> --runtimes-dir <runtimes folder>"
+                    .to_owned(),
+                "Then, in your repository: agent init --profile local-only".to_owned(),
+                "Details: docs/guide/installation.md".to_owned(),
+            ];
+        }
+        let mut steps = Vec::new();
+        if self.snap.error_count() > 0 {
+            steps.push("Fix the configuration errors: open Diagnostics (key 7).".to_owned());
+        }
+        if let Some(slot) = self.snap.slots.iter().find(|s| {
+            s.launchable
+                && s.static_sev() != Sev::Fail
+                && matches!(
+                    s.server,
+                    ServerState::NotManaged | ServerState::Stale { .. }
+                )
+        }) {
+            steps.push(format!(
+                "Start the `{}` server: open Models (key 6), select it and press s.",
+                slot.name
+            ));
+        }
+        if self.health.is_empty() {
+            steps.push("Check that the servers answer: press h.".to_owned());
+        }
+        if steps.is_empty() && self.chat.items.is_empty() {
+            steps.push("Everything looks ready. Open Chat (key 1) and ask something.".to_owned());
+        }
+        steps
     }
 
     /// Selectable status rows at the top of the Overview.
@@ -478,6 +589,7 @@ impl Ui {
 
     fn list_len(&self) -> usize {
         match self.view {
+            View::Chat => 0,
             View::Overview => self.overview_rows().len() + self.overview_decisions().len(),
             View::Tasks => self.visible_tasks().len(),
             View::Activity => self.visible_events().len(),
@@ -514,6 +626,14 @@ impl Ui {
     pub fn apply(&mut self, msg: JobMsg) -> Vec<Effect> {
         let mut effects = Vec::new();
         match msg {
+            JobMsg::Chat(msg) => {
+                let finished = matches!(msg, ChatMsg::Finished { .. } | ChatMsg::Failed(_));
+                self.chat.apply(msg);
+                // A turn changes the logs and the task journal: read them now, not in two seconds.
+                if finished {
+                    effects.extend(self.request(Job::Refresh));
+                }
+            }
             JobMsg::Snapshot(snap) => {
                 // Keep each list's selection on the same record when rows are added above it.
                 let kept: Vec<(View, String)> =
@@ -589,6 +709,15 @@ impl Ui {
             return vec![];
         }
         if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            // While a chat turn runs, Ctrl+C stops it instead of leaving the program.
+            if self.chat.running {
+                self.chat.stop();
+                return vec![];
+            }
+            if self.in_chat_input() && !self.chat.input.is_empty() {
+                self.chat.clear_input();
+                return vec![];
+            }
             return vec![Effect::Quit];
         }
         // A notice lasts until the next key press.
@@ -600,9 +729,23 @@ impl Ui {
             self.search_key(key);
             return vec![];
         }
+        if self.in_chat_input() {
+            let slots = self.slot_names();
+            let default = self.snap.default_slot.clone();
+            match self.chat.key(key, &slots, default.as_deref()) {
+                Outcome::Handled => return vec![],
+                Outcome::Send => return vec![Effect::ChatSend],
+                Outcome::Quit => return vec![Effect::Quit],
+                Outcome::Nav => {
+                    self.focus = Focus::Nav;
+                    return vec![];
+                }
+                Outcome::Pass => {}
+            }
+        }
         match key.code {
             KeyCode::Char('q') => return vec![Effect::Quit],
-            KeyCode::Char('?') => self.overlay = Some(Overlay::Help),
+            KeyCode::Char('?') | KeyCode::F(1) => self.overlay = Some(Overlay::Help),
             KeyCode::Tab | KeyCode::BackTab => {
                 self.focus = if self.focus == Focus::Nav {
                     Focus::Content
@@ -610,9 +753,11 @@ impl Ui {
                     Focus::Nav
                 };
             }
-            KeyCode::Char(c @ '1'..='8') => {
+            KeyCode::Char(c @ '1'..='9') => {
                 let i = usize::from(c as u8 - b'1');
                 self.go(View::ALL[i]);
+                // "Go to this view" means "work in it": the next key goes to the screen.
+                self.focus = Focus::Content;
             }
             KeyCode::Char('r') => return self.request(Job::Refresh),
             KeyCode::Char('p') => {
@@ -654,7 +799,9 @@ impl Ui {
 
     fn overlay_key(&mut self, overlay: &Overlay, key: KeyEvent) -> Vec<Effect> {
         match (overlay, key.code) {
-            (Overlay::Help, KeyCode::Esc | KeyCode::Char('?' | 'q')) => self.overlay = None,
+            (Overlay::Help, KeyCode::Esc | KeyCode::F(1) | KeyCode::Char('?' | 'q')) => {
+                self.overlay = None;
+            }
             (Overlay::Confirm(_), KeyCode::Char('n') | KeyCode::Esc) => self.overlay = None,
             (Overlay::Confirm(c), KeyCode::Char('y')) => {
                 self.overlay = None;
@@ -735,11 +882,10 @@ impl Ui {
                 }
             }
             View::Activity => {
-                let id = self.visible_events().get(sel).and_then(|&i| {
-                    self.snap.log.events[i]
-                        .group_key()
-                        .map(|(id, _)| id.to_owned())
-                });
+                let id = self
+                    .visible_events()
+                    .get(sel)
+                    .and_then(|&i| self.canonical_group(&self.snap.log.events[i]));
                 if let Some(id) = id
                     && let Some(pos) = self.visible_tasks_all().iter().position(|t| t.id == id)
                 {
@@ -780,11 +926,10 @@ impl Ui {
                 self.set_selected(0);
             }
             (View::Activity, 't') => {
-                let id = self.visible_events().get(self.selected()).and_then(|&i| {
-                    self.snap.log.events[i]
-                        .group_key()
-                        .map(|(id, _)| id.to_owned())
-                });
+                let id = self
+                    .visible_events()
+                    .get(self.selected())
+                    .and_then(|&i| self.canonical_group(&self.snap.log.events[i]));
                 if id.is_some() {
                     self.filter.group = id;
                     self.set_selected(0);
@@ -950,13 +1095,15 @@ pub(crate) mod tests {
             ..LogRead::default()
         };
         ui.snap.tasks = crate::tui::data::group_tasks(&ui.snap.log);
+        // Most tests exercise the list screens; the chat has its own tests.
+        ui.view = View::Overview;
         ui
     }
 
     #[test]
     fn number_keys_navigate_and_q_quits() {
         let mut ui = loaded_ui();
-        ui.handle_key(key(KeyCode::Char('5')));
+        ui.handle_key(key(KeyCode::Char('6')));
         assert_eq!(ui.view, View::Models);
         assert_eq!(ui.handle_key(key(KeyCode::Char('q'))), vec![Effect::Quit]);
         let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
@@ -1134,7 +1281,7 @@ pub(crate) mod tests {
     #[test]
     fn readiness_is_not_ready_on_errors_and_unverified_until_health_runs() {
         let mut ui = loaded_ui();
-        assert_eq!(ui.readiness().1, "Unverified");
+        assert_eq!(ui.readiness().1, "Not checked");
         ui.health.insert(
             "main".into(),
             SlotHealth {
@@ -1201,6 +1348,116 @@ pub(crate) mod tests {
         assert!(!ui.auto && ui.notice.is_some());
         ui.handle_key(key(KeyCode::Char('p')));
         assert!(ui.auto);
+    }
+
+    #[test]
+    fn in_the_chat_input_letters_are_text_and_enter_sends() {
+        let mut ui = loaded_ui();
+        ui.view = View::Chat;
+        for c in "q?r5p".chars() {
+            assert!(ui.handle_key(key(KeyCode::Char(c))).is_empty());
+        }
+        assert_eq!(ui.chat.input, "q?r5p", "shortcut letters are text here");
+        assert!(ui.view == View::Chat && ui.auto && ui.overlay.is_none());
+        assert_eq!(ui.handle_key(key(KeyCode::Enter)), vec![Effect::ChatSend]);
+        let turn = ui.take_chat_turn().expect("the turn is queued");
+        assert_eq!((turn.slot.as_str(), turn.text.as_str()), ("main", "q?r5p"));
+        assert!(ui.chat.running && ui.take_chat_turn().is_none());
+    }
+
+    #[test]
+    fn ctrl_c_stops_a_turn_then_clears_text_then_quits() {
+        let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        let mut ui = loaded_ui();
+        ui.view = View::Chat;
+        ui.chat.running = true;
+        assert!(ui.handle_key(ctrl_c).is_empty());
+        assert!(ui.chat.cancel.load(std::sync::atomic::Ordering::Relaxed));
+        ui.chat.running = false;
+        ui.handle_key(key(KeyCode::Char('x')));
+        assert!(ui.handle_key(ctrl_c).is_empty() && ui.chat.input.is_empty());
+        assert_eq!(ui.handle_key(ctrl_c), vec![Effect::Quit]);
+    }
+
+    #[test]
+    fn tab_leaves_the_chat_input_and_then_digits_navigate() {
+        let mut ui = loaded_ui();
+        ui.view = View::Chat;
+        ui.handle_key(key(KeyCode::Tab));
+        assert_eq!(ui.focus, Focus::Nav);
+        ui.handle_key(key(KeyCode::Char('6')));
+        assert_eq!(ui.view, View::Models);
+        assert_eq!(
+            ui.focus,
+            Focus::Content,
+            "a jump hands the focus to the screen"
+        );
+        // F1 opens help from the input too.
+        ui.view = View::Chat;
+        ui.focus = Focus::Content;
+        ui.handle_key(key(KeyCode::F(1)));
+        assert_eq!(ui.overlay, Some(Overlay::Help));
+        ui.handle_key(key(KeyCode::F(1)));
+        assert!(ui.overlay.is_none());
+    }
+
+    #[test]
+    fn a_finished_turn_asks_for_a_refresh() {
+        let mut ui = loaded_ui();
+        ui.chat.running = true;
+        let effects = ui.apply(JobMsg::Chat(ChatMsg::Finished {
+            agent: None,
+            end: crate::chat::TurnEnd::Done,
+        }));
+        assert_eq!(effects, vec![Effect::Run(Job::Refresh)]);
+        assert!(!ui.chat.running);
+    }
+
+    #[test]
+    fn filtering_by_a_task_includes_the_events_of_its_sessions() {
+        let mut ui = loaded_ui();
+        ui.snap.log.events.push(event(
+            "2026-01-01T00:00:04.000Z",
+            Some(Decision::Deny),
+            None,
+        ));
+        let last = ui.snap.log.events.len() - 1;
+        ui.snap.log.events[last].session_id = Some("ses_x".to_owned());
+        ui.snap.tasks.push(TaskRow {
+            id: "task-0007".to_owned(),
+            is_task: true,
+            sessions: vec!["ses_x".to_owned()],
+            ..TaskRow::default()
+        });
+        ui.filter.group = Some("task-0007".to_owned());
+        assert_eq!(ui.visible_events(), vec![last]);
+        ui.filter.group = Some("t1".to_owned());
+        assert_eq!(ui.visible_events(), vec![1, 0]);
+    }
+
+    #[test]
+    fn next_steps_follow_what_is_missing() {
+        let mut ui = loaded_ui();
+        let steps = ui.next_steps().join(" | ");
+        assert!(
+            steps.contains("Start the `main` server") && steps.contains("press h"),
+            "{steps}"
+        );
+        ui.snap.slots.clear();
+        assert!(ui.next_steps().join(" ").contains("agent init --machine"));
+        ui.snap.config_error = Some("bad".into());
+        assert!(ui.next_steps().join(" ").contains("Diagnostics"));
+        ui.snap.config_error = None;
+        ui.snap.slots = vec![slot("main", true, ServerState::Running { pid: 1 })];
+        ui.health.insert(
+            "main".into(),
+            SlotHealth {
+                status: harness_runtime::health::Status::Pass,
+                checks: vec![],
+                at: "t".into(),
+            },
+        );
+        assert!(ui.next_steps().join(" ").contains("Open Chat"));
     }
 
     #[test]
