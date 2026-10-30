@@ -10,4 +10,5 @@ pub mod tools;
 
 pub use protocol::{PROTOCOL_VERSIONS, Server, ServerInfo};
 pub use tools::adapters::adapter_tools;
+pub use tools::files::file_tools;
 pub use tools::{McpTool, ToolContext, ToolOutput, default_tools};

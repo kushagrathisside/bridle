@@ -364,6 +364,12 @@ impl Task<'_> {
         self.load_unlocked()
     }
 
+    /// The journal as [`Task::snapshot`] reads it, without the task lock and without creating
+    /// anything. For viewers that must not write. An append in flight may not be included yet.
+    pub fn peek(&self) -> Result<Journal, StateError> {
+        self.load_unlocked()
+    }
+
     /// Appends one record under the task lock, folds it, and writes the cache. Returns the journal
     /// after the append.
     pub fn append(&self, record: Record) -> Result<Journal, StateError> {
