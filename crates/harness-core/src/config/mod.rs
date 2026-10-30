@@ -15,8 +15,8 @@ mod trust;
 mod validate;
 
 pub use load::{
-    ConfigError, ConfigSources, LoadedConfig, discover_repo_config, from_toml_str, load_layered,
-    machine_config_path, merge_toml,
+    ConfigError, ConfigSources, LoadedConfig, Origin, discover_repo_config, from_toml_str,
+    load_layered, machine_config_path, merge_toml,
 };
 pub use schema::*;
 pub use validate::{

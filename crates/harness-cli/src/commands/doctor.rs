@@ -25,7 +25,7 @@ use crate::output::{Mark, gib, line};
 /// Severity of one report line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-enum Level {
+pub(crate) enum Level {
     Ok,
     Info,
     Warn,
@@ -44,78 +44,78 @@ impl Level {
 }
 
 #[derive(Debug, Serialize)]
-struct Report {
-    os: String,
-    arch: String,
-    cpu_brand: Option<String>,
-    logical_cpus: usize,
-    total_memory_bytes: u64,
-    available_memory_bytes: u64,
-    gpus: Vec<GpuInfo>,
-    cuda_version: Option<String>,
-    wsl: WslInfo,
-    models_dir: DiskEntry,
-    runtimes: Vec<RuntimeEntry>,
-    model_files: Vec<ModelFileEntry>,
-    endpoints: Vec<EndpointEntry>,
-    opencode: OpencodeEntry,
-    config_issues: Vec<IssueEntry>,
+pub(crate) struct Report {
+    pub(crate) os: String,
+    pub(crate) arch: String,
+    pub(crate) cpu_brand: Option<String>,
+    pub(crate) logical_cpus: usize,
+    pub(crate) total_memory_bytes: u64,
+    pub(crate) available_memory_bytes: u64,
+    pub(crate) gpus: Vec<GpuInfo>,
+    pub(crate) cuda_version: Option<String>,
+    pub(crate) wsl: WslInfo,
+    pub(crate) models_dir: DiskEntry,
+    pub(crate) runtimes: Vec<RuntimeEntry>,
+    pub(crate) model_files: Vec<ModelFileEntry>,
+    pub(crate) endpoints: Vec<EndpointEntry>,
+    pub(crate) opencode: OpencodeEntry,
+    pub(crate) config_issues: Vec<IssueEntry>,
     /// True when the exit code is a failure: a runtime is missing or the config has errors.
-    blocking_problems: bool,
+    pub(crate) blocking_problems: bool,
 }
 
 #[derive(Debug, Serialize)]
-struct DiskEntry {
-    path: Option<String>,
-    free_bytes: Option<u64>,
-    level: Level,
-    detail: String,
+pub(crate) struct DiskEntry {
+    pub(crate) path: Option<String>,
+    pub(crate) free_bytes: Option<u64>,
+    pub(crate) level: Level,
+    pub(crate) detail: String,
 }
 
 #[derive(Debug, Serialize)]
-struct RuntimeEntry {
-    name: String,
-    kind: String,
-    path: Option<String>,
-    present: bool,
-    build: Option<String>,
-    level: Level,
-    detail: String,
+pub(crate) struct RuntimeEntry {
+    pub(crate) name: String,
+    pub(crate) kind: String,
+    pub(crate) path: Option<String>,
+    pub(crate) present: bool,
+    pub(crate) build: Option<String>,
+    pub(crate) level: Level,
+    pub(crate) detail: String,
 }
 
 #[derive(Debug, Serialize)]
-struct ModelFileEntry {
-    slot: String,
-    path: Option<String>,
-    size_bytes: Option<u64>,
-    level: Level,
-    detail: String,
+pub(crate) struct ModelFileEntry {
+    pub(crate) slot: String,
+    pub(crate) path: Option<String>,
+    pub(crate) size_bytes: Option<u64>,
+    pub(crate) level: Level,
+    pub(crate) detail: String,
 }
 
 #[derive(Debug, Serialize)]
-struct EndpointEntry {
-    slot: String,
-    endpoint: String,
-    status: Status,
-    level: Level,
-    detail: String,
+pub(crate) struct EndpointEntry {
+    pub(crate) slot: String,
+    pub(crate) endpoint: String,
+    pub(crate) status: Status,
+    pub(crate) level: Level,
+    pub(crate) detail: String,
 }
 
 #[derive(Debug, Serialize)]
-struct OpencodeEntry {
-    path: String,
-    version: Option<String>,
-    level: Level,
-    detail: String,
+pub(crate) struct OpencodeEntry {
+    pub(crate) path: String,
+    pub(crate) version: Option<String>,
+    pub(crate) level: Level,
+    pub(crate) detail: String,
 }
 
 #[derive(Debug, Serialize)]
-struct IssueEntry {
-    severity: Severity,
-    rule: &'static str,
-    path: String,
-    message: String,
-    level: Level,
+pub(crate) struct IssueEntry {
+    pub(crate) severity: Severity,
+    pub(crate) rule: &'static str,
+    pub(crate) path: String,
+    pub(crate) message: String,
+    pub(crate) level: Level,
 }
 
 pub fn run(app: &App, json: bool) -> anyhow::Result<ExitCode> {
@@ -133,7 +133,7 @@ pub fn run(app: &App, json: bool) -> anyhow::Result<ExitCode> {
     })
 }
 
-fn gather(app: &App) -> Report {
+pub(crate) fn gather(app: &App) -> Report {
     let config = &app.config;
     let sys = sysprobe::probe_system();
     let os = os_text(&sys);
@@ -443,7 +443,7 @@ fn issue_entry(issue: &ConfigIssue) -> IssueEntry {
 }
 
 /// A missing runtime or a config error blocks use; everything else is informational.
-fn is_blocking(report: &Report) -> bool {
+pub(crate) fn is_blocking(report: &Report) -> bool {
     report.runtimes.iter().any(|runtime| !runtime.present)
         || report
             .config_issues
