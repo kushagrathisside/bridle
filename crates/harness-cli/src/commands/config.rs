@@ -21,8 +21,7 @@ pub enum ConfigAction {
 pub fn run(app: &App, action: &ConfigAction) -> anyhow::Result<ExitCode> {
     match action {
         ConfigAction::Show => {
-            let text = toml::to_string_pretty(&app.config)?;
-            print!("{}", Redactor::new().redact(&text));
+            print!("{}", redacted_toml(app)?);
             Ok(ExitCode::SUCCESS)
         }
         ConfigAction::Validate => {
@@ -59,6 +58,12 @@ pub fn run(app: &App, action: &ConfigAction) -> anyhow::Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
     }
+}
+
+/// The effective config as TOML with secret values redacted. Shared with the TUI.
+pub(crate) fn redacted_toml(app: &App) -> anyhow::Result<String> {
+    let text = toml::to_string_pretty(&app.config)?;
+    Ok(Redactor::new().redact(&text).into_owned())
 }
 
 /// One printed line for a validation issue. Messages can echo a config value (an unknown
