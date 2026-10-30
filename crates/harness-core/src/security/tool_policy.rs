@@ -162,6 +162,14 @@ impl ToolPolicy {
         &self.workspace
     }
 
+    /// Resolves `path` (relative paths against the workspace) through the path guard: lexical
+    /// containment first, then the physical path with symlinks followed. `None` when the guard
+    /// rejects it. Tools that touch files act on this result, never on the raw string, so what
+    /// was checked is what is opened.
+    pub fn resolve(&self, path: &str) -> Option<PathBuf> {
+        self.guard.check(Path::new(path), &self.workspace).ok()
+    }
+
     /// Maps a tool class to the configured verdict.
     pub fn class_verdict(&self, class: ToolClass) -> Verdict {
         match class {

@@ -1240,6 +1240,7 @@ pub mod artifacts;
 pub mod code;
 pub mod deps;
 pub mod failures;
+pub mod files;
 pub mod history;
 pub mod run;
 pub mod subagent;
