@@ -6,8 +6,7 @@
 code. The policy decides what runs, what is read, and what the model is allowed to see. A secret value never reaches
 the model, and no shell command runs without a verdict.
 
-Bridle runs inside [OpenCode](https://opencode.ai), which owns the agent loop and the interface. Bridle is built for one
-developer's daily work first. It is designed to grow into a local-first application: several agents working on one
+Bridle runs inside [OpenCode](https://opencode.ai), which owns the agent loop and the interface. Bridle is built for one developer's daily work first. It is designed to grow into a local-first application: several agents working on one
 repository, under one policy and one event log, on the developer's own hardware, with no required cloud service.
 
 | Layer | Status | What it does |
