@@ -4,9 +4,27 @@ use std::process::ExitCode;
 
 use harness_core::identity;
 use harness_core::security::redact::Redactor;
-use harness_runtime::mcp::{Server, ServerInfo, ToolContext, adapter_tools, default_tools};
+use harness_runtime::mcp::{
+    McpTool, Server, ServerInfo, ToolContext, adapter_tools, default_tools,
+};
 
 use crate::app::App;
+
+/// The tools the harness offers for this configuration: the default set, the declared adapters, and the optional subagent
+/// and task-status tools. Shared with the chat, which adds its file tools to the same list.
+pub(crate) fn tools_for(app: &App) -> Vec<Box<dyn McpTool>> {
+    let mut tools = default_tools();
+    tools.extend(adapter_tools(&app.config));
+    if app.config.subagents.enabled {
+        tools.push(Box::new(
+            harness_runtime::mcp::tools::subagent::SubagentTool,
+        ));
+    }
+    if app.config.workflow.task_status {
+        tools.push(Box::new(harness_runtime::mcp::tools::task::TaskStatusTool));
+    }
+    tools
+}
 
 pub fn run(app: &App) -> anyhow::Result<ExitCode> {
     app.require_valid_config()?;
@@ -27,17 +45,7 @@ pub fn run(app: &App) -> anyhow::Result<ExitCode> {
             identity::PRODUCT_ID
         ),
     };
-    let mut tools = default_tools();
-    tools.extend(adapter_tools(&app.config));
-    if app.config.subagents.enabled {
-        tools.push(Box::new(
-            harness_runtime::mcp::tools::subagent::SubagentTool,
-        ));
-    }
-    if app.config.workflow.task_status {
-        tools.push(Box::new(harness_runtime::mcp::tools::task::TaskStatusTool));
-    }
-    let mut server = Server::new(info, tools, ctx);
+    let mut server = Server::new(info, tools_for(app), ctx);
     let stdin = std::io::stdin().lock();
     let stdout = std::io::stdout().lock();
     server.serve(stdin, stdout)?;

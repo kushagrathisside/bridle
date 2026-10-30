@@ -37,10 +37,16 @@ fn answer(
     config: Option<&Path>,
     workspace: Option<&Path>,
 ) -> Value {
-    let app = match App::load(config, workspace) {
-        Ok(app) => app,
-        Err(e) => return opencode_v1::failure_answer(event, &format!("{e:#}")),
-    };
+    match App::load(config, workspace) {
+        Ok(app) => answer_with(&app, event, input),
+        Err(e) => opencode_v1::failure_answer(event, &format!("{e:#}")),
+    }
+}
+
+/// The hook's answer for an application that is already loaded: the policy's verdict, the
+/// orchestrator's loop rules and records, and the event-log entry. `agent hook` calls it once per
+/// process; the chat in `agent tui` calls it for every tool call, so both follow the same path.
+pub(crate) fn answer_with(app: &App, event: HookEvent, input: &Value) -> Value {
     if app.has_config_errors() {
         return opencode_v1::failure_answer(
             event,
@@ -63,7 +69,7 @@ fn answer(
     match event {
         HookEvent::ToolBefore if answer["action"] == "allow" => {
             let read_only = answer["class"] == "READ_ONLY";
-            match workflow::before(&app, input, read_only) {
+            match workflow::before(app, input, read_only) {
                 Ok(None) => {}
                 Ok(Some(message)) => {
                     telemetry = Some(loop_refusal_event(input, &message));
@@ -79,11 +85,11 @@ fn answer(
             }
         }
         HookEvent::ToolAfter => {
-            if let Err(error) = workflow::after(&app, input) {
+            if let Err(error) = workflow::after(app, input) {
                 telemetry = Some(degraded_event(event, input, &error));
             }
         }
-        HookEvent::SystemTransform => match workflow::system_block(&app, input) {
+        HookEvent::SystemTransform => match workflow::system_block(app, input) {
             Ok(Some(text)) => answer = json!({ "text": text }),
             Ok(None) => {}
             Err(error) => telemetry = Some(degraded_event(event, input, &error)),
