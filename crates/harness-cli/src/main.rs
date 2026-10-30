@@ -2,6 +2,7 @@
 //! and, for the OpenCode integration, in [`host::opencode_v1`].
 
 mod app;
+mod chat;
 mod commands;
 mod host;
 mod output;

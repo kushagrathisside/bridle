@@ -11,9 +11,11 @@ use std::path::{Path, PathBuf};
 use harness_core::config::{Origin, Severity, Verdict, endpoint_is_loopback, machine_config_path};
 use harness_core::identity;
 use harness_core::security::redact::Redactor;
+use harness_runtime::state::StateDir;
 
 use crate::app::{self, App};
 use crate::commands::config::redacted_toml;
+use crate::commands::egress::destinations;
 use crate::commands::health::wire_name;
 use crate::commands::models::{self, ServerState};
 use crate::tui::events::{self, LogRead, sanitize};
@@ -46,7 +48,7 @@ impl Sev {
         match self {
             Self::Ok => "ok",
             Self::Info => "info",
-            Self::Unknown => "unknown",
+            Self::Unknown => "unchecked",
             Self::Warn => "warn",
             Self::Fail => "fail",
         }
@@ -123,11 +125,25 @@ pub struct NetRow {
     pub sev: Sev,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// One task, or one session that never became a task. The task fields come from the orchestrator's journal
+/// and are empty for a session; the counts come from the event logs.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TaskRow {
     pub id: String,
-    /// True when the id is a task id, false when it is only a session id.
+    /// True for a task of the journal or an event that names a task, false for a bare session id.
     pub is_task: bool,
+    pub objective: String,
+    /// `active`, `blocked`, `completed` or `aborted`; empty for a session.
+    pub status: String,
+    pub phase: String,
+    pub iteration: u32,
+    pub last_action: String,
+    pub last_test: String,
+    pub failures: u32,
+    pub refusals: u32,
+    pub worktree: Option<String>,
+    /// Sessions of the logs that belong to this task.
+    pub sessions: Vec<String>,
     pub first: String,
     pub last: String,
     pub events: usize,
@@ -147,6 +163,8 @@ pub struct Snapshot {
     pub machine_config: Option<(String, bool)>,
     pub issues: Vec<IssueRow>,
     pub slots: Vec<SlotRow>,
+    /// The slot named by `agent.default_model`.
+    pub default_slot: Option<String>,
     pub config_lines: Vec<ConfigLine>,
     pub policy: Option<PolicyInfo>,
     pub network: Vec<NetRow>,
@@ -188,7 +206,7 @@ impl Snapshot {
         }
         if let Some(ws) = &snap.workspace {
             snap.log = events::read_logs(&ws.join(identity::STATE_DIR));
-            snap.tasks = group_tasks(&snap.log);
+            snap.tasks = collect_tasks(ws, &snap.log);
         }
         snap
     }
@@ -223,6 +241,7 @@ impl Snapshot {
                 message: sanitize(&redactor.redact(&i.message)),
             })
             .collect();
+        self.default_slot = Some(app.config.agent.default_model.clone()).filter(|s| !s.is_empty());
         self.slots = app
             .config
             .models
@@ -345,7 +364,7 @@ fn slot_row(app: &App, name: &str, model: &harness_core::config::ModelConfig) ->
 fn verdict_word(v: Verdict) -> &'static str {
     match v {
         Verdict::Allow => "allow",
-        Verdict::Ask => "ask (never auto-approved)",
+        Verdict::Ask => "ask (blocked)",
         Verdict::Deny => "deny",
     }
 }
@@ -391,58 +410,18 @@ fn policy_info(app: &App) -> PolicyInfo {
     }
 }
 
+/// The outbound destinations, from the same list `agent egress` prints.
 fn network_rows(app: &App) -> Vec<NetRow> {
-    let mut rows = Vec::new();
-    for (name, model) in &app.config.models {
-        let loopback = endpoint_is_loopback(&model.endpoint);
-        let key = model.api_key_env.as_deref().map(|var| {
-            // Only whether the variable is set is shown, never its value.
-            let set = std::env::var_os(var).is_some_and(|v| !v.is_empty());
-            format!("key from ${var} ({})", if set { "set" } else { "not set" })
-        });
-        rows.push(NetRow {
-            name: format!("models.{name}"),
-            target: shown(&model.endpoint),
-            scope: if loopback { "this machine" } else { "REMOTE" }.to_owned(),
-            note: key.unwrap_or_else(|| "no API key configured".to_owned()),
-            sev: if loopback { Sev::Ok } else { Sev::Warn },
-        });
-    }
-    let jev = &app.config.external.jev;
-    rows.push(NetRow {
-        name: "external.jev".to_owned(),
-        target: jev
-            .endpoint
-            .as_deref()
-            .map_or_else(|| "-".to_owned(), sanitize),
-        scope: if jev.enabled { "ENABLED" } else { "disabled" }.to_owned(),
-        note: "optional hosted decision engine".to_owned(),
-        sev: if jev.enabled { Sev::Warn } else { Sev::Ok },
-    });
-    rows.push(NetRow {
-        name: "external.cloud_models".to_owned(),
-        target: "-".to_owned(),
-        scope: if app.config.external.cloud_models.enabled {
-            "ENABLED"
-        } else {
-            "disabled"
-        }
-        .to_owned(),
-        note: "permits non-local model endpoints".to_owned(),
-        sev: if app.config.external.cloud_models.enabled {
-            Sev::Warn
-        } else {
-            Sev::Ok
-        },
-    });
-    rows.push(NetRow {
-        name: "telemetry".to_owned(),
-        target: "local files".to_owned(),
-        scope: "this machine".to_owned(),
-        note: "events are written under the state directory only".to_owned(),
-        sev: Sev::Ok,
-    });
-    rows
+    destinations(&app.config)
+        .into_iter()
+        .map(|d| NetRow {
+            name: shown(&d.what),
+            target: shown(&d.endpoint),
+            scope: if d.loopback { "this machine" } else { "REMOTE" }.to_owned(),
+            note: shown(&d.when),
+            sev: if d.loopback { Sev::Ok } else { Sev::Warn },
+        })
+        .collect()
 }
 
 /// Proxy environment variables that are set (names only; values may hold credentials).
@@ -468,12 +447,7 @@ pub fn group_tasks(log: &LogRead) -> Vec<TaskRow> {
                 is_task,
                 first: e.time.clone(),
                 last: e.time.clone(),
-                events: 0,
-                allowed: 0,
-                blocked: 0,
-                failed: 0,
-                last_kind: String::new(),
-                last_status: None,
+                ..TaskRow::default()
             });
             rows.len() - 1
         });
@@ -493,6 +467,92 @@ pub fn group_tasks(log: &LogRead) -> Vec<TaskRow> {
     }
     rows.sort_by(|a, b| b.last.cmp(&a.last));
     rows
+}
+
+/// Tasks of the orchestrator's journal that are shown at most.
+const MAX_TASKS: usize = 100;
+/// Sessions of the logs looked up in the session index at most.
+const MAX_SESSIONS: usize = 300;
+
+/// The tasks of the workspace: the journal's tasks with the events of their sessions folded in, then the
+/// sessions and task ids of the logs that match no task. Read-only: nothing is created, locked or
+/// cleaned, so opening the screen never changes the state.
+pub fn collect_tasks(workspace: &Path, log: &LogRead) -> Vec<TaskRow> {
+    let rows = group_tasks(log);
+    let Some(state) = StateDir::open_existing(workspace) else {
+        return rows;
+    };
+    let mut by_id: HashMap<String, TaskRow> = HashMap::new();
+    let ids = state.task_ids().unwrap_or_default();
+    for id in ids.into_iter().rev().take(MAX_TASKS) {
+        let Ok(task) = state.task(&id) else { continue };
+        let row = match task.peek() {
+            Ok(journal) => {
+                let s = &journal.state;
+                TaskRow {
+                    id: id.clone(),
+                    is_task: true,
+                    objective: shown(&s.original_prompt),
+                    status: format!("{:?}", s.status).to_lowercase(),
+                    phase: s.phase.name().to_lowercase(),
+                    iteration: s.iteration,
+                    last_action: shown(s.last_action.as_deref().unwrap_or("")),
+                    last_test: shown(s.last_test.as_deref().unwrap_or("")),
+                    failures: s.failure_count,
+                    refusals: s.consecutive_refusals,
+                    worktree: s.worktree.as_deref().map(shown),
+                    ..TaskRow::default()
+                }
+            }
+            // A journal that cannot be read is shown as such, not hidden.
+            Err(_) => TaskRow {
+                id: id.clone(),
+                is_task: true,
+                status: "unreadable".to_owned(),
+                ..TaskRow::default()
+            },
+        };
+        by_id.insert(id, row);
+    }
+
+    let mut leftover = Vec::new();
+    let mut looked_up = 0;
+    for row in rows {
+        let target = if row.is_task {
+            Some(row.id.clone())
+        } else if looked_up < MAX_SESSIONS {
+            looked_up += 1;
+            state.session_task(&row.id).ok().flatten()
+        } else {
+            None
+        };
+        match target.and_then(|id| by_id.get_mut(&id)) {
+            Some(task) => fold_events(task, row),
+            None => leftover.push(row),
+        }
+    }
+    let mut out: Vec<TaskRow> = by_id.into_values().chain(leftover).collect();
+    out.sort_by(|a, b| (&b.last, &b.id).cmp(&(&a.last, &a.id)));
+    out
+}
+
+/// Adds the event counts of `from` (a session or task id of the logs) to `task`.
+fn fold_events(task: &mut TaskRow, from: TaskRow) {
+    if !from.is_task {
+        task.sessions.push(from.id);
+    }
+    task.events += from.events;
+    task.allowed += from.allowed;
+    task.blocked += from.blocked;
+    task.failed += from.failed;
+    if task.first.is_empty() || from.first < task.first {
+        task.first = from.first;
+    }
+    if from.last >= task.last {
+        task.last = from.last;
+        task.last_kind = from.last_kind;
+        task.last_status = from.last_status;
+    }
 }
 
 #[cfg(test)]
@@ -541,6 +601,66 @@ mod tests {
         let s1 = rows.iter().find(|r| r.id == "s1").expect("s1");
         assert!(!s1.is_task && s1.blocked == 1, "ask counts as blocked");
         assert_eq!(rows[0].id, "s1", "newest first");
+    }
+
+    /// Every file under `dir` with its size and modification time, to compare before and after.
+    fn listing(dir: &Path) -> Vec<(PathBuf, u64, std::time::SystemTime)> {
+        let mut out = Vec::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            for entry in std::fs::read_dir(&d).unwrap().flatten() {
+                let meta = entry.metadata().unwrap();
+                if meta.is_dir() {
+                    stack.push(entry.path());
+                } else {
+                    out.push((entry.path(), meta.len(), meta.modified().unwrap()));
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn real_tasks_are_read_without_writing_and_fold_in_their_sessions() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let ws = dir.path();
+        let state = StateDir::open(ws).unwrap();
+        let task_id = state.bind_session("ses_a", "repo").unwrap();
+        drop(state);
+        let log = LogRead {
+            events: vec![
+                ev("1", None, Some("ses_a"), Some(Decision::Deny)),
+                ev("2", None, Some("ses_a"), Some(Decision::Allow)),
+                ev("3", None, Some("ses_other"), Some(Decision::Allow)),
+            ],
+            ..LogRead::default()
+        };
+        let before = listing(ws);
+        let rows = collect_tasks(ws, &log);
+        assert_eq!(
+            before,
+            listing(ws),
+            "reading tasks must not change any file"
+        );
+
+        assert_eq!(rows.len(), 2, "{rows:?}");
+        let task = rows.iter().find(|r| r.id == task_id).expect("the task");
+        assert!(task.is_task && task.status == "active", "{task:?}");
+        assert_eq!(task.sessions, vec!["ses_a".to_owned()]);
+        assert_eq!((task.events, task.allowed, task.blocked), (2, 1, 1));
+        let session = rows
+            .iter()
+            .find(|r| r.id == "ses_other")
+            .expect("the session");
+        assert!(!session.is_task && session.events == 1);
+    }
+
+    #[test]
+    fn no_state_directory_means_no_tasks_and_nothing_created() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert!(collect_tasks(dir.path(), &LogRead::default()).is_empty());
+        assert!(!dir.path().join(identity::STATE_DIR).exists());
     }
 
     #[test]
