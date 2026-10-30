@@ -26,6 +26,8 @@ sha2 = "0.11.1"
 ureq = { version = "3.4.2", default-features = false, features = ["json", "native-tls"] }
 sysinfo = { version = "0.39.6", default-features = false, features = ["system", "disk"] }
 dunce = "1.0.5"
+# Terminal UI (`agent tui`). Crossterm backend only; no async runtime.
+ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
 humantime = "2.4.0"
 tempfile = "3.27.0"
 # Code intelligence (ADR-0003). Exact pins: the grammars are versioned with tree-sitter.

@@ -899,6 +899,7 @@ mod tests {
             config,
             config_files: Vec::new(),
             issues: Vec::new(),
+            origins: std::collections::BTreeMap::new(),
         }
     }
 

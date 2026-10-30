@@ -5,6 +5,7 @@ mod app;
 mod commands;
 mod host;
 mod output;
+mod tui;
 mod workflow;
 
 use std::path::PathBuf;
@@ -107,6 +108,8 @@ enum Command {
         #[command(subcommand)]
         action: commands::bench::BenchAction,
     },
+    /// Open the interactive Control Center (needs a terminal).
+    Tui,
     /// Show the ordered record of a task.
     Trace {
         /// Task id (default: the latest task).
@@ -129,6 +132,11 @@ fn main() -> ExitCode {
             commands::init::run(&args, cli.config.as_deref(), cli.workspace.as_deref())
         }
         Command::Bench { action } => commands::bench::run(&action),
+        // The TUI loads the configuration itself: a broken config is a state to show, not a crash.
+        Command::Tui => tui::run(tui::data::LoadArgs {
+            config: cli.config.clone(),
+            workspace: cli.workspace.clone(),
+        }),
         command => match app::App::load(cli.config.as_deref(), cli.workspace.as_deref()) {
             Ok(app) => match command {
                 Command::Doctor { json } => commands::doctor::run(&app, json),
@@ -155,7 +163,7 @@ fn main() -> ExitCode {
                 Command::EvalDecisions { cases, slot, out } => {
                     commands::eval::run(&app, &slot, &cases, out.as_deref())
                 }
-                Command::Hook { .. } | Command::Init(_) | Command::Bench { .. } => {
+                Command::Hook { .. } | Command::Init(_) | Command::Bench { .. } | Command::Tui => {
                     unreachable!("handled above")
                 }
             },
