@@ -15,7 +15,7 @@ use serde_json::{Map, Value, json};
 
 use super::{
     ChatMessage, ChatRequest, ChatResponse, HealthStatus, ModelProvider, ProviderError, Role,
-    Timings, ToolCall, Usage,
+    StreamEvent, Timings, ToolCall, Usage,
 };
 
 /// Sleep before retry `n` (1-based) is `RETRY_BACKOFF * n`.
@@ -241,6 +241,19 @@ impl ModelProvider for OpenAiCompatProvider {
         req: &ChatRequest,
         on_delta: &mut dyn FnMut(&str),
     ) -> Result<ChatResponse, ProviderError> {
+        self.chat_stream_with(req, &mut |event| {
+            if let StreamEvent::Text(piece) = event {
+                on_delta(piece);
+            }
+            true
+        })
+    }
+
+    fn chat_stream_with(
+        &self,
+        req: &ChatRequest,
+        on_event: &mut dyn FnMut(StreamEvent<'_>) -> bool,
+    ) -> Result<ChatResponse, ProviderError> {
         let started = Instant::now();
         let body = self.build_body(req, true);
         // Retries cover only the connect/status phase: once a delta has reached the caller, a retry
@@ -249,16 +262,36 @@ impl ModelProvider for OpenAiCompatProvider {
         let mut acc = StreamAccumulator::new(started);
         let mut reader = BufReader::new(resp.body_mut().as_reader());
         let mut raw = Vec::new();
+        let mut seen = Progress::default();
+        let mut stopped = false;
         while read_sse_line(&mut reader, &mut raw)
             .map_err(|e| transport_error(ureq::Error::from(e), self.timeout))?
         {
             let line = std::str::from_utf8(&raw)
                 .map_err(|_| ProviderError::InvalidResponse("SSE line is not UTF-8".to_owned()))?;
-            if acc.feed_line(line, on_delta)? {
+            let mut keep_going = true;
+            let done = acc.feed_line(line, &mut |piece| {
+                keep_going &= on_event(StreamEvent::Text(piece));
+            })?;
+            keep_going &= acc.report_progress(&mut seen, on_event);
+            if done {
+                break;
+            }
+            if !keep_going {
+                stopped = true;
                 break;
             }
         }
-        Ok(acc.finish(&self.model_id))
+        // Dropping the reader and the response here closes the connection, which is what makes the
+        // server stop generating after a stop.
+        drop(reader);
+        drop(resp);
+        let mut response = acc.finish(&self.model_id);
+        if stopped {
+            response.finish_reason = Some("stopped".to_owned());
+            response.tool_calls.clear();
+        }
+        Ok(response)
     }
 }
 
@@ -517,6 +550,14 @@ fn parse_chat(
     })
 }
 
+/// What [`StreamAccumulator::report_progress`] has reported so far.
+#[derive(Debug, Default)]
+struct Progress {
+    tool_chars: usize,
+    tool_name: String,
+    reasoning: usize,
+}
+
 /// Incremental assembler for an OpenAI-style SSE chat stream. Pure: feed it lines, then `finish`.
 #[derive(Debug)]
 struct StreamAccumulator {
@@ -630,6 +671,34 @@ impl StreamAccumulator {
             }
         }
         Ok(false)
+    }
+
+    /// Reports the parts of the stream that are not text when they have grown since the last report.
+    /// Returns `false` once the caller asked to stop.
+    fn report_progress(
+        &self,
+        seen: &mut Progress,
+        on_event: &mut dyn FnMut(StreamEvent<'_>) -> bool,
+    ) -> bool {
+        let mut keep_going = true;
+        // The call being written is the one with the highest index.
+        if let Some(call) = self.tool_calls.values().next_back() {
+            let chars = call.arguments.len();
+            if chars != seen.tool_chars || call.name != seen.tool_name {
+                seen.tool_chars = chars;
+                seen.tool_name.clone_from(&call.name);
+                keep_going &= on_event(StreamEvent::ToolCall {
+                    name: &call.name,
+                    chars,
+                });
+            }
+        }
+        let reasoning = self.reasoning.as_ref().map_or(0, String::len);
+        if reasoning != seen.reasoning {
+            seen.reasoning = reasoning;
+            keep_going &= on_event(StreamEvent::Reasoning { chars: reasoning });
+        }
+        keep_going
     }
 
     fn finish(self, default_model: &str) -> ChatResponse {

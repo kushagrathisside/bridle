@@ -6,14 +6,16 @@
 use std::error::Error;
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use harness_core::config::ModelConfig;
 use harness_runtime::providers::{
     ChatMessage, ChatRequest, LlamaCppProvider, ModelProvider, OpenAiCompatProvider, ProviderError,
-    ToolSpec,
+    StreamEvent, ToolSpec,
 };
 use serde_json::{Value, json};
 
@@ -300,6 +302,140 @@ fn request_body_carries_thinking_flag_max_tokens_and_auth() -> TestResult {
     );
     assert_eq!(body["stream"].as_bool(), Some(false));
     assert_eq!(body["tools"][0]["function"]["name"], "read_file");
+    Ok(())
+}
+
+/// A server that streams `lines` text deltas, one every 10 ms, and counts how many it managed to send
+/// before the client went away. `usize::MAX` means the client stayed to the end.
+fn slow_stream_server(lines: usize) -> io::Result<(u16, Arc<AtomicUsize>)> {
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    let port = listener.local_addr()?.port();
+    let sent = Arc::new(AtomicUsize::new(0));
+    let outcome = Arc::new(AtomicUsize::new(0));
+    let (sent_in, outcome_in) = (Arc::clone(&sent), Arc::clone(&outcome));
+    thread::spawn(move || {
+        let Ok((mut stream, _)) = listener.accept() else {
+            return;
+        };
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+        if read_request(&mut stream).is_err() {
+            return;
+        }
+        let head =
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n";
+        if stream.write_all(head.as_bytes()).is_err() {
+            return;
+        }
+        for n in 0..lines {
+            let line = format!(
+                "data: {{\"choices\":[{{\"index\":0,\"delta\":{{\"content\":\"w{n} \"}}}}]}}\n\n"
+            );
+            if stream.write_all(line.as_bytes()).is_err() || stream.flush().is_err() {
+                outcome_in.store(sent_in.load(Ordering::SeqCst) + 1, Ordering::SeqCst);
+                return;
+            }
+            sent_in.store(n + 1, Ordering::SeqCst);
+            thread::sleep(Duration::from_millis(10));
+        }
+        outcome_in.store(usize::MAX, Ordering::SeqCst);
+    });
+    Ok((port, outcome))
+}
+
+#[test]
+fn a_stream_the_caller_stops_is_dropped_and_returns_what_arrived() -> TestResult {
+    let (port, outcome) = slow_stream_server(400)?;
+    let provider = openai(port, 0)?;
+    let mut texts = 0usize;
+
+    let started = Instant::now();
+    let resp = provider.chat_stream_with(&user_request("go"), &mut |event| {
+        if matches!(event, StreamEvent::Text(_)) {
+            texts += 1;
+        }
+        texts < 5
+    })?;
+
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "the stop must not wait for the stream"
+    );
+    assert_eq!(resp.finish_reason.as_deref(), Some("stopped"));
+    assert_eq!(resp.content.as_deref(), Some("w0 w1 w2 w3 w4 "));
+    assert!(resp.tool_calls.is_empty());
+    // The server saw the connection go away long before it ran out of lines to send.
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while outcome.load(Ordering::SeqCst) == 0 && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(20));
+    }
+    let seen = outcome.load(Ordering::SeqCst);
+    assert!(
+        seen != 0 && seen != usize::MAX && seen < 200,
+        "server outcome: {seen}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_tool_call_that_is_stopped_halfway_is_not_returned() -> TestResult {
+    let body = concat!(
+        r#"data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"write_file","arguments":"{\"path\":\"a"}}]}}]}"#,
+        "\n\n",
+        r#"data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":".txt\",\"content\":\"xxxx"}}]}}]}"#,
+        "\n\n",
+        r#"data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"xxxx"}}]}}]}"#,
+        "\n\n",
+        "data: [DONE]\n\n",
+    );
+    let server = FakeServer::start(vec![Reply::sse(body)])?;
+    let provider = openai(server.port, 0)?;
+    let mut reports = Vec::new();
+
+    let resp = provider.chat_stream_with(&user_request("write it"), &mut |event| {
+        if let StreamEvent::ToolCall { name, chars } = event {
+            reports.push((name.to_owned(), chars));
+        }
+        reports.len() < 2
+    })?;
+
+    assert_eq!(reports.len(), 2, "{reports:?}");
+    assert!(
+        reports.iter().all(|(name, _)| name == "write_file"),
+        "{reports:?}"
+    );
+    assert!(
+        reports[1].1 > reports[0].1,
+        "the argument length grows: {reports:?}"
+    );
+    assert_eq!(resp.finish_reason.as_deref(), Some("stopped"));
+    assert!(
+        resp.tool_calls.is_empty(),
+        "an incomplete call must not be returned"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_stream_that_runs_to_the_end_reports_progress_and_is_complete() -> TestResult {
+    let server = FakeServer::start(vec![Reply::sse(SSE_BODY)])?;
+    let provider = llama(server.port, 0)?;
+    let mut events = Vec::new();
+
+    let resp = provider.chat_stream_with(&user_request("hello"), &mut |event| {
+        events.push(format!("{event:?}"));
+        true
+    })?;
+
+    assert!(events.iter().any(|e| e.starts_with("Text(")), "{events:?}");
+    assert!(
+        events
+            .iter()
+            .any(|e| e.contains("ToolCall") && e.contains("read_file")),
+        "{events:?}"
+    );
+    assert_eq!(resp.finish_reason.as_deref(), Some("tool_calls"));
+    assert_eq!(resp.tool_calls.len(), 1);
+    assert_eq!(resp.tool_calls[0].arguments, "{\"path\":\"a.rs\"}");
     Ok(())
 }
 
