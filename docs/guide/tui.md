@@ -49,12 +49,32 @@ and in `agent trace`, and the next request carries the task state block.
 
 Limits, stated plainly:
 
-- A stop takes effect after the step in progress: a model call that has started, or a tool that is running, is not interrupted.
-  Quitting while a turn runs asks it to stop and waits up to 3 seconds for a tool that is mid-call.
+- A stop drops a model call at once: the connection closes, so the server stops generating, and what had arrived is kept. A
+  tool that is already running finishes first. While the model writes a long tool call, the status line says so and counts
+  the characters. Quitting while a turn runs asks it to stop and waits up to 3 seconds for a tool that is mid-call.
 - A turn makes at most 30 model calls. The history is shortened to fit the slot's context window: older tool results first, then
   the oldest exchanges, never a call without its result.
 - The server of the slot must be running. The chat does not start it; the Models view does (key `s`, with a confirmation).
 - A slot that names `api_key_env` reads its key from that environment variable, as `agent health` does.
+
+## Using the chat with your models
+
+The chat talks to the slot named by `agent.default_model` (`main` in the shipped profiles). `Ctrl+P` or `/model <slot>`
+switches to another slot.
+
+1. Set Bridle up once, as in [installation.md](installation.md): `agent init --machine ...`, and `agent init --profile local-only`
+   in the repository.
+2. Start the slot's server: `agent models serve main --detach`, or key `6` and then `s` in the TUI (it asks first).
+3. Run `agent tui` in the repository and write your message.
+
+What a request costs. Every request starts with the instructions and the descriptions of the tools. With the default tools
+and the five file tools that is about 3,600 tokens (measured on Qwen3.5-9B). On the shipped 16K slot that leaves about 12K
+tokens for the conversation. The server keeps that shared start in its prompt cache, so a follow-up request evaluates only
+what is new. When the history no longer fits, older tool results are shortened first and then the oldest exchanges are
+dropped; the chat says so in the transcript.
+
+Measured with the shipped `main` slot (Qwen3.5-9B Q4_K_M, thinking off, RTX 4060 Laptop, 5,443 MiB of VRAM): generation about
+40 tokens per second, prompt evaluation 400 to 1,700 tokens per second. See the progress log for the run.
 
 ## Views
 

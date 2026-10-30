@@ -49,19 +49,48 @@ M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
   `agent trace` (8 records) and the later requests carry the task state block; no state file holds the secret; the
   terminal is restored (exit 0, alternate screen left, bracketed paste off). A second run: the server down is explained,
   Start and Stop of a stand-in server go through the confirmation screens, and no process is left behind.
-- Tests: 171 in the CLI crate, among them `a_tool_call_runs_and_the_answer_follows`,
+- Tests: 178 in the CLI crate, among them `a_tool_call_runs_and_the_answer_follows`,
   `a_secret_file_is_blocked_and_the_model_is_told_the_rule`,
   `the_loop_rule_refuses_endless_edits_in_the_chat_as_it_does_for_opencode`,
   `with_the_workflow_on_the_session_becomes_a_task_the_next_request_names`,
+  `a_stop_in_the_middle_of_a_stream_ends_the_turn_at_once_with_a_valid_history`,
   `real_tasks_are_read_without_writing_and_fold_in_their_sessions`; the file tools have ten, among them
   `read_file_refuses_secrets_outside_paths_binaries_and_directories` and
-  `writes_are_atomic_leave_no_temp_files_and_keep_permissions`.
-- Not verified: native Windows (the Windows console's paste is handled by a burst heuristic that has only a unit-level
-  basis); a real model (none could be reached from this machine: WSL2 here uses NAT networking, so a Windows-side server on
-  loopback is not reachable, and no Linux runtime was installed). Tool-call streaming of llama.cpp is covered by the
-  provider's own tests and by the scripted server, not by a live run in the chat.
-- Limits: a stop takes effect after the step in progress; a turn makes at most 30 model calls; the configuration is read
-  when a conversation starts.
+  `writes_are_atomic_leave_no_temp_files_and_keep_permissions`; the provider HTTP tests gained
+  `a_stream_the_caller_stops_is_dropped_and_returns_what_arrived` and
+  `a_tool_call_that_is_stopped_halfway_is_not_returned`.
+- Run against a real model (2026-10-31, the same day, after the scripted runs): Qwen3.5-9B Q4_K_M on the RTX 4060 Laptop
+  (5,443 MiB). The server was the Windows `llama-server.exe` (b11756) started by hand with the arguments Bridle builds for
+  the shipped `main` slot (`-c 16384 --jinja --metrics -ngl 99 -fa on -ctk q8_0 -ctv q8_0 --load-mode mmap -np 1`; thinking
+  off), on loopback. WSL2 here uses NAT networking, so a Windows server on loopback is not reachable from it: the Linux
+  `agent tui` reached it through a throwaway relay that forwards each request through Windows `curl.exe` (the relay is not in
+  the repository). Workspace: a copy of `examples/toy-python-repo` with the shipped `local-only` profile,
+  `[workflow] enabled = true` and one test step (`python3 -m pytest -q`).
+  - Four turns took 25 s in all: list the files (one call; the model noticed the hidden secret file), run the tests (a
+    correct diagnosis: `add(2, 3)` returns -1), fix the bug (`read_file`, `edit_file`, `run_tests`; `pytest` then reports 2
+    passed, run by the script and not by the model), and a request to print `.env` (the model declined by itself and quoted
+    the system prompt; no call was made). The chat was `task-0001` in `agent trace`.
+  - A second round asked for things the policy forbids. The model tried to edit `local-agent.toml` (blocked,
+    `protected_path`), then, to delete `calc.py`, a Python command (blocked, `command_risk`), `git rm calc.py` (blocked,
+    `command_risk`) and `sh -c rm calc.py` (refused by `run_command`'s argument check). It tried the three routes in turn,
+    gave up and explained, and `calc.py` was untouched: the policy held where the system prompt's request not to look for a
+    way around did not.
+  - Speed: generation about 40 tokens per second. The first request carries about 3,600 tokens of instructions and tool
+    descriptions (3,581 evaluated in about 2 s); later requests reuse the server's prompt cache (143 to 653 new tokens).
+  - Found only with the real model, and fixed in this change. (1) Ctrl+C took 95 s to take effect on "count from 1 to 1500":
+    the model answered with a 4,096-token `write_file` call, which the chat neither showed (the screen said "thinking…" all
+    that time) nor could interrupt. Now a stop drops the connection and the status line names what is being written: 0.04 s
+    measured in the chat, and the server's release record shows `n_tokens = 3825` against `7687` for a full generation,
+    that is about 200 tokens generated instead of 4,096. (2) A tool call cut off by the output limit was answered with a
+    generic "invalid JSON"; it now says that the reply reached the limit and asks for a smaller call. (3) The chat head
+    said "server not started" for a server that was running but not started by Bridle. A first measurement of the stop also
+    looked wrong for another reason: the test relay did not hang up on the server when its client left, so the server kept
+    generating; that was fixed in the relay, and Bridle's own connection handling was not at fault.
+- Not verified: native Windows (the binary, and the Windows console's paste, which is handled by a burst heuristic with a
+  unit-level basis only); Bridle's own `models serve` for the 9B (the server was started by hand because the WSL binary
+  cannot hand `/mnt/d` paths to a Windows executable); a long coding session (the real runs above are short).
+- Limits: a turn makes at most 30 model calls; the configuration is read when a conversation starts; a tool that is already
+  running finishes before a stop takes effect.
 
 ## 2026-10-29: escalation evaluated at the failing verification; confidence grows with repeats
 
