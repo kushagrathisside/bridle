@@ -11,14 +11,15 @@
 //! blocked it, and `ask` counts as blocked. There is no way to approve a blocked call from here.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use harness_core::config::ModelConfig;
 use harness_core::identity;
 use harness_core::security::redact::Redactor;
 use harness_runtime::mcp::{McpTool, Server, ServerInfo, ToolContext, file_tools};
 use harness_runtime::providers::{
-    ChatMessage, ChatRequest, ModelProvider, ProviderError, Role, ToolCall, ToolSpec, provider_for,
+    ChatMessage, ChatRequest, ModelProvider, ProviderError, Role, StreamEvent, ToolCall, ToolSpec,
+    provider_for,
 };
 use serde_json::{Value, json};
 
@@ -36,6 +37,8 @@ const MAX_TOOL_CHARS: usize = 12_000;
 /// Characters of a tool call's arguments or result shown to the user.
 const SUMMARY_CHARS: usize = 110;
 const PREVIEW_CHARS: usize = 240;
+/// How often progress of a tool call or of reasoning is reported at most.
+const PROGRESS_EVERY: Duration = Duration::from_millis(250);
 /// Characters per token assumed when sizing the context window. Rough, and on the safe side.
 const CHARS_PER_TOKEN: usize = 3;
 
@@ -80,6 +83,9 @@ pub enum Event {
     },
     /// Something the user should know that is not part of the answer.
     Notice(String),
+    /// What the model is doing while it is not writing text, such as writing a long tool call. It is
+    /// shown on the status line and not kept.
+    Working(String),
 }
 
 /// How a turn ended.
@@ -185,16 +191,56 @@ impl Agent {
                     "{dropped} older message(s) were dropped to fit the context window"
                 )));
             }
-            let response = provider.chat_stream(&request, &mut |delta| {
-                if !cancel.load(Ordering::Relaxed) {
-                    emit(Event::Delta(delta.to_owned()));
+            let mut throttle = Throttle::default();
+            let response = provider.chat_stream_with(&request, &mut |event| {
+                // A stop drops the connection, so the server stops generating at once.
+                if cancel.load(Ordering::Relaxed) {
+                    return false;
                 }
+                match event {
+                    StreamEvent::Text(piece) => emit(Event::Delta(piece.to_owned())),
+                    StreamEvent::ToolCall { name, chars } => {
+                        if throttle.ready(name) {
+                            let what = if name.is_empty() {
+                                "a tool".to_owned()
+                            } else {
+                                sanitize(name)
+                            };
+                            emit(Event::Working(format!(
+                                "writing a call to {what} ({chars} characters so far)"
+                            )));
+                        }
+                    }
+                    StreamEvent::Reasoning { chars } => {
+                        if throttle.ready("reasoning") {
+                            emit(Event::Working(format!(
+                                "thinking ({chars} characters of reasoning)"
+                            )));
+                        }
+                    }
+                }
+                true
             });
             let response = match response {
                 Ok(response) => response,
                 Err(error) => return TurnEnd::Failed(describe_error(&error, model)),
             };
-            if response.finish_reason.as_deref() == Some("length") {
+            if response.finish_reason.as_deref() == Some("stopped") {
+                // The stream was abandoned at the user's request: keep what was said, run nothing.
+                let said = response
+                    .content
+                    .filter(|text| !text.trim().is_empty())
+                    .unwrap_or_else(|| "(stopped before answering)".to_owned());
+                self.messages.push(ChatMessage {
+                    role: Role::Assistant,
+                    content: Some(said),
+                    tool_calls: Vec::new(),
+                    tool_call_id: None,
+                });
+                return TurnEnd::Stopped;
+            }
+            let cut_off = response.finish_reason.as_deref() == Some("length");
+            if cut_off {
                 emit(Event::Notice(
                     "the answer was cut off by the token limit (max_output_tokens)".to_owned(),
                 ));
@@ -228,7 +274,8 @@ impl Agent {
                     }
                     return TurnEnd::Stopped;
                 }
-                let text = self.run_call(call, index, emit);
+                let truncated = cut_off && index + 1 == calls.len();
+                let text = self.run_call(call, index, truncated, model, emit);
                 self.push_result(call, &text);
             }
         }
@@ -280,7 +327,14 @@ impl Agent {
     }
 
     /// Runs one tool call and returns the text the model gets back.
-    fn run_call(&mut self, call: &ToolCall, index: usize, emit: &mut dyn FnMut(Event)) -> String {
+    fn run_call(
+        &mut self,
+        call: &ToolCall,
+        index: usize,
+        truncated: bool,
+        model: &ModelConfig,
+        emit: &mut dyn FnMut(Event),
+    ) -> String {
         let name = call.name.clone();
         // What the screen shows: the model chose this text, so it never carries control characters.
         let shown = sanitize(&name);
@@ -295,9 +349,16 @@ impl Agent {
             match serde_json::from_str(&call.arguments) {
                 Ok(value) => value,
                 Err(error) => {
-                    let text = format!(
-                        "the arguments were not valid JSON ({error}); call the tool again with a JSON object"
-                    );
+                    let text = if truncated {
+                        format!(
+                            "your reply reached the output limit ({} tokens) in the middle of this call, so its arguments are incomplete and nothing was run. Make the call smaller: for a large file, write it in several parts",
+                            model.max_output_tokens
+                        )
+                    } else {
+                        format!(
+                            "the arguments were not valid JSON ({error}); call the tool again with a JSON object"
+                        )
+                    };
                     emit(Event::ToolDone {
                         id,
                         name: shown,
@@ -492,6 +553,25 @@ impl ToolReply {
     }
 }
 
+/// Lets a progress report through when its subject changed or enough time has passed.
+#[derive(Debug, Default)]
+struct Throttle {
+    last: Option<(Instant, String)>,
+}
+
+impl Throttle {
+    fn ready(&mut self, subject: &str) -> bool {
+        let due = self
+            .last
+            .as_ref()
+            .is_none_or(|(at, last)| last != subject || at.elapsed() >= PROGRESS_EVERY);
+        if due {
+            self.last = Some((Instant::now(), subject.to_owned()));
+        }
+        due
+    }
+}
+
 fn spec_of(tool: &dyn McpTool) -> ToolSpec {
     ToolSpec {
         name: tool.name().to_owned(),
@@ -681,9 +761,10 @@ fn compact(messages: &mut Vec<ChatMessage>, budget: usize) -> usize {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use harness_runtime::providers::{ChatResponse, MockProvider};
+    use harness_runtime::providers::{ChatResponse, HealthStatus, MockProvider};
     use std::fs;
     use std::path::Path;
+    use std::sync::atomic::AtomicUsize;
 
     const CONFIG: &str = r#"
 profile = "test"
@@ -990,6 +1071,185 @@ hard_limit = 8000
             events
                 .iter()
                 .any(|e| matches!(e, Event::ToolDone { ok: false, .. }))
+        );
+    }
+
+    /// A provider that streams by hand through `chat_stream_with` and gives up as soon as the caller says so.
+    struct Streaming {
+        events: Vec<(String, usize, bool)>,
+        finish: ChatResponse,
+        reported: AtomicUsize,
+    }
+
+    impl ModelProvider for Streaming {
+        fn model_id(&self) -> &str {
+            "mock-model"
+        }
+        fn health(&self) -> Result<HealthStatus, ProviderError> {
+            Ok(HealthStatus {
+                ok: true,
+                detail: "ok".to_owned(),
+            })
+        }
+        fn list_models(&self) -> Result<Vec<String>, ProviderError> {
+            Ok(Vec::new())
+        }
+        fn chat(&self, _: &ChatRequest) -> Result<ChatResponse, ProviderError> {
+            Ok(self.finish.clone())
+        }
+        fn chat_stream(
+            &self,
+            _: &ChatRequest,
+            _: &mut dyn FnMut(&str),
+        ) -> Result<ChatResponse, ProviderError> {
+            Ok(self.finish.clone())
+        }
+        fn chat_stream_with(
+            &self,
+            _: &ChatRequest,
+            on_event: &mut dyn FnMut(StreamEvent<'_>) -> bool,
+        ) -> Result<ChatResponse, ProviderError> {
+            let mut said = String::new();
+            for (text, chars, is_call) in &self.events {
+                self.reported.fetch_add(1, Ordering::SeqCst);
+                let keep = if *is_call {
+                    on_event(StreamEvent::ToolCall {
+                        name: text,
+                        chars: *chars,
+                    })
+                } else {
+                    said.push_str(text);
+                    on_event(StreamEvent::Text(text))
+                };
+                if !keep {
+                    return Ok(ChatResponse {
+                        content: Some(said),
+                        finish_reason: Some("stopped".to_owned()),
+                        ..ChatResponse::default()
+                    });
+                }
+            }
+            Ok(self.finish.clone())
+        }
+    }
+
+    #[test]
+    fn a_stop_in_the_middle_of_a_stream_ends_the_turn_at_once_with_a_valid_history() {
+        let fx = Fixture::new("");
+        let mut agent = fx.agent();
+        let provider = Streaming {
+            events: (0..50).map(|n| (format!("w{n} "), 0, false)).collect(),
+            finish: answer("never reached"),
+            reported: AtomicUsize::new(0),
+        };
+        let cancel = AtomicBool::new(false);
+        let mut shown = 0;
+        let end = agent.run_turn(
+            &provider,
+            &fx.model(),
+            "talk a lot",
+            &cancel,
+            &mut |event| {
+                if matches!(event, Event::Delta(_)) {
+                    shown += 1;
+                    if shown == 3 {
+                        cancel.store(true, Ordering::Relaxed);
+                    }
+                }
+            },
+        );
+        assert_eq!(end, TurnEnd::Stopped);
+        assert!(
+            provider.reported.load(Ordering::SeqCst) < 10,
+            "the stream was abandoned, not read to the end"
+        );
+        assert_eq!(shown, 3, "nothing is shown after the stop");
+        let last = agent.messages.last().unwrap();
+        assert_eq!(last.role, Role::Assistant);
+        assert!(
+            last.content.as_deref().unwrap().starts_with("w0 w1 w2"),
+            "{last:?}"
+        );
+        assert!(last.tool_calls.is_empty());
+    }
+
+    #[test]
+    fn a_tool_call_being_written_is_reported_as_progress_and_throttled() {
+        let fx = Fixture::new("");
+        let mut agent = fx.agent();
+        let provider = Streaming {
+            events: vec![
+                (String::new(), 0, true),
+                ("write_file".to_owned(), 10, true),
+                ("write_file".to_owned(), 99, true),
+                ("write_file".to_owned(), 500, true),
+            ],
+            finish: answer("done"),
+            reported: AtomicUsize::new(0),
+        };
+        let cancel = AtomicBool::new(false);
+        let mut working = Vec::new();
+        let end = agent.run_turn(
+            &provider,
+            &fx.model(),
+            "write a big file",
+            &cancel,
+            &mut |event| {
+                if let Event::Working(text) = event {
+                    working.push(text);
+                }
+            },
+        );
+        assert_eq!(end, TurnEnd::Done);
+        assert_eq!(
+            working.len(),
+            2,
+            "a new subject is reported at once, the rest is throttled: {working:?}"
+        );
+        assert!(
+            working[0].contains("a tool") && working[1].contains("write_file (10 characters"),
+            "{working:?}"
+        );
+    }
+
+    #[test]
+    fn a_tool_call_cut_off_by_the_output_limit_is_explained_to_the_model() {
+        let fx = Fixture::new("");
+        let mut agent = fx.agent();
+        let cut = ChatResponse {
+            tool_calls: vec![ToolCall {
+                id: "c1".into(),
+                name: "write_file".into(),
+                arguments: "{\"path\":\"a.txt\",\"content\":\"xxxx".into(),
+            }],
+            finish_reason: Some("length".into()),
+            ..ChatResponse::default()
+        };
+        let (end, events, provider) = turn(
+            &fx,
+            &mut agent,
+            vec![cut, answer("I will do it in parts")],
+            "write a huge file",
+        );
+        assert_eq!(end, TurnEnd::Done);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::Notice(t) if t.contains("token limit")))
+        );
+        let told = provider.requests()[1]
+            .messages
+            .iter()
+            .find(|m| m.role == Role::Tool)
+            .and_then(|m| m.content.clone())
+            .unwrap();
+        assert!(
+            told.contains("output limit (512 tokens)") && told.contains("several parts"),
+            "{told}"
+        );
+        assert!(
+            !fx.ws().join("a.txt").exists(),
+            "nothing was written from an incomplete call"
         );
     }
 
