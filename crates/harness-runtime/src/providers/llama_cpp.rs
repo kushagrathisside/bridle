@@ -11,6 +11,7 @@ use serde_json::Value;
 use super::openai_compat::{RawReply, http_error};
 use super::{
     ChatRequest, ChatResponse, HealthStatus, ModelProvider, OpenAiCompatProvider, ProviderError,
+    StreamEvent,
 };
 
 /// llama.cpp server. Chat traffic goes through the OpenAI-compatible client; `/health` and
@@ -94,6 +95,14 @@ impl ModelProvider for LlamaCppProvider {
         on_delta: &mut dyn FnMut(&str),
     ) -> Result<ChatResponse, ProviderError> {
         self.inner.chat_stream(req, on_delta)
+    }
+
+    fn chat_stream_with(
+        &self,
+        req: &ChatRequest,
+        on_event: &mut dyn FnMut(StreamEvent<'_>) -> bool,
+    ) -> Result<ChatResponse, ProviderError> {
+        self.inner.chat_stream_with(req, on_event)
     }
 
     fn server_props(&self) -> Result<Option<Value>, ProviderError> {

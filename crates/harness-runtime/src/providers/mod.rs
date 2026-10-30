@@ -156,6 +156,18 @@ pub struct HealthStatus {
     pub detail: String,
 }
 
+/// What a stream reports while it is read (see [`ModelProvider::chat_stream_with`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamEvent<'a> {
+    /// A piece of the answer text.
+    Text(&'a str),
+    /// The model is writing a tool call. `name` is empty until the server has sent it; `chars` is the
+    /// length of the argument text so far.
+    ToolCall { name: &'a str, chars: usize },
+    /// The model is producing reasoning that is not part of the answer; `chars` is its length so far.
+    Reasoning { chars: usize },
+}
+
 pub trait ModelProvider: Send + Sync {
     /// Model id this provider sends in requests.
     fn model_id(&self) -> &str;
@@ -176,6 +188,22 @@ pub trait ModelProvider: Send + Sync {
         req: &ChatRequest,
         on_delta: &mut dyn FnMut(&str),
     ) -> Result<ChatResponse, ProviderError>;
+
+    /// Like [`chat_stream`](Self::chat_stream), and reports what arrives, including the parts that are not
+    /// text. When `on_event` returns `false` the stream is abandoned: the connection is dropped, so the
+    /// server stops generating, and the response holds what had arrived, with `finish_reason` set to
+    /// `stopped` and no tool calls (one that was still being written is incomplete and must not be run).
+    ///
+    /// The default implementation reports text only and cannot stop early.
+    fn chat_stream_with(
+        &self,
+        req: &ChatRequest,
+        on_event: &mut dyn FnMut(StreamEvent<'_>) -> bool,
+    ) -> Result<ChatResponse, ProviderError> {
+        self.chat_stream(req, &mut |piece| {
+            let _ = on_event(StreamEvent::Text(piece));
+        })
+    }
 
     /// Server introspection (llama.cpp `GET <root>/props`). `None` for servers without it.
     fn server_props(&self) -> Result<Option<serde_json::Value>, ProviderError> {
