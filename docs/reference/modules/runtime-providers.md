@@ -11,7 +11,7 @@ from `harness-core`.
 
 | File | Public items | What they do |
 |---|---|---|
-| `src/providers/mod.rs` | `ModelProvider`, `ChatMessage`, `Role`, `ToolSpec`, `ToolCall`, `ChatRequest`, `ChatResponse`, `Usage`, `Timings`, `HealthStatus`, `ProviderError`, `provider_for` | Trait, request and response types, errors, provider selection |
+| `src/providers/mod.rs` | `ModelProvider`, `StreamEvent`, `ChatMessage`, `Role`, `ToolSpec`, `ToolCall`, `ChatRequest`, `ChatResponse`, `Usage`, `Timings`, `HealthStatus`, `ProviderError`, `provider_for` | Trait, request and response types, errors, provider selection |
 | `src/providers/openai_compat.rs` | `OpenAiCompatProvider` | `/v1/chat/completions` client: chat, SSE streaming, model list, retries |
 | `src/providers/llama_cpp.rs` | `LlamaCppProvider`, `props_context`, `props_build`, `props_model_path`, `props_speculative` | llama.cpp and PrismML servers: `/health`, `/props`, plus chat via the OpenAI client |
 | `src/providers/mock.rs` | `MockProvider` (`echo`, `scripted`, `unhealthy`, `requests`) | Scripted provider for tests; no network |
@@ -28,12 +28,19 @@ pub trait ModelProvider: Send + Sync {
     fn list_models(&self) -> Result<Vec<String>, ProviderError>;
     fn chat(&self, req: &ChatRequest) -> Result<ChatResponse, ProviderError>;
     fn chat_stream(&self, req: &ChatRequest, on_delta: ...) -> Result<ChatResponse, ProviderError>;
+    fn chat_stream_with(&self, req: &ChatRequest, on_event: ...) -> Result<ChatResponse, ProviderError>;
     fn server_props(&self) -> Result<Option<serde_json::Value>, ProviderError> { Ok(None) }
 }
 ```
 
 Every model call goes through this trait, so no code is tied to one server. The API is synchronous on
 purpose: the CLI and hook processes are short-lived and make one call at a time.
+
+`chat_stream_with` also reports what is not text, as `StreamEvent`s: a piece of text, a tool call being written (its name and
+the length of its arguments so far) and hidden reasoning (its length so far). When the callback returns `false` the stream is
+abandoned: the connection is dropped, so the server stops generating, and the response carries `finish_reason = "stopped"`,
+what had arrived, and no tool calls (a call that was still being written is incomplete). The default implementation reports
+text only and cannot stop early; `OpenAiCompatProvider` implements it and `LlamaCppProvider` forwards to it.
 
 Types: `ChatMessage` (`system`, `user` helpers; roles `system`, `user`, `assistant`, `tool`), `ToolSpec`,
 `ToolCall`, `ChatRequest` (per-request overrides such as `max_tokens`, `enable_thinking`, `response_format`,
