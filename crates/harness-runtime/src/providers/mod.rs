@@ -64,15 +64,34 @@ pub struct ChatMessage {
     pub tool_calls: Vec<ToolCall>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    /// Images attached to a user message (M5). Sent only to a slot whose `capabilities.vision` is on.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<Image>,
+}
+
+/// An image attached to a message: its media type, and its bytes base64-encoded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Image {
+    pub media_type: String,
+    pub base64: String,
 }
 
 impl ChatMessage {
+    /// A user message with images attached.
+    pub fn user_with_images(text: impl Into<String>, images: Vec<Image>) -> Self {
+        Self {
+            images,
+            ..Self::user(text)
+        }
+    }
+
     pub fn system(text: impl Into<String>) -> Self {
         Self {
             role: Role::System,
             content: Some(text.into()),
             tool_calls: vec![],
             tool_call_id: None,
+            images: Vec::new(),
         }
     }
     pub fn user(text: impl Into<String>) -> Self {
@@ -81,6 +100,7 @@ impl ChatMessage {
             content: Some(text.into()),
             tool_calls: vec![],
             tool_call_id: None,
+            images: Vec::new(),
         }
     }
 }

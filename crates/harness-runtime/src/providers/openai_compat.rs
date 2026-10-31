@@ -440,7 +440,20 @@ fn role_str(role: Role) -> &'static str {
 fn message_json(message: &ChatMessage) -> Value {
     let mut obj = Map::new();
     obj.insert("role".to_owned(), json!(role_str(message.role)));
-    obj.insert("content".to_owned(), json!(message.content));
+    if message.images.is_empty() {
+        obj.insert("content".to_owned(), json!(message.content));
+    } else {
+        // An image is a content part, after the text (M5). The data is sent inline as a data URL.
+        let mut parts =
+            vec![json!({"type": "text", "text": message.content.clone().unwrap_or_default()})];
+        for image in &message.images {
+            parts.push(json!({
+                "type": "image_url",
+                "image_url": {"url": format!("data:{};base64,{}", image.media_type, image.base64)},
+            }));
+        }
+        obj.insert("content".to_owned(), json!(parts));
+    }
     if !message.tool_calls.is_empty() {
         let calls: Vec<Value> = message
             .tool_calls
@@ -842,12 +855,14 @@ mod tests {
                         arguments: "{\"path\":\"a.rs\"}".into(),
                     }],
                     tool_call_id: None,
+                    images: Vec::new(),
                 },
                 ChatMessage {
                     role: Role::Tool,
                     content: Some("contents".into()),
                     tool_calls: vec![],
                     tool_call_id: Some("call_1".into()),
+                    images: Vec::new(),
                 },
             ],
             tools: vec![ToolSpec {
@@ -1043,5 +1058,32 @@ mod tests {
     fn f32_values_serialise_in_short_form() {
         assert_eq!(f32_json(0.7), json!(0.7));
         assert_eq!(f32_json(1.0), json!(1.0));
+    }
+
+    #[test]
+    fn a_message_with_images_sends_the_text_then_one_image_part_per_image() {
+        let message = ChatMessage::user_with_images(
+            "what is this?",
+            vec![crate::providers::Image {
+                media_type: "image/png".to_owned(),
+                base64: "aGk=".to_owned(),
+            }],
+        );
+        let json = message_json(&message);
+        assert_eq!(
+            json["content"][0],
+            json!({"type": "text", "text": "what is this?"})
+        );
+        assert_eq!(json["content"][1]["type"], "image_url");
+        assert_eq!(
+            json["content"][1]["image_url"]["url"],
+            "data:image/png;base64,aGk="
+        );
+        let plain = message_json(&ChatMessage::user("hi"));
+        assert_eq!(
+            plain["content"],
+            json!("hi"),
+            "a message without images keeps plain text"
+        );
     }
 }

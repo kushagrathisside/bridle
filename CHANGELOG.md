@@ -23,6 +23,8 @@ The project has not been published; versions are for the repository only.
 - Subagent tier: a small model reads a few bounded, redacted files and answers with checked citations (M4b).
 - Repository memory: an `AGENTS.md` file (or the file `[memory]` names) is added to the system prompt, read through the
   tool policy, redacted and bounded (validation rule V41).
+- Images in the chat: `/image <path> [question]` sends a PNG, JPEG, GIF or WebP from the workspace to a slot whose
+  `capabilities.vision` is on; the file is read through the policy and limited to 4 MiB.
 - Plugins (ADR-0013): manifests in the machine config declare tools that run a fixed program. Each tool's class is the
   stricter of its declared class and the command classifier's; only read-only and safe-execution tools are offered, and
   `agent plugins` lists them.
