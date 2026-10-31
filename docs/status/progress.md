@@ -28,6 +28,31 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-31: M5 multimodal input (images in the chat), built; not run with a vision model
+
+Built:
+- A chat message can carry images (`ChatMessage.images`). The OpenAI-compatible provider sends such a message as content
+  parts: the text, then one `image_url` part per image, as a `data:` URL.
+- `/image <path> [question]` in the chat sends one image from the workspace with the question. The file is read through the
+  policy as a read: a path outside the workspace, or a secret file, is refused. It must be a regular file of at most 4 MiB,
+  and its first bytes must match PNG, JPEG, GIF or WebP.
+- A slot without `capabilities.vision` refuses an image turn before the model is called, and the transcript says so.
+- Base64 is the standard encoding, tested against the standard vectors.
+
+Checked:
+- Unit tests: base64 vectors; the four image types; a workspace image read and a text file refused; an image outside the
+  workspace and a secret file refused by the policy; the serialised content parts; a chat turn that sends the image to a
+  vision slot and refuses a slot without vision before calling the model.
+- Through the real terminal app: `/image shot.png what colour is this?` sent a streaming request whose last message had
+  two parts, text and `image_url`, with a `data:image/png;base64,` URL. With vision off for the main slot, the same command
+  made no model call.
+
+Not verified, and said plainly: a real vision model. None of the models here is a vision model with its projector file, so
+the image content was checked on the wire with a stand-in server, not answered by a model. The Ubuntu machine and the
+Windows path were not run.
+
+Workspace: 914 passed, 0 failed, 5 ignored; clippy with warnings as errors clean.
+
 ## 2026-10-31: M4 plugins, first slice: manifests, the classification rule and the loader
 
 Built:

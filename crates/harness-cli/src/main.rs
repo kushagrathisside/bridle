@@ -5,6 +5,7 @@ mod app;
 mod chat;
 mod commands;
 mod host;
+mod image;
 mod output;
 mod prompt;
 mod route;

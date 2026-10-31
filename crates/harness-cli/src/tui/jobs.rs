@@ -244,6 +244,36 @@ fn run_chat(turn: Turn, args: &LoadArgs, tx: &Sender<JobMsg>) {
         .strip_prefix("/team ")
         .map(|rest| rest.trim().to_owned());
     let request = team_request.clone().unwrap_or_else(|| text.clone());
+    // `/image <path> [question]` sends an image from the workspace with the question (M5). A load that fails ends the turn
+    // with the reason, before any model is called.
+    let image_turn = match text.strip_prefix("/image ") {
+        Some(rest) => {
+            let rest = rest.trim();
+            let (path, question) = rest
+                .split_once(char::is_whitespace)
+                .map_or((rest, ""), |(path, question)| (path, question.trim()));
+            let question = if question.is_empty() {
+                "Describe this image."
+            } else {
+                question
+            };
+            Some(
+                crate::image::load(agent.app(), path)
+                    .map(|image| (question.to_owned(), vec![image])),
+            )
+        }
+        None => None,
+    };
+    let image_turn = match image_turn {
+        Some(Err(error)) => {
+            let _ = tx.send(JobMsg::Chat(ChatMsg::Finished {
+                agent: Some(agent),
+                end: TurnEnd::Failed(error),
+            }));
+            return;
+        }
+        other => other,
+    };
     // Routing: with `[routing] auto_slot`, a request sent to the default slot may be routed to another. The reason is
     // shown in the transcript before the answer, so the person sees which model answers and why.
     let slot = match crate::route::for_request(agent.app(), &slot, &request) {
@@ -269,9 +299,17 @@ fn run_chat(turn: Turn, args: &LoadArgs, tx: &Sender<JobMsg>) {
     let mut emit = |event: crate::chat::Event| {
         let _ = tx.send(JobMsg::Chat(ChatMsg::Event(event)));
     };
-    let end = match team_request {
-        Some(_) => agent.run_team(provider.as_ref(), &model, &request, &cancel, &mut emit),
-        None => agent.run_turn(provider.as_ref(), &model, &text, &cancel, &mut emit),
+    let end = match (team_request, image_turn) {
+        (Some(_), _) => agent.run_team(provider.as_ref(), &model, &request, &cancel, &mut emit),
+        (None, Some(Ok((question, images)))) => agent.run_turn_with(
+            provider.as_ref(),
+            &model,
+            &question,
+            images,
+            &cancel,
+            &mut emit,
+        ),
+        (None, _) => agent.run_turn(provider.as_ref(), &model, &text, &cancel, &mut emit),
     };
     let _ = tx.send(JobMsg::Chat(ChatMsg::Finished {
         agent: Some(agent),

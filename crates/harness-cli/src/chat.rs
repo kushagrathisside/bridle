@@ -303,7 +303,27 @@ impl Agent {
         cancel: &AtomicBool,
         emit: &mut dyn FnMut(Event),
     ) -> TurnEnd {
-        self.messages.push(ChatMessage::user(user));
+        self.run_turn_with(provider, model, user, Vec::new(), cancel, emit)
+    }
+
+    /// A turn whose user message carries images (M5). Refused before the model is called when the slot cannot read images.
+    pub fn run_turn_with(
+        &mut self,
+        provider: &dyn ModelProvider,
+        model: &ModelConfig,
+        user: &str,
+        images: Vec<harness_runtime::providers::Image>,
+        cancel: &AtomicBool,
+        emit: &mut dyn FnMut(Event),
+    ) -> TurnEnd {
+        if !images.is_empty() && !model.capabilities.vision {
+            return TurnEnd::Failed(
+                "this model slot cannot read images (capabilities.vision is off); attach the image to a slot that can"
+                    .to_owned(),
+            );
+        }
+        self.messages
+            .push(ChatMessage::user_with_images(user, images));
         for _ in 0..MAX_STEPS {
             if cancel.load(Ordering::Relaxed) {
                 return TurnEnd::Stopped;
@@ -359,6 +379,7 @@ impl Agent {
                     content: Some(said),
                     tool_calls: Vec::new(),
                     tool_call_id: None,
+                    images: Vec::new(),
                 });
                 return TurnEnd::Stopped;
             }
@@ -379,6 +400,7 @@ impl Agent {
                     content: response.content,
                     tool_calls: Vec::new(),
                     tool_call_id: None,
+                    images: Vec::new(),
                 });
                 return TurnEnd::Done;
             }
@@ -388,6 +410,7 @@ impl Agent {
                 content: response.content,
                 tool_calls: response.tool_calls,
                 tool_call_id: None,
+                images: Vec::new(),
             });
             for (index, call) in calls.iter().enumerate() {
                 if cancel.load(Ordering::Relaxed) {
@@ -411,6 +434,7 @@ impl Agent {
             content: Some(text.to_owned()),
             tool_calls: Vec::new(),
             tool_call_id: Some(call.id.clone()),
+            images: Vec::new(),
         });
     }
 
@@ -1087,6 +1111,46 @@ hard_limit = 8000
         );
     }
 
+    #[test]
+    fn an_image_reaches_a_vision_slot_and_is_refused_by_a_slot_without_vision() {
+        let fx = Fixture::new("");
+        let mut agent = fx.agent();
+        let image = harness_runtime::providers::Image {
+            media_type: "image/png".to_owned(),
+            base64: "aGk=".to_owned(),
+        };
+        let cancel = AtomicBool::new(false);
+        let mut vision = fx.model();
+        vision.capabilities.vision = true;
+        let provider = MockProvider::scripted("mock-model", vec![Ok(answer("a picture"))]);
+        let end = agent.run_turn_with(
+            &provider,
+            &vision,
+            "what is this?",
+            vec![image.clone()],
+            &cancel,
+            &mut |_| {},
+        );
+        assert_eq!(end, TurnEnd::Done);
+        let sent = provider.requests();
+        assert_eq!(sent[0].messages.last().unwrap().images, vec![image.clone()]);
+
+        let blind = MockProvider::scripted("mock-model", vec![]);
+        let end = agent.run_turn_with(
+            &blind,
+            &fx.model(),
+            "what is this?",
+            vec![image],
+            &cancel,
+            &mut |_| {},
+        );
+        assert!(
+            matches!(&end, TurnEnd::Failed(m) if m.contains("capabilities.vision")),
+            "{end:?}"
+        );
+        assert!(blind.requests().is_empty(), "the model must not be called");
+    }
+
     fn roles(agent: &Agent) -> Vec<Role> {
         agent.messages.iter().map(|m| m.role).collect()
     }
@@ -1669,18 +1733,21 @@ hard_limit = 8000
                     arguments: "{}".into(),
                 }],
                 tool_call_id: None,
+                images: Vec::new(),
             });
             messages.push(ChatMessage {
                 role: Role::Tool,
                 content: Some(big.clone()),
                 tool_calls: vec![],
                 tool_call_id: Some(format!("t{turn}")),
+                images: Vec::new(),
             });
             messages.push(ChatMessage {
                 role: Role::Assistant,
                 content: Some("ok".into()),
                 tool_calls: vec![],
                 tool_call_id: None,
+                images: Vec::new(),
             });
         }
         let dropped = compact(&mut messages, 6_000);

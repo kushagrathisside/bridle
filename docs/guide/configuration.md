@@ -226,6 +226,13 @@ Inputs go through the tool policy first, so a secret file is refused, and each f
 The answer is checked against a fixed shape; references it cannot verify are dropped and counted. Treat an answer as a
 reading, and check the cited lines.
 
+## Images in the chat
+
+A chat message can send an image from the workspace: `/image <path> [question]`. The file is read through the same policy
+as any file the model could read, must be at most 4 MiB, and must be a PNG, JPEG, GIF or WebP image. The slot that answers
+must have `capabilities.vision = true`; otherwise the turn is refused before the model is called. The shipped profiles have
+vision off, because none of their models is a vision model here.
+
 ## Plugins: tools declared in a manifest
 
 A plugin is a manifest file that declares tools. Each tool runs a fixed program with fixed arguments, and it takes no
