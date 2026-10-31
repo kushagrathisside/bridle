@@ -28,7 +28,6 @@ use crate::commands::hook;
 use crate::commands::mcp::tools_for;
 use crate::host::opencode_v1::HookEvent;
 use crate::tui::events::sanitize;
-use crate::workflow;
 
 /// Model calls in one turn at most. A turn that needs more stops and says so.
 pub const MAX_STEPS: usize = 30;
@@ -298,11 +297,16 @@ impl Agent {
             "{SYSTEM_PROMPT}\nWorkspace: {}",
             self.app.workspace.display()
         );
-        if let Ok(Some(block)) =
-            workflow::system_block(&self.app, &json!({ "sessionID": self.session_id }))
-        {
+        // The same answer the OpenCode hook gives for the system prompt: the repository memory and the task state.
+        // A part that cannot be read is logged by the hook path and left out, so the chat and the hook agree.
+        let answer = hook::answer_with(
+            &self.app,
+            HookEvent::SystemTransform,
+            &json!({ "sessionID": self.session_id }),
+        );
+        if let Some(block) = answer["text"].as_str() {
             system.push_str("\n\n");
-            system.push_str(&block);
+            system.push_str(block);
         }
         let schema_chars: usize = self
             .specs

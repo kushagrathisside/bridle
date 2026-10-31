@@ -37,6 +37,8 @@ pub struct Config {
     pub workflow: WorkflowSection,
     /// The subagent tier: a small local model answers one bounded question. See [`SubagentsSection`].
     pub subagents: SubagentsSection,
+    /// Repository memory: an instructions file added to the system prompt. See [`MemorySection`].
+    pub memory: MemorySection,
 }
 
 impl Default for Config {
@@ -58,6 +60,7 @@ impl Default for Config {
             tools: ToolsSection::default(),
             workflow: WorkflowSection::default(),
             subagents: SubagentsSection::default(),
+            memory: MemorySection::default(),
         }
     }
 }
@@ -112,6 +115,30 @@ impl Default for SubagentsSection {
             slot: "micro".to_owned(),
             max_input_bytes: 4_096,
             max_inputs: 4,
+        }
+    }
+}
+
+/// Repository memory: a file in the repository (`AGENTS.md` by default) whose text is added to the system prompt of
+/// every request. It is guidance, not a permission. The file is read through the tool policy and redacted, so a
+/// secret file cannot be used as memory (V41 checks the name).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct MemorySection {
+    /// Whether the file is read. On by default; a missing file adds nothing.
+    pub enabled: bool,
+    /// The file, relative to the workspace. Forward slashes; it must stay inside the repository.
+    pub file: String,
+    /// The most bytes of the file that go into the prompt (V41: 256 to 16384). Longer text is cut and says so.
+    pub max_bytes: usize,
+}
+
+impl Default for MemorySection {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            file: crate::memory::DEFAULT_FILE.to_owned(),
+            max_bytes: crate::memory::DEFAULT_MAX_BYTES,
         }
     }
 }
