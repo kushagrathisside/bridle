@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (2026-10-27)
 - **Date:** 2026-10-27
-- **Deciders:** Kushagra Srivastava
+- **Deciders:** Project maintainer
 
 ## Context
 
@@ -36,7 +36,7 @@ to stalled loops, and the same limit applies here until an A/B run shows a wider
   available. The contract must be confirmed against the real service before Jev is turned on.
 - With Jev enabled, the loop summary leaves the machine: the phase, the counters, the last action (capped at 120
   characters) and the signal names. The enable switch is the consent. See the residual risk in the security page.
-- Linux builds need OpenSSL development files for native-tls. Release 1 is Windows-only; the Linux CI job will install
+- Linux builds need OpenSSL development files for native-tls. This release is Windows-only; the Linux CI job will install
   them.
 - Jev is used only when the config selects it, so the local-only profile does not change.
 

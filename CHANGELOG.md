@@ -1,33 +1,37 @@
 # Changelog
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-The project has not been published; versions are for the repository only.
+The project has not been published, so the version below is for the repository only.
 
 ## [Unreleased] - 0.1.0 candidate
 
 ### Added
 
-- Harness core: configuration with validation rules V1 to V36, a path guard, a command-risk classifier, a tool policy,
-  output redaction, and a fail-closed hook for OpenCode 1.19.3 (M0 to M2).
-- Deterministic MCP tools: git, code navigation (tree-sitter), dependency search, verification with failure parsing,
-  and results (M2).
-- Orchestrator: a task journal, loop rules with the rule named in each refusal, worktree tasks, and the `task`,
-  `explain` and `trace` commands (M3).
-- The micro model decides stalled loops, with a rules fallback and an A/B evaluation command (M4).
-- The deep model on demand, with one GPU model at a time (M5).
-- Context management: per-request compaction of tool results and the task state in the system prompt (M6).
-- The Jev decision backend behind an endpoint policy, with TLS through the environment proxy (M7).
-- A LiteLLM gateway as a model provider, with a hybrid profile (M8).
-- Security review: an adversarial suite of 72 cases, fixes for short names, escapes, glob patterns and environment
-  dumps, and `agent egress` (M9).
-- Subagent tier: a small model reads a few bounded, redacted files and answers with checked citations (M4b).
-- Benchmark runner and corpus, with a report (M10). The live results are not yet recorded.
-- A checklist of every stage, checked against the code by `scripts/check_checklist.py`.
-- Licence (Apache-2.0), NOTICE, third-party licence list, security and contributing guides, and CI (M11).
+- A configuration loader with trust rules for repository files, and 40 validation rules (V1 to V40) reported by
+  `agent config validate`. The shipped profiles are `local-only` and `development`, and `local-with-jev` and `hybrid`
+  are for the machine configuration.
+- A hook for OpenCode 1.19.3 that fails closed. Every tool call is checked against the policy, and tool output is
+  redacted before the model sees it.
+- A command classifier, a path guard, secret-file rules and output redaction. An adversarial suite of 72 cases runs in CI's
+  test job.
+- An MCP server with 20 default tools: git inspection, code navigation with tree-sitter, dependency search, verification
+  with failure parsing, and inspection of artifacts and experiments. Configured adapters add commands as tools.
+- A task journal, loop rules that name the rule in each refusal, worktree tasks, and the `agent task`, `agent explain`
+  and `agent trace` commands.
+- An optional micro model that decides stalled loops, with deterministic rules as the fallback.
+- An optional deep model that loads on demand. Only one GPU model runs at a time.
+- Context management: older tool results are shortened and then dropped as the context grows, and the task state is added
+  to the system prompt.
+- Optional decision and model backends behind the policy, all off by default: the Jev decision service, a LiteLLM gateway,
+  and a subagent tool that reads a few bounded, redacted inputs and answers with citations.
+- `agent egress`, which lists the outbound destinations that the configuration allows.
+- A benchmark runner and a task corpus. The results are not yet summarised; see the [project status](docs/project/status.md) page.
+- An Apache-2.0 licence, a NOTICE file, a third-party licence list, and a CI workflow.
 
 ### Known limits
 
-- The live checks of Jev and of the LiteLLM gateway were not run: no Jev service was available, and the gateway
-  check waits for approval.
-- A recursive search can read a secret file without naming it (security.md, residual risk 1).
-- OpenCode's model-catalog fetch and the model downloads are outside the harness's control.
+- The release runs on native Windows and is verified on one machine.
+- Bridle is not a sandbox. See [security](docs/concepts/security.md).
+- The live checks of the Jev service and the LiteLLM gateway are not part of the verified results.
+- `security.require_worktree` and `verification.required_for_done` are read by the configuration checks only.
+- OpenCode's model catalogue fetch and the model downloads are outside Bridle's control.

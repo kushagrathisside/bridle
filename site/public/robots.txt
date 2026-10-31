@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://kushagrathisside.github.io/bridle/sitemap-index.xml

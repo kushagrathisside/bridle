@@ -2,11 +2,11 @@
 
 - **Status:** Accepted (2026-10-26)
 - **Date:** 2026-10-26 (proposed, revised after review, accepted the same day)
-- **Deciders:** Kushagra Srivastava
+- **Deciders:** Project maintainer
 
 ## Context
 
-Release 1 runs inside OpenCode, which owns the agent loop, sessions and the interface (ADR-0001). The harness
+This release runs inside OpenCode, which owns the agent loop, sessions and the interface (ADR-0001). The harness
 therefore cannot call the model itself or stop a turn. The workflow needs three things that the harness can provide from
 outside the loop: a task state, loop detection, and a decision for the next step. The design calls for a bounded,
 explicit workflow, which the harness cannot enforce by controlling the loop.

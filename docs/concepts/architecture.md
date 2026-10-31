@@ -1,129 +1,110 @@
 # Architecture
 
-This page describes how Bridle is built: its layers, the path a tool call takes, where state is stored, and which
-MCP tools it serves. It is for engineers who want to know which component decides what before they trust the
-system with a repository. It assumes you know what OpenCode is and what an MCP server does.
-
-> **Status:** release 1 (native Windows), verified on one machine. The orchestrator was run live with the local models on
-> 2026-10-26, and the context management layer has been verified live. Everything under
-> [Planned components](#planned-components) is not built yet.
+This page describes how Bridle is put together: its components, how a tool call passes through them, where state is
+kept, and which tools the MCP server offers. Read it before you trust the harness with a repository. It assumes you know
+what OpenCode and MCP are.
 
 ## Overview
 
-Bridle is a local-first coding harness. It runs a small local model (Qwen3.5-9B on the GPU, in slot `main`) inside
-OpenCode, and puts deterministic checks around it: a policy on every tool call, verification by real commands,
-redaction of secrets, and an event log. The model is not trusted to decide what is allowed.
-
-The project has three layers:
-
-| Layer | State | What it covers |
-|---|---|---|
-| Harness | Built | Policy on every tool call, deterministic tools, redaction, decision log; runs inside OpenCode 1.19.3 |
-| Orchestrator | Built: task state, loop detection, rules decisions, the micro model for stalled loops, and the deep model on demand. Routing between further model slots is planned (see [Planned components](#planned-components)) |
-| Local-first application | Goal | A full application on the developer's machine, using local models |
-
-Model slots:
-
-| Slot | Model | State |
-|---|---|---|
-| `main` | Qwen3.5-9B | In use |
-| `micro` | LFM2.5-1.2B | Built: stalled-loop decisions on CPU |
-| `deep` | Ternary Bonsai 2 27B | Built: on demand, one GPU model at a time |
+Bridle runs a local model inside OpenCode and puts deterministic checks around it. Every tool call is judged by a policy.
+Verification runs real commands. Secret values are redacted before the model sees them, and each decision is recorded in
+a log. The model is not trusted to decide what is allowed.
 
 ## Components
 
-| Component | Where | What it does |
+| Component | Location | Responsibility |
 |---|---|---|
-| Host | OpenCode 1.19.3 (`opencode.exe`) | Sessions, the agent loop, the UI |
-| Shim | `opencode-plugin/local-agent.ts` | Forwards hook payloads to `agent hook`; applies the verdict; no policy logic |
-| CLI | `crates/harness-cli` (binary `agent`) | Commands, the OpenCode adapter (`host/opencode_v1.rs`), hooks, MCP entry point |
-| Runtime | `crates/harness-runtime` | Model providers, health checks, server launcher, host probes, event log, MCP server and tools |
-| Core | `crates/harness-core` | Config and validation, model registry, path guard, command classifier, redaction, tool policy, telemetry types |
-| Models | llama.cpp `llama-server` (GPU) | OpenAI-compatible endpoints on `127.0.0.1` |
+| OpenCode 1.19.3 | External program (`opencode.exe`) | Sessions, the agent loop, the interface and the model requests. |
+| Shim | `opencode-plugin/local-agent.ts`, copied to `.opencode/plugins/` | Forwards OpenCode hook payloads to `agent hook` and applies the answer. It holds no policy logic. |
+| CLI | `crates/harness-cli`, binary `agent` | Commands, hook entry points, the OpenCode adapter (`host/opencode_v1.rs`) and the MCP entry point. |
+| Runtime | `crates/harness-runtime` | Model providers and health checks, the server launcher, the MCP server and its tools, the task state store and the event log. |
+| Core | `crates/harness-core` | Configuration and validation, the policy, command classification, redaction, loop detection, the decision rules and the task model. |
+| Model servers | llama.cpp `llama-server` | OpenAI-compatible endpoints on `127.0.0.1`, one per model slot. |
 
-Boundaries:
+Two boundaries matter:
 
-- The core crate has no network code and no OpenCode knowledge.
-- The CLI's `host` module is the only code that knows OpenCode's payloads (see
-  [ADR-0001](../decisions/0001-rust-core-thin-host-adapter.md)). A new OpenCode version means a new adapter module,
-  not edits across the code.
+- The core crate has no network dependencies and no knowledge of OpenCode.
+- The `host` module of the CLI is the only code that reads OpenCode's payloads. A new OpenCode version therefore needs
+  changes in that one module. See [ADR-0001](../decisions/0001-rust-core-thin-host-adapter.md).
 
-## Request flow for a tool call
+## Model slots
 
-1. The model asks OpenCode to run a tool (for example `bash`, `read`, `edit`, or a `local-agent_*` MCP tool).
-2. OpenCode calls the shim's `tool.execute.before`. The shim runs `agent hook tool-before` with the payload on stdin.
-3. The CLI maps the call to a `ToolRequest` and calls `ToolPolicy::evaluate`. That checks the paths, secret files,
-   shell arguments (`command_risk` plus the argument check), and the verdict table.
-4. Only an Allow passes. Ask and Deny are both blocked. The shim throws, and OpenCode shows the reason
-   to the model.
-5. After the tool runs, `tool.execute.after` redacts secret values from the output before the model sees it. MCP
-   results are redacted by the MCP server itself, because OpenCode does not pass MCP output to this hook.
-6. Every decision is written to `.local-agent/tool-events.jsonl`, with secret values kept out. With the workflow enabled,
-   the call is also recorded in the task's journal, and a loop rule can refuse it (see below).
+| Slot | Model | Where it runs | Used for |
+|---|---|---|---|
+| `main` | Qwen3.5-9B | GPU | The agent's own turns. |
+| `micro` | LFM2.5-1.2B-Thinking | CPU | Decisions on stalled loops, when enabled. |
+| `deep` | Ternary Bonsai 2 27B | GPU, on demand | Escalation, when enabled. The `main` server is stopped while `deep` runs, then restarted. |
 
-Policy hooks fail closed. If `agent hook` cannot answer (bad config, missing binary), the shim blocks the call.
+Only one GPU model runs at a time. See [serve the models](../guide/models.md).
 
-Two more hooks run before each model request, not around a tool call. `messages-transform` may shorten old tool results in
-that request only, and `system-transform` adds the task state to the system prompt. Both fail open, and neither changes a
-verdict.
+## A tool call, step by step
 
-The rules applied in step 3 are listed in [security.md](security.md) and, at code level, in
-[core-security.md](../reference/modules/core-security.md). The hook protocol is in
-[cli-host-opencode.md](../reference/modules/cli-host-opencode.md).
+1. The model asks OpenCode to run a tool: a built-in tool such as `bash`, `read` or `edit`, or an MCP tool named
+   `local-agent_<name>`.
+2. OpenCode calls the shim's `tool.execute.before` hook. The shim sends the call to `agent hook tool-before`.
+3. The CLI turns the call into a request and asks the policy for a verdict. The policy checks the paths, the secret
+   files, the shell arguments and the command class.
+4. The shim throws unless the verdict is `allow`. OpenCode returns the message to the model. If the hook cannot answer,
+   the call is blocked. The hook fails closed.
+5. With the workflow enabled, the call is recorded in the task journal, and the loop rules can refuse it. See
+   [tasks and loops](tasks-and-loops.md).
+6. After the tool runs, `tool.execute.after` sends the output to `agent hook tool-after`, which redacts secret values.
+   If redaction cannot run, the shim replaces the output with a notice and withholds it.
+7. Every decision is written to `.local-agent/tool-events.jsonl`, with secret values left out.
+
+Three other hooks run outside a tool call:
+
+- `experimental.chat.messages.transform` runs before each model request. It may shorten older tool results in that
+  request only. If it fails, the request keeps its full history.
+- `experimental.chat.system.transform` adds the task state to the system prompt. If it fails, the prompt is sent without
+  the task state.
+- `permission.ask` asks the policy for a permission decision. If the policy cannot answer, the permission is denied.
+
+Shell environment variables come from the `shell.env` hook. Running the command is still checked at step 2. The `event`
+hook forwards lifecycle events for telemetry only.
 
 ## Where state lives
 
-| Location | Files |
+| Location | Contents |
 |---|---|
-| The repository | `local-agent.toml` (project config), `opencode.json` (generated), `.opencode/plugins/local-agent.ts` (shim copy) |
-| The repository's `.local-agent/` (gitignored) | `tool-events.jsonl`, `events.jsonl`, `generated.json` (hashes of generated files), `logs/` (server logs), `servers/` (PID records) |
-| `.local-agent/state.json` | Session-to-task index, next task number, pending task, worktrees, claimed MCP results |
-| `.local-agent/mcp-results.jsonl` | Verification results recorded by the MCP server, claimed by the after-hook |
-| `.local-agent/tasks/<task_id>/` | `task-events.jsonl` (the journal, the source of truth), `task.json` (a cache of the folded state), `decisions.jsonl`, `lock` |
-| `.worktrees/agent-task-NNN/` | Worktree of a task started with `agent task start --worktree`, with its own `.local-agent/` |
-| The machine | `%APPDATA%\local-agent\config.toml` (model and runtime locations; written by `agent init --machine`) |
-| Drive `D:` | Model weights and runtimes, only. Nothing large is written to `C:`. |
+| The repository | `local-agent.toml` (project configuration), `opencode.json` (generated), `.opencode/plugins/local-agent.ts` (the shim) and a `.gitignore`. All are written by `agent init`. |
+| `.local-agent/` in the repository, ignored by git | `tool-events.jsonl` (tool decisions), `events.jsonl` (the event log), `generated.json` (a record of the generated files), `logs/` (server logs), `servers/` (process records) and `state.json` (the index of sessions, tasks and worktrees). |
+| `.local-agent/mcp-results.jsonl` | Verification results recorded by the MCP server. |
+| `.local-agent/tasks/<task_id>/` | `task-events.jsonl` (the journal, which is the source of truth), `task.json` (a cache of the state folded from the journal), `decisions.jsonl` and `lock`. |
+| `.worktrees/agent-task-NNN/` | The worktree of a task started with `agent task start --worktree`. |
+| The machine | `%APPDATA%\local-agent\config.toml`, written by `agent init --machine`. It records the model and runtime folders. |
+
+The model and runtime folders are outside the repository, and the machine configuration sets them.
 
 ## MCP tools
 
-`agent mcp` serves newline-delimited JSON-RPC over stdio. OpenCode registers each tool as `local-agent_<name>`. The
-tool policy classes each tool by name (rule `harness_tool`); an unrecognised tool name is EXECUTE_RISKY (rule
-`unknown_tool`) and is blocked.
+`agent mcp` serves JSON-RPC over standard input and output. OpenCode registers each tool as `local-agent_<name>`. The
+policy classes each tool by name. A tool name the policy does not recognise is treated as EXECUTE_RISKY and is refused
+under the default settings.
 
-| Tool | Class |
-|---|---|
-| `git_status`, `git_diff`, `harness_info` | READ_ONLY |
-| `run_verification` | EXECUTE_SAFE; each step is classified inside the tool |
-| `git_history`, `git_log_range` | READ_ONLY |
-| `repo_map`, `file_summary`, `symbol_search`, `find_references` (tree-sitter, [ADR-0003](../decisions/0003-tree-sitter-for-code-intelligence.md)) | READ_ONLY |
-| `dependency_search`, `parse_test_failure`, `inspect_config` | READ_ONLY |
-| `inspect_artifact`, `summarize_experiment`, `compare_experiments` | READ_ONLY |
-| `run_tests`, `run_linter`, `run_typechecker`, `run_command` | EXECUTE_SAFE; each command is checked inside the tool |
-| `adapter_<name>` (configured in `[[tools.adapters]]`) | EXECUTE_SAFE verdict from config; the command is checked inside the tool |
+| Class | Tools | Notes |
+|---|---|---|
+| READ_ONLY | `git_status`, `git_diff`, `git_history`, `git_log_range`, `harness_info`, `inspect_config`, `repo_map`, `file_summary`, `symbol_search`, `find_references`, `dependency_search`, `parse_test_failure`, `inspect_artifact`, `summarize_experiment`, `compare_experiments` | Allowed. `find_references` and `symbol_search` read source files with tree-sitter. |
+| EXECUTE_SAFE | `run_verification`, `run_tests`, `run_linter`, `run_typechecker`, `run_command` | Each command is checked by the policy inside the tool. `run_verification` runs only the steps in the project configuration. |
+| Configured | `adapter_<name>`, from `[[tools.adapters]]` in the machine configuration | Runs a fixed program with the same checks as `run_command`. |
 
-`run_verification` and the `run_tests`, `run_linter` and `run_typechecker` tools run only the steps listed in the
-project config. Each step is classified by the same command policy, so a risky step is blocked, not run.
-`run_command` and adapters go through the full policy (secret and path checks, command class) before they run.
+Two optional tools are offered only when turned on in the configuration: `task_status` (`[workflow] task_status = true`)
+and `subagent` (`[subagents] enabled = true`). The policy does not yet list either one in its classification tables.
 
-## Planned components
-
-| Component | Status |
-|---|---|
-| Cached symbol index; plan and summary files for tasks | Not built. The code tools parse files on demand. |
-| Routing between model slots; LFM classification and summarising | Not built. The micro model decides stalled loops only. |
-| WSL runtime | Release 2 ([ADR-0002](../decisions/0002-runtime-os-repo-location-and-deviation.md)) |
+The MCP server redacts the text it returns. It records verification results before redaction, so their fingerprints come
+from the raw output.
 
 ## Limits
 
-- Release 1 runs on native Windows only, and is verified on one machine.
-- The harness depends on OpenCode 1.19.3. Another version needs a new adapter module.
-- The policy is not a sandbox; see [security.md](security.md#residual-risks).
+- This release runs on native Windows and is verified on one machine. See the [project status](../project/status.md).
+- The harness is written for OpenCode 1.19.3. A different version needs its own adapter.
+- The code tools parse files on demand. There is no persistent code index.
+- The policy is not a sandbox. See [security](security.md).
 
 ## Related
 
-- [security.md](security.md): the security model, policy rules and residual risks.
-- [installation.md](../guide/installation.md): installing the harness on Windows.
-- [configuration.md](../guide/configuration.md): config files, profiles and which file may set what.
-- [models.md](../guide/models.md): model slots and serving.
+- [Security](security.md): the policy rules and the residual risks.
+- [Tasks and loops](tasks-and-loops.md): the task journal and the loop rules.
+- [Configuration reference](../guide/configuration.md): the settings and the rules for each file.
 - [Module documentation](../reference/modules/README.md): code-level pages for each crate.
-- [ADR-0001](../decisions/0001-rust-core-thin-host-adapter.md): Rust core and thin host adapter.
+- [Decisions](../decisions/0001-rust-core-thin-host-adapter.md): the recorded architecture decisions, starting with ADR-0001.
