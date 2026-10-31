@@ -28,6 +28,48 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-31: held-out examples for the decision prompt; Laya as the decision backend (install not yet run)
+
+Held-out run. The examples in the first prompt were written from the loop cases, so that measurement was not a fair test.
+A second set of examples was written for other situations (a linker error after three fixes, a library function that
+does not exist, a request that keeps an API and renames it). Three prompt variants were run on the same stalled cases with
+LFM3-1.7B (CPU, one request per case, temperature 0.1, reasoning off). The script is not in the repository; it grouped
+cases by their first signal, so the rows below are per signal, not per the Rust eval's categories.
+
+| Signal (cases) | Prompt | Answers |
+|---|---|---|
+| same failure (6) | no examples | ASK_USER 6 |
+| same failure (6) | first examples | ESCALATE 6 |
+| same failure (6) | held-out examples | ESCALATE 6 |
+| repeated command (6) | no examples | ASK_USER 6 |
+| repeated command (6) | first examples | ASK_USER 4, ESCALATE 2 |
+| repeated command (6) | held-out examples | ASK_USER 3, ESCALATE 3 |
+| repeated edit (5) | no examples | ASK_USER 5 |
+| repeated edit (5) | first examples | REPLAN 3, ASK_USER 2 |
+| repeated edit (5) | held-out examples | ASK_USER 5 |
+
+Reading: the held-out examples match the rules on the same-failure cases (6 of 6) and on the repeated-edit cases (5 of 5),
+where the rules say ESCALATE and ASK_USER. The repeated-command cases cannot match, since the rules answer them with a
+diagnosis. The first examples had REPLAN on repeated edits, which was the example copied, not a judgement. The held-out
+examples are not free of the test cases' categories: they were written with the rules in mind, so this still shows the
+examples carry the answer, not that the model has learned it. The runtime prompt now uses the held-out examples.
+
+Laya. The user chose Laya as the decision backend to replace Jev. The model card and the TypeSafe comparison in the
+DataCamp article (https://www.datacamp.com/blog/top-open-source-jev-alternatives) give these facts, all as reported by the
+publisher:
+
+- Apache 2.0 licence, public weights, Python 3.10 or newer, `pip install laya`, with `laya[serve]` for the HTTP server.
+- An HTTP server, `laya-serve`, on port 8000 with `POST /v1/systemone`. The request has `state` and `questions`; each
+  question has a type (`choice`, `score` or `noul`), instructions and criteria.
+- Three checkpoints: the English ModernBERT-large (421M parameters, 512 tokens), a multilingual mmBERT-base, and a
+  typed-decisions checkpoint (ModernBERT-large, 1024 tokens) that is the one for decisions.
+- CPU inference is supported. The publisher reports 193 to 464 ms for the router on CPU.
+
+What is not done. Bridle's Jev client sends a different request (`schema`, `question`, `state`, `signals`, `choices`),
+so it cannot talk to Laya's server without an adapter or a Laya client. The response shape has not been seen, because
+Laya has not been installed here: the install was refused by the auto-mode classifier as external code. The integration
+waits for the install and for a look at the real responses.
+
 ## 2026-10-31: the decision prompt, measured again; the earlier constant answer was the prompt
 
 The stalled-loop decision prompt had no worked examples. Both small models were then measured on the 20 recorded cases,
