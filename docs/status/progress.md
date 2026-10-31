@@ -28,6 +28,28 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-31: M2 team run with a real model on this machine (Qwen3.5-9B on the GPU)
+
+The real-model check the M2 record asked for, run on this machine as close as possible to the Ubuntu setup: the main model
+is Qwen3.5-9B Q4_K_M, served by the CUDA build of llama.cpp v0.8.0 on the RTX 4060 (5,976 MiB in use), on the main slot's
+port. The terminal app was driven in a pseudo-terminal, with `/team fix add() in calc.py so that test_calc passes` as the
+request.
+
+Project under test: a two-line Python file with a bug (`add` returns `a - b`) and a unittest that checks it. The
+verification step runs `python3 -m unittest -q test_calc`. The workflow was on, so the run has a task journal.
+
+Result:
+- The planner made a plan of five steps.
+- The workers read the code, edited `calc.py` (one edit), and ran the tests: the first test run failed, the later ones
+  passed. Each worker step was recorded.
+- The verifier ran the tests again and reported done.
+- `calc.py` now returns `a + b`, and `python3 -m unittest -q test_calc` prints OK.
+- The journal holds the planner's entry, each tool call with its verification result, each worker step, and the verifier.
+
+Not verified here: the Ubuntu machine itself, the GPU laptop's Windows path, and the on-screen transcript (the logs show the
+run, not a screenshot). The workflow switch was not on in the first attempt, so that run left no journal; the second run,
+with the switch on, is the recorded one.
+
 ## 2026-10-31: team run in the chat (planner, workers, verifier), recorded in the journal (M2 first slice)
 
 Built: `/team <request>` in the chat. A planner makes one tool-less call and returns a JSON list of at most five steps.
