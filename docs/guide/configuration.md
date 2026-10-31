@@ -226,6 +226,21 @@ Inputs go through the tool policy first, so a secret file is refused, and each f
 The answer is checked against a fixed shape; references it cannot verify are dropped and counted. Treat an answer as a
 reading, and check the cited lines.
 
+## Sandbox: commands run confined (Linux)
+
+Commands the harness runs (`run_command`, the verification steps, `run_tests`, `run_linter`, `run_typechecker`) run under
+a Landlock sandbox on Linux (ADR-0016). It is on by default on Linux and off on other systems, which have no sandbox yet.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `sandbox.enabled` | true on Linux | Commands run confined. Only the machine config may set it to false. |
+| `sandbox.network` | false | Commands may open network connections. |
+
+What a confined command can reach: writes in the repository, `/tmp`, `/var/tmp` and `/dev/null`; reads of the repository,
+the system directories and `~/.cargo` and `~/.rustup`. The rest of the home directory, including SSH keys, is unreadable.
+Git inside the sandbox runs without the user's global configuration. If the kernel cannot apply the sandbox, the command is
+refused and the refusal says why; it is never run unconfined. Network access needs ABI 4 (Linux 6.7 or later) to be denied.
+
 ## Routing: which model answers a request
 
 With `[routing] auto_slot = true`, each chat request sent to the default slot is routed before the turn. The rules place

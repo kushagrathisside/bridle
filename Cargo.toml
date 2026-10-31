@@ -37,7 +37,7 @@ tree-sitter-python = "=0.25.0"
 tree-sitter-cpp = "=0.23.4"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
 missing_debug_implementations = "warn"
 
 [workspace.lints.clippy]

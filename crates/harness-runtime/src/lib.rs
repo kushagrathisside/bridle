@@ -18,6 +18,7 @@ pub mod mcp;
 pub mod memory;
 pub mod providers;
 pub mod routing;
+pub mod sandbox;
 pub mod state;
 pub mod subagent;
 pub mod sysprobe;
