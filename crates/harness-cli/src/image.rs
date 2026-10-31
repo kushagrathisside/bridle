@@ -10,6 +10,18 @@ use harness_runtime::providers::Image;
 
 use crate::app::App;
 
+/// The model slot images go to when the configuration defines one. Its server must run the vision model with its projector.
+pub const VISION_SLOT: &str = "vision";
+
+/// The slot an image turn answers with. The vision slot when the configuration defines one, otherwise the slot chosen.
+pub fn image_slot(defined: impl Fn(&str) -> bool, chosen: &str) -> String {
+    if defined(VISION_SLOT) {
+        VISION_SLOT.to_owned()
+    } else {
+        chosen.to_owned()
+    }
+}
+
 /// The largest image sent, in bytes. A larger file is refused, not cut: a cut image is not an image.
 pub const MAX_IMAGE_BYTES: u64 = 4 * 1024 * 1024;
 
@@ -100,6 +112,12 @@ pub fn encode(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use harness_core::config::SecuritySection;
+
+    #[test]
+    fn an_image_turn_uses_the_vision_slot_when_it_is_defined() {
+        assert_eq!(image_slot(|slot| slot == "vision", "main"), "vision");
+        assert_eq!(image_slot(|_| false, "main"), "main");
+    }
 
     #[test]
     fn base64_matches_the_standard_vectors() {
