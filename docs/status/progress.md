@@ -54,7 +54,25 @@ Verified:
 - The event log label was wrong and is fixed: a refused memory file is now logged as `prompt_degraded` (the workflow
   hooks keep `workflow_degraded`). Verified by a unit test and the orchestrator integration tests.
 
-Not verified: the Windows gate was not run.
+Linux gate script (`scripts/linux-gate.sh`), rehearsed in this environment on 2026-10-31: format check, clippy with
+warnings as errors, 855 tests passed with 0 failed and 5 ignored, release build, and three smoke checks (version, init
+and config validation, and the repository memory in the hook answer). All steps passed. The script is the one the native
+Ubuntu machine runs. The machine's own run is not recorded yet.
+
+The Linux machine overrides for the Windows runtime binaries are in `configs/examples/linux-machine.toml`. Checked here:
+with that file as `--config`, the effective `server_bin` values change to the Linux names, and validation reports only the
+known warning about verification steps.
+
+Linux gate on commit `9dae6af` (the tree on `control-center` and `control-center-next`), dependencies from the vendored
+set with no network: `cargo fmt --all -- --check` passed; `cargo clippy --workspace --all-targets --locked -- -D warnings`
+passed; `cargo test --workspace --locked --no-fail-fast` passed with 855 tests, 0 failed, 5 ignored, with the proxy
+variables cleared. With them set, the three Jev tests fail because the loopback mock goes through the proxy (403), which
+is the environment and not the code.
+
+Not verified: the native Windows gate. Windows cargo ignores the `--config` source file for clippy and downloads from
+crates.io, which the machine cannot reach. The fix is a dedicated `CARGO_HOME` with the same source replacement in
+`config.toml`; it is written down but not yet run on Windows. Windows-only behaviour (16 `cfg(windows)` paths, the console
+paste and resize, process stop, and the batch wrappers for the model servers) is also not verified.
 
 Not built in this entry: multi-agent orchestration, routing between slots, an OS sandbox, a plugin interface, an LFM3
 slot, multimodal input. Each has a record under `docs/decisions/` (ADR-0010 to ADR-0013).
