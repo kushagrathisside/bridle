@@ -14,6 +14,7 @@ pub mod jev;
 pub mod launcher;
 pub mod manifest;
 pub mod mcp;
+pub mod memory;
 pub mod providers;
 pub mod state;
 pub mod subagent;

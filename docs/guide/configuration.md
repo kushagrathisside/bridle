@@ -132,7 +132,7 @@ The shipped profiles satisfy these rules, so `agent init` output loads as a proj
 ## Validation rules
 
 `agent config validate` reports each issue with its rule id. The rules are in
-`crates/harness-core/src/config/validate.rs` (V1 to V35). The main ones:
+`crates/harness-core/src/config/validate.rs` (V1 to V41). The main ones:
 
 | Rule | Check |
 |---|---|
@@ -150,6 +150,7 @@ The shipped profiles satisfy these rules, so `agent init` output loads as a proj
 | V27 | the repeated-edit threshold is below 2 (one edit is progress, not a loop) |
 | V28 | the refusal cap is below 1 |
 | V29 | `[agent].max_iterations` below 2, or a retry bound below 1: the first step would already block or escalate |
+| V41 | `memory.file` is not a relative path inside the repository, or `memory.max_bytes` is outside 256 to 16384 |
 
 ## Workflow and loop limits
 
@@ -221,6 +222,30 @@ evidence. It is off by default. The design is in [ADR-0009](../decisions/0009-su
 Inputs go through the tool policy first, so a secret file is refused, and each file is redacted before the model sees it.
 The answer is checked against a fixed shape; references it cannot verify are dropped and counted. Treat an answer as a
 reading, and check the cited lines.
+
+## Repository memory: AGENTS.md
+
+A repository can keep instructions for the agent in a file, `AGENTS.md` by default: how to build and test, what not to
+touch, the house style. Bridle adds the file to the system prompt of every request, after the fixed instructions and
+before the task state. It is on by default, and a missing file adds nothing.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `memory.enabled` | true | Whether the file is read. |
+| `memory.file` | `AGENTS.md` | The file, relative to the repository. It must stay inside the repository (V41). |
+| `memory.max_bytes` | 4096 | The most bytes that go into the prompt (V41: 256 to 16384). Longer text is cut and says so. |
+
+What the model is told. The block starts with a line that says the text is guidance from the repository, not a
+permission, and that every tool call is still checked. The file cannot widen the policy: a line that asks for a secret
+or a blocked command is refused like any other request. The file is read through the tool policy, so a secret file
+named as memory (for example `.env`) is refused and nothing is added, and the refusal is logged. Secret values in the
+file are redacted before they reach the prompt.
+
+Budget. 4,096 bytes is about 1,300 tokens at three characters per token. On the shipped 16K slot the tool descriptions
+take about 3,600 tokens; a larger memory file reduces the room for the conversation, so keep the file short.
+
+The chat and the OpenCode hook read the same file and add the same block, through the same function, and a refused memory
+file is logged the same way from both.
 
 ## Limits
 

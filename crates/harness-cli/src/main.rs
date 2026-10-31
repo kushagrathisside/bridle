@@ -6,6 +6,7 @@ mod chat;
 mod commands;
 mod host;
 mod output;
+mod prompt;
 mod tui;
 mod workflow;
 

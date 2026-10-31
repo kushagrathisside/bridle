@@ -44,6 +44,7 @@
 //! | V38 | Error | `subagents` limits out of range: `max_input_bytes` outside 256 to 65536, or `max_inputs` outside 1 to 8 |
 //! | V39 | Error | `routing.enable_deep_escalation` without a model whose role is `deep_reasoning` |
 //! | V40 | Warning | `decisions.provider = "local_lfm"` while `routing.enable_micro_decisions` is off |
+//! | V41 | Error | `memory.file` not a relative path inside the repository, or `memory.max_bytes` outside 256 to 16384 |
 //! | V24 | Warning | a verification step sets `targets = true` but its `kind` is not `test` |
 //!
 //! Unit tests: one passing baseline config (no issues) and at least one failing case per rule.
@@ -132,6 +133,7 @@ pub fn validate_with(cfg: &Config, env: &ValidationEnv) -> Vec<ConfigIssue> {
     check_adapters(cfg, &mut report);
     check_workflow(cfg, &mut report);
     check_subagents(cfg, &mut report);
+    check_memory(cfg, &mut report);
     check_paths(cfg, env, &mut report);
 
     report.0
@@ -193,6 +195,24 @@ fn check_subagents(cfg: &Config, report: &mut Report) {
             "V38",
             "subagents.max_inputs",
             "max_inputs must be between 1 and 8",
+        );
+    }
+}
+
+fn check_memory(cfg: &Config, report: &mut Report) {
+    let mem = &cfg.memory;
+    if let Err(reason) = crate::memory::check_file(&mem.file) {
+        report.error("V41", "memory.file", format!("memory.file {reason}"));
+    }
+    if !(crate::memory::MIN_MAX_BYTES..=crate::memory::MAX_MAX_BYTES).contains(&mem.max_bytes) {
+        report.error(
+            "V41",
+            "memory.max_bytes",
+            format!(
+                "memory.max_bytes must be between {} and {}",
+                crate::memory::MIN_MAX_BYTES,
+                crate::memory::MAX_MAX_BYTES
+            ),
         );
     }
 }
@@ -1041,6 +1061,18 @@ mod tests {
         assert_issue(&cfg, "V38", Severity::Error, "subagents.max_inputs");
         cfg.subagents.max_inputs = 4;
         assert_no_rule(&cfg, "V38");
+    }
+
+    #[test]
+    fn v41_memory_file_and_limit_are_bounded() {
+        let mut cfg = Config::default();
+        cfg.memory.file = "../outside.md".to_owned();
+        assert_issue(&cfg, "V41", Severity::Error, "memory.file");
+        cfg.memory.file = "AGENTS.md".to_owned();
+        cfg.memory.max_bytes = 10;
+        assert_issue(&cfg, "V41", Severity::Error, "memory.max_bytes");
+        cfg.memory.max_bytes = 4_096;
+        assert_no_rule(&cfg, "V41");
     }
 
     #[test]

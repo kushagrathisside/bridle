@@ -21,6 +21,8 @@ The project has not been published; versions are for the repository only.
 - Security review: an adversarial suite of 72 cases, fixes for short names, escapes, glob patterns and environment
   dumps, and `agent egress` (M9).
 - Subagent tier: a small model reads a few bounded, redacted files and answers with checked citations (M4b).
+- Repository memory: an `AGENTS.md` file (or the file `[memory]` names) is added to the system prompt, read through the
+  tool policy, redacted and bounded (validation rule V41).
 - Benchmark runner and corpus, with a report (M10). The live results are not yet recorded.
 - A checklist of every stage, checked against the code by `scripts/check_checklist.py`.
 - Control Center: `agent tui`, a terminal application with a chat on the home screen and views of tasks, events,

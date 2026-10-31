@@ -16,6 +16,7 @@ pub mod jev;
 pub mod journal;
 pub mod lfm;
 pub mod loops;
+pub mod memory;
 pub mod models;
 pub mod security;
 pub mod subagent;
