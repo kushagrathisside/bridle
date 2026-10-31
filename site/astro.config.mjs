@@ -9,14 +9,61 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'Bridle',
-      description: 'A local-first harness and orchestrator for multi-agent coding.',
+      description: 'A local-first harness for coding agents. The model proposes; the harness decides.',
       favicon: '/favicon.svg',
+      customCss: ['./src/styles/custom.css'],
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/kushagrathisside/bridle' }],
       sidebar: [
-        { label: 'Concepts', items: [{ autogenerate: { directory: 'concepts' } }] },
-        { label: 'Guide', items: [{ autogenerate: { directory: 'guide' } }] },
-        { label: 'Decisions', items: [{ autogenerate: { directory: 'decisions' } }] },
-        { label: 'Reference', items: [{ autogenerate: { directory: 'reference' } }] },
+        {
+          label: 'Start',
+          items: [
+            'introduction',
+            'getting-started',
+            'examples',
+            'examples/fix-a-failing-test',
+          ],
+        },
+        {
+          label: 'Guides',
+          items: [
+            'guides/install',
+            'guides/set-up-a-repository',
+            'guides/run-verification',
+            'guides/serve-models',
+            'guides/run-a-task',
+            'guides/troubleshoot',
+          ],
+        },
+        {
+          label: 'Concepts',
+          items: [
+            'concepts/how-decisions-are-made',
+            'concepts/tasks-and-loops',
+            'concepts/models-and-slots',
+          ],
+        },
+        {
+          label: 'Reference',
+          items: [
+            'reference/cli',
+            'reference/configuration',
+            'reference/mcp-tools',
+            { label: 'Developer modules', items: [{ autogenerate: { directory: 'reference/developer' } }] },
+          ],
+        },
+        {
+          label: 'Project',
+          items: [
+            'project/principles',
+            'project/architecture',
+            'project/security-model',
+            'project/status',
+            'project/contributing',
+            'project/changelog',
+            'project/security-policy',
+            { label: 'Decisions', items: [{ autogenerate: { directory: 'project/decisions' } }] },
+          ],
+        },
       ],
     }),
   ],

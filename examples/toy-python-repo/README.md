@@ -1,21 +1,13 @@
-# toy-python-repo
+# Sample project
 
-The M1 exit target. `calc.py` has one bug: `add()` subtracts. The unit tests fail until it is fixed.
+A small Python project for trying Bridle. `calc.py` has one bug: `add()` subtracts instead of adding, so the unit test
+fails until the bug is fixed.
 
-Run the tests with `python -m unittest -q`.
+Run the test from this folder:
 
-To exercise the harness end to end (Windows, release 1):
+```bash
+python -m unittest -q
+```
 
-1. Copy this folder to a new location and `git init` it.
-2. `agent init --profile local-only` in that folder. Add a verification step to `local-agent.toml`
-   (`python -m unittest` is a built-in safe command, so no `safe_commands` entry is needed):
-
-   ```toml
-   [[verification.steps]]
-   name = "unit tests"
-   command = "python -m unittest -q"
-   timeout_ms = 120000
-   ```
-
-3. Start the main model with `agent models serve main --detach`.
-4. Run `opencode run "Fix the bug in calc.py so the unit tests pass."` in that folder.
+To have Bridle fix the bug, follow [fix a failing test](../../docs/examples/fix-a-failing-test.md). That guide copies this
+folder, so the agent edits a copy and not the repository.

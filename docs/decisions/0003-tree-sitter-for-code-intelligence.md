@@ -13,7 +13,7 @@ or a string.
 
 ## Decision
 
-Use tree-sitter, with three grammars for release 1: Rust, Python and C++. Files ending in `.c` and `.h` also
+Use tree-sitter, with three grammars for this release: Rust, Python and C++. Files ending in `.c` and `.h` also
 use the C++ grammar, which parses plain C well enough for symbol lookup. The workspace pins exact versions:
 
 | Crate | Version | Licence |
@@ -30,7 +30,7 @@ symbol index is a later step, alongside the task state.
 
 - The analysis is syntactic, not semantic. `find_references` matches identifiers with the same spelling. It
   does not resolve overloads, imports or types, and the tool result says so. Answers at the level of a
-  language server would need one, which is out of scope for release 1.
+  language server would need one, which is out of scope for this release.
 - Each grammar compiles C code through `cc`. On Windows this needs the MSVC build environment, which the
   Windows build scripts already load.
 - Adding a language later takes one grammar crate and one arm in `Language::from_path`.

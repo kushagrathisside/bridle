@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (2026-10-26)
 - **Date:** 2026-10-26
-- **Deciders:** Kushagra Srivastava
+- **Deciders:** Project maintainer
 
 ## Context
 
