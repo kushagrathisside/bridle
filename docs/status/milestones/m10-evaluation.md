@@ -118,6 +118,60 @@ Findings from the repeat run, read from the run logs:
 The sample is still six tasks, two runs each. The two conditions have the same pass count across both runs (9 of 12 each),
 so these runs do not separate them.
 
+## Condition D: policy decision (2026-10-28)
+
+Condition D is Qwen plus LFM plus Bonsai. One GPU model runs at a time (R-45.1), so Bonsai cannot sit beside Qwen on the GPU.
+Two ways to run D were timed on the same escalation request (151 to 236 prompt tokens, 28 output tokens, the length of a
+decision answer):
+
+| Approach | Measured | Per escalation |
+|---|---|---|
+| Bonsai on CPU, Qwen stays on GPU | 48.1 s (236 prompt tokens at 8.1 tok/s, 28 output at 1.43 tok/s) | about 48 s |
+| GPU swap: stop Qwen, serve Bonsai, answer, stop Bonsai, serve Qwen | stop Qwen 1 s; Bonsai healthy 11.1 s; answer 1.8 s (33.5 tok/s); stop Bonsai 0.4 s; Qwen healthy 6.0 s | about 20 s |
+
+Decision: the GPU swap is the faster approach, about 2.4 times faster per escalation, so D uses the swap.
+
+Two changes are needed before D can run as a task condition. Neither is in the code yet:
+
+- The swap cannot run inside the `tool_before` hook. The shim gives each hook 20 s (`HOOK_TIMEOUT_MS` in `opencode-plugin/local-agent.ts`), and a timed-out `tool_before` fails closed, which blocks the tool call. The hook limit must be raised to at least 30 s for an escalation, or the swap must run outside the hook.
+- The deep call is capped at 15 s (`ESCALATION_TIMEOUT_MS`). A swap-based escalation needs about 2 s for the answer and about 20 s for the swap, so the cap must be raised.
+
+Bonsai on CPU is not used. Its speed on this machine makes every escalation slower than the 15 s cap, so it would fall back to the
+rules every time.
+
+The swap is built (`with_deep_on_gpu` in `crates/harness-cli/src/workflow.rs`). The deep slot starts on the GPU when a GPU
+deep call is due, the other GPU slots are parked, and afterwards they start again. The deep call cap is now 30 s, and the shim's
+hook limit is 150 s.
+
+Checks run on 2026-10-28:
+
+- Live swap test `a_deep_escalation_swaps_the_gpu_model_and_restores_it` (ignored; run by hand): passed in 15.0 s. Qwen was
+  parked, Bonsai reported healthy, Qwen restarted, and Bonsai was stopped.
+- Condition D (`evals/bench/conditions/deep.toml`) on one task, `analyse-latency`, two runs: passed in 196 s (2 tool calls) and
+  in 327 s (17 tool calls, 9 blocked). Neither run escalated (`escalation_count` 0), so neither exercised the swap. Result files:
+  `evals/bench/results/2026-10-28/deep.jsonl` and `deep2.jsonl`.
+- Condition D on `design-auth-schema`, a new seven-category task (not yet in the corpus): passed in 176 s (6 tool calls, 2 blocked).
+  No escalation happened, so the swap did not run in this task either. Result file: `deep3.jsonl`.
+
+D still has no task-level result with an escalation. Each escalation costs about 17 to 20 s: the swap (15 s measured) plus
+the deep answer (about 2 s measured). The task-level cost needs a task where an escalation actually fires.
+
+### Escalation timing and confidence (2026-10-29)
+
+The runs above did not escalate because the loop was only evaluated at the agent's next call. An agent that stopped after
+the third identical failure never made that call, so the deep slot was never asked. The escalation is now evaluated when
+the verification fails, and the answer is kept for the next call (see [M5](m5-bonsai.md#escalation-routing-m5-3-2026-10-27)).
+The rules' confidence for a repeated failure grows with the count, so `escalation_threshold` decides when the deep slot is
+asked. The unit tests pass.
+
+Live run, 2026-10-29: condition D on `schema-probe-07` (the impossible task, renamed; the id in `task.toml` changed to
+match) did not reach a failing verification, so the change was not exercised. The run is `evals/bench/results/2026-10-29/deep7`.
+The agent read the README, then made two `glob` calls (`*.sql`, `test_*.py`). The path guard refused both as "escapes the
+workspace through a symlink or junction". No link or junction is in the folder (`dir /AL` finds none). The model then went
+idle, and the run timed out at 901 s with 3 tool calls, 2 blocked, no decision records and `escalation_count` 0. This is the
+same glob false positive the notes above record for the `*.py` glob. Changing it is a policy decision, so it is not changed
+here. A live check of the escalation therefore still needs a run that reaches a failing verification.
+
 ## What remains
 
 - Corpus size. Six tasks is too few to separate the conditions. More tasks need choosing, each with a verify script. That

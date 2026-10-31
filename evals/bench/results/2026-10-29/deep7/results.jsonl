@@ -1,0 +1,1 @@
+{"condition":"deep","task":"schema-probe-07","category":"design","success":false,"verify_exit":1,"opencode_exit":null,"timed_out":true,"wall_s":901.3003304,"tool_calls":3,"blocked_calls":2,"loop_refusals":0,"context_bytes_before":2563,"context_bytes_after":2563,"attempts":1}

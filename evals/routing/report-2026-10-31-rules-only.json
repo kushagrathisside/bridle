@@ -1,0 +1,182 @@
+[
+  {
+    "name": "short typo fix",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "rule",
+    "reason": "a short request with no hard word",
+    "latency_ms": 0,
+    "correct": true
+  },
+  {
+    "name": "short explanation",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "rule",
+    "reason": "a short request with no hard word",
+    "latency_ms": 0,
+    "correct": true
+  },
+  {
+    "name": "short test run",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "rule",
+    "reason": "a short request with no hard word",
+    "latency_ms": 0,
+    "correct": true
+  },
+  {
+    "name": "short changelog",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "rule",
+    "reason": "a short request with no hard word",
+    "latency_ms": 0,
+    "correct": true
+  },
+  {
+    "name": "short rename",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "rule",
+    "reason": "a short request with no hard word",
+    "latency_ms": 0,
+    "correct": true
+  },
+  {
+    "name": "short test case",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "rule",
+    "reason": "a short request with no hard word",
+    "latency_ms": 0,
+    "correct": true
+  },
+  {
+    "name": "long docstring",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "no decision model",
+    "reason": "no decision answer was asked",
+    "latency_ms": 0,
+    "correct": true
+  },
+  {
+    "name": "long config change",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "no decision model",
+    "reason": "no decision answer was asked",
+    "latency_ms": 0,
+    "correct": true
+  },
+  {
+    "name": "long help text",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "no decision model",
+    "reason": "no decision answer was asked",
+    "latency_ms": 0,
+    "correct": true
+  },
+  {
+    "name": "long formatting",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "no decision model",
+    "reason": "no decision answer was asked",
+    "latency_ms": 0,
+    "correct": true
+  },
+  {
+    "name": "long import fix",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "no decision model",
+    "reason": "no decision answer was asked",
+    "latency_ms": 0,
+    "correct": true
+  },
+  {
+    "name": "long release notes",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "no decision model",
+    "reason": "no decision answer was asked",
+    "latency_ms": 0,
+    "correct": true
+  },
+  {
+    "name": "architecture",
+    "expected": "DEEP",
+    "got": "MAIN",
+    "source": "no decision model",
+    "reason": "no decision answer was asked",
+    "latency_ms": 0,
+    "correct": false
+  },
+  {
+    "name": "root cause",
+    "expected": "DEEP",
+    "got": "MAIN",
+    "source": "no decision model",
+    "reason": "no decision answer was asked",
+    "latency_ms": 0,
+    "correct": false
+  },
+  {
+    "name": "investigate",
+    "expected": "DEEP",
+    "got": "MAIN",
+    "source": "no decision model",
+    "reason": "no decision answer was asked",
+    "latency_ms": 0,
+    "correct": false
+  },
+  {
+    "name": "migrate",
+    "expected": "DEEP",
+    "got": "MAIN",
+    "source": "no decision model",
+    "reason": "no decision answer was asked",
+    "latency_ms": 0,
+    "correct": false
+  },
+  {
+    "name": "security review",
+    "expected": "DEEP",
+    "got": "MAIN",
+    "source": "no decision model",
+    "reason": "no decision answer was asked",
+    "latency_ms": 0,
+    "correct": false
+  },
+  {
+    "name": "refactor",
+    "expected": "DEEP",
+    "got": "MAIN",
+    "source": "no decision model",
+    "reason": "no decision answer was asked",
+    "latency_ms": 0,
+    "correct": false
+  },
+  {
+    "name": "design plugins",
+    "expected": "DEEP",
+    "got": "MAIN",
+    "source": "no decision model",
+    "reason": "no decision answer was asked",
+    "latency_ms": 0,
+    "correct": false
+  },
+  {
+    "name": "long cross-module",
+    "expected": "DEEP",
+    "got": "MAIN",
+    "source": "no decision model",
+    "reason": "no decision answer was asked",
+    "latency_ms": 0,
+    "correct": false
+  }
+]

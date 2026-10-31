@@ -50,6 +50,22 @@ pub(super) fn check_repo_layer(
             "the host executable is a machine setting",
         ));
     }
+    if table(repo, "plugins").is_some() {
+        return Err(deny(
+            "plugins".to_owned(),
+            "plugins are machine settings: a repository cannot add tools; only the machine config may name manifests",
+        ));
+    }
+    if table(repo, "sandbox")
+        .and_then(|sandbox| sandbox.get("enabled"))
+        .and_then(Value::as_bool)
+        == Some(false)
+    {
+        return Err(deny(
+            "sandbox.enabled".to_owned(),
+            "a repository may not switch the sandbox off; only the machine config may set enabled = false",
+        ));
+    }
     if table(repo, "workflow")
         .and_then(|workflow| workflow.get("enabled"))
         .and_then(Value::as_bool)
@@ -311,6 +327,20 @@ mod tests {
                 "[models.m]\nendpoint = \"http://[::1]:8001/v1\"\n[external.jev]\nenabled = false",
                 ""
             ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn a_repository_may_not_switch_the_sandbox_off() {
+        let message = rejected_key("[sandbox]\nenabled = false");
+        assert!(message.contains("sandbox.enabled"), "{message}");
+        assert_eq!(
+            check("[sandbox]\nenabled = true\nnetwork = false", ""),
+            Ok(())
+        );
+        assert_eq!(
+            check("[sandbox]\nnetwork = true", "[sandbox]\nenabled = false"),
             Ok(())
         );
     }

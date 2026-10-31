@@ -44,7 +44,7 @@ the ADR is linked.
 |---|---|---|---|---|---|
 | D-1 | 2026-10-21 | STRAT | **Rust is the primary implementation language.** | [ADR-0001](../decisions/0001-rust-core-thin-host-adapter.md): Rust workspace (`harness-core`, `harness-runtime`, `harness-cli` → binary `agent`), tools over MCP, and a thin TS shim only where OpenCode requires JS. Supersedes R-50.2. Narrows R-31.1 and R-50.3. | active |
 | D-2 | 2026-10-21 | CON | **Download models to the D: drive only.** C: has about 60 GB free, and WSL's virtual disk also lives on C:. | Weights go to `D:\models\<model>\` (existing convention on this machine). llama.cpp runtimes go to `D:\runtimes\`. `paths.models_dir` in config defaults to `D:\models` on this host, and `agent doctor` warns when the models dir is on the system drive. Weights are never written under the repo or the WSL filesystem. | active |
-| D-3 | 2026-10-21 | process | **Use Haiku 5.5 subagents to implement low-level coding tasks.** | Opus designs interfaces, writes the specs and acceptance tests, reviews and integrates. Haiku subagents implement well-specified modules against those specs. Every subagent change is reviewed and must pass `fmt`, `clippy` and tests before it is committed. | active |
+| D-3 | 2026-10-21 | process | **Use delegated workers to implement low-level coding tasks.** | The lead designs interfaces, writes the specs and acceptance tests, reviews and integrates. Delegated workers implement well-specified modules against those specs. Every delegated change is reviewed and must pass `fmt`, `clippy` and tests before it is committed. | active |
 | D-4 | 2026-10-21 | process | Keep working until the current usage quota is exhausted. **Do not restart automatically** after the quota ends, even if an automatic or system prompt arrives. | Session-level operating rule for the implementing agent. | active |
 | D-5 | 2026-10-21 | process | Save the brief verbatim and track every point in a markdown list. | [`master-development-plan.md`](../spec/master-development-plan.md) (verbatim) and this matrix. | done |
 
@@ -94,7 +94,7 @@ the ADR is linked.
 | R-3.3 | DEF | PTQ1_0 is the default on 8 GB cards. Do not default to PQ2_0. | M5 | done: the PTQ1_0 file is the one in use |
 | R-3.4 | CON | Do not use the full 262K context by default | M5 | done: context 16384 (normal deep); the 262K context is not used |
 | R-3.5 | DEF | Operating modes: normal deep 16K–24K, large deep 24K–32K, very large repo = retrieval + summaries. Benchmark them. | M5, M10 | partial: normal deep (16K) measured; large deep not benchmarked |
-| R-3.6 | REQ | Invoke Bonsai for: persistent debugging failure, hard architecture, research methodology, hard algorithms, cross-module causal analysis, high-impact refactoring, repeated local-model failure, user-marked "deep", policy-predicted worth-the-latency | M5 | partial (M5-3): an ESCALATE decision (persistent failure, repeated local-model failure) goes to Bonsai, capped per task, when routing is on. The other triggers are not built |
+| R-3.6 | REQ | Invoke Bonsai for: persistent debugging failure, hard architecture, research methodology, hard algorithms, cross-module causal analysis, high-impact refactoring, repeated local-model failure, user-marked "deep", policy-predicted worth-the-latency | M5 | partial (M5-3): an ESCALATE decision (persistent failure, repeated local-model failure) goes to Bonsai, capped per task, when routing is on. Since 2026-10-29 the loop is evaluated when a verification fails, and the answer applies until a pass; the threshold gates the call. The other triggers are not built |
 | R-3.7 | CON | Bonsai must not automatically replace Qwen for every task | M5 | done: the deep model is not a default; it answers only the A/B cases |
 
 ## §4 Micro-model: LFM2.5-1.2B-Thinking
@@ -226,7 +226,7 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-18.1 | REQ | Default Qwen → Qwen → Qwen. On stall, LFM classifies the state. Persistent or high-complexity failure goes to Bonsai. | M4, M5 | partial (M5-3): persistent failure goes to Bonsai when routing is on, with a cap per task; high-complexity routing is not built |
+| R-18.1 | REQ | Default Qwen → Qwen → Qwen. On stall, LFM classifies the state. Persistent or high-complexity failure goes to Bonsai. | M4, M5 | partial (M5-3): persistent failure goes to Bonsai when routing is on, with a cap per task; high-complexity routing is not built. Since 2026-10-29 a persistent same failure is decided at the failing verification, with a confidence that grows with the count |
 | R-18.2 | REQ | Triggers: same normalised failure ≥ 2, different patches with the same failure, high architecture uncertainty, cross-module behaviour, research-methodology question, explicit user request, high-impact change | M5 | open |
 | R-18.3 | REQ | Bonsai analyses and proposes. Qwen implements and tests. | M5 | partial (M4b, M5-3): the small model analyses and proposes; it never edits. Persistent-failure escalations reach the deep model when routing is on; the deep model still never edits. |
 | R-18.4 | CON | Bonsai must not mutate code automatically in the first implementation stage | M5 | done: the deep model has no path that edits code |

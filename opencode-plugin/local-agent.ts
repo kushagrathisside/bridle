@@ -3,7 +3,7 @@
 // This file holds NO policy logic. It forwards OpenCode hook payloads as JSON to the Rust
 // `agent hook <event>` command and applies the verdict it returns. Policy hooks fail closed:
 // if the harness cannot answer, the tool call is blocked (tool.execute.before) and the
-// permission is denied (permission.ask). Telemetry-only hooks and the context hooks (M6) fail open:
+// permission is denied (permission.ask). Telemetry-only hooks and the context hooks fail open:
 // the request is sent unchanged. Compaction is a view of the history, not a security control.
 //
 // Generated into `.opencode/plugins/local-agent.ts` by `agent init`, which replaces the
@@ -16,7 +16,9 @@ import type { Plugin } from "@opencode-ai/plugin"
 import { spawn } from "node:child_process"
 
 const AGENT_BIN: string = process.env.LOCAL_AGENT_BIN || "__AGENT_BIN__"
-const HOOK_TIMEOUT_MS = 20_000
+// A deep escalation swaps GPU models inside the tool-before hook, which takes about 20 s in all (measured 2026-10-28).
+// The limit leaves room for two swap waits of 45 s and the deep answer, and still gives up before OpenCode does.
+const HOOK_TIMEOUT_MS = 150_000
 
 // Only low-frequency lifecycle events are forwarded; streaming updates would spawn a process
 // per token.
@@ -31,7 +33,7 @@ const FORWARDED_EVENTS = new Set([
 
 type Json = Record<string, unknown>
 
-// The parts of a message this shim reads when it applies the context changes of M6.
+// The parts of a message this shim reads when it applies the context changes.
 type ContextPart = { type: string; state?: { status?: string; output?: string } }
 type ContextMessage = { parts: ContextPart[] }
 type ContextChange = { message: number; part: number; output: string }
@@ -166,7 +168,7 @@ export const LocalAgentPlugin: Plugin = async ({ directory, worktree }) => {
           output.status = result.status
         }
       } catch {
-        // Decision D3: if the policy engine cannot answer, the permission is denied.
+        // if the policy engine cannot answer, the permission is denied.
         output.status = "deny"
       }
     },

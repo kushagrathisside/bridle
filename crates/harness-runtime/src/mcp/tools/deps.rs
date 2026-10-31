@@ -1,4 +1,4 @@
-//! `dependency_search` (M2 step 6): the dependencies the tracked manifests declare, and the
+//! `dependency_search`: the dependencies the tracked manifests declare, and the
 //! source files that import a given dependency. Manifests are read only when tracked and only
 //! when the read policy allows them; source files are scanned with the same limits as the code
 //! tools.

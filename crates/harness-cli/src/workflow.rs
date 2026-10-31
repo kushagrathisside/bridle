@@ -1,12 +1,14 @@
-//! The orchestrator's hook glue (M3 step 6).
+//! The orchestrator's hook glue.
 //!
 //! Before a call runs, the loop rules look at the task's recent calls and may refuse the call. After a
 //! call, the result of a verification is recorded. Both run only when `[workflow].enabled` is true, and
-//! only after the M2 policy has allowed the call, so the policy keeps the final say. The OpenCode payload
+//! only after the policy has allowed the call, so the policy keeps the final say. The OpenCode payload
 //! mapping lives here and in `host::opencode_v1`; the rules and the records live in `harness-core`.
 
+use std::time::Duration;
+
 use anyhow::Result;
-use harness_core::config::{DecisionProviderKind, ModelRole};
+use harness_core::config::{Config, DecisionProviderKind, Hardware, ModelRole};
 use harness_core::decision::{
     DecisionEngine, DecisionInput, DecisionResult, ReasonCode, RulesDecisionEngine, escalation_due,
     refuses,
@@ -19,12 +21,14 @@ use harness_core::models::ModelRegistry;
 use harness_core::task::TaskState;
 use harness_runtime::decision::{ESCALATED_PREFIX, ESCALATION_TIMEOUT_MS, LfmEngine};
 use harness_runtime::jev::JevEngine;
+use harness_runtime::launcher;
 use harness_runtime::mcp::record::is_verification_tool;
 use harness_runtime::providers::provider_for;
-use harness_runtime::state::{DecisionRecord, StateDir};
+use harness_runtime::state::{DecisionRecord, StateDir, Task};
 use serde_json::Value;
 
 use crate::app::App;
+use crate::commands::models;
 
 /// The prefix OpenCode adds to MCP tool names.
 const MCP_PREFIX: &str = "local-agent_";
@@ -61,15 +65,23 @@ pub fn before(app: &App, input: &Value, read_only: bool) -> Result<Option<String
 
     let thresholds = Thresholds::from_config(&app.config.agent, &app.config.workflow);
     let signals = detect(&journal.ring, &journal.state, &thresholds);
-    let escalations = escalations_used(&task)?;
+    let answered = answered_loop(&task, &journal.state)?;
     let result = decide_for(
         app,
         &DecisionInput {
             state: &journal.state,
             signals: &signals,
         },
-        escalations,
+        journal.state.escalation_count,
+        answered.as_ref(),
     );
+    // An escalation made here, rather than at the failure that caused it, is counted before the call is judged. An
+    // answer that is already open was counted when it was given.
+    if is_escalated(&result) && !journal.state.escalation_open {
+        task.append(Record::Escalated {
+            call_id: call_id.to_owned(),
+        })?;
+    }
 
     // Read-only calls are never refused: they cannot repeat a failure, and the model needs them to read it.
     if !read_only
@@ -116,7 +128,7 @@ pub fn before(app: &App, input: &Value, read_only: bool) -> Result<Option<String
     Ok(None)
 }
 
-/// The task state for the system prompt (M6, R-23.1). Only when the workflow is enabled and the session is bound to
+/// The task state for the system prompt. Only when the workflow is enabled and the session is bound to
 /// a task: a session without one gets no block, and nothing is created.
 pub fn system_block(app: &App, input: &Value) -> Result<Option<String>> {
     if !app.config.workflow.enabled {
@@ -175,16 +187,27 @@ fn short(text: &str, max: usize) -> String {
 }
 
 /// The decision for an input. The primary engine decides first (see [`decide_primary`]). An ESCALATE decision that
-/// is due then goes to the deep slot, if routing allows it and the task has escalations left (R-3.6, R-18.1).
-/// `escalations` is the number of escalations the task has already used.
-pub fn decide_for(app: &App, input: &DecisionInput<'_>, escalations: u32) -> DecisionResult {
+/// is due then goes to the deep slot, if routing allows it and the task has escalations left.
+/// `escalations` is the number of escalations the task has already used. `answered` is the deep slot's answer for
+/// the loop the task is in, when one applies: it is returned for that loop, and the models are not asked again.
+pub fn decide_for(
+    app: &App,
+    input: &DecisionInput<'_>,
+    escalations: u32,
+    answered: Option<&DecisionResult>,
+) -> DecisionResult {
+    if let Some(answer) = answered
+        .filter(|answer| RulesDecisionEngine.decide(input).reason_code == answer.reason_code)
+    {
+        return answer.clone();
+    }
     let primary = decide_primary(app, input);
     escalate_if_due(app, input, primary, escalations)
 }
 
 /// The primary engine's decision. With `decisions.provider = "local_lfm"` and `routing.enable_micro_decisions`, a
 /// stalled loop is decided by the micro slot; every other case, and every failure to reach the model, is decided by
-/// the rules (R-30).
+/// the rules.
 fn decide_primary(app: &App, input: &DecisionInput<'_>) -> DecisionResult {
     let env = |name: &str| std::env::var(name).ok();
     if app.config.decisions.provider == DecisionProviderKind::Jev {
@@ -212,9 +235,15 @@ fn decide_primary(app: &App, input: &DecisionInput<'_>) -> DecisionResult {
     RulesDecisionEngine.decide(input)
 }
 
-/// Sends a due escalation to the deep slot (R-3.6, R-18.1). Routing must be on, the task must have escalations left,
-/// and a deep slot must be defined (validation V39). The deep call has a shorter timeout than the slot's: the hook
-/// that asks has a limit of its own. Any failure keeps the escalated decision, which goes to the person.
+/// How long the deep slot may take to answer health after it starts, and how long a parked slot may take to answer
+/// health again. Both run inside the hook, whose limit is 150 s in the shim (see `opencode-plugin/local-agent.ts`).
+const DEEP_START_WAIT: Duration = Duration::from_secs(45);
+const PARKED_RESTORE_WAIT: Duration = Duration::from_secs(45);
+
+/// Sends a due escalation to the deep slot. Routing must be on, the task must have escalations left,
+/// and a deep slot must be defined (validation V39). When the deep slot runs on the GPU and is not serving, the GPU
+/// slots that run are parked for the call and started again afterwards. Any failure keeps the escalated
+/// decision, which goes to the person.
 fn escalate_if_due(
     app: &App,
     input: &DecisionInput<'_>,
@@ -229,32 +258,131 @@ fn escalate_if_due(
         return primary;
     }
     let registry = ModelRegistry::from_config(&app.config);
-    let Some((_, deep)) = registry.first_with_role(ModelRole::DeepReasoning) else {
+    let Some((deep_name, deep)) = registry.first_with_role(ModelRole::DeepReasoning) else {
         return primary;
     };
+    let deep_name = deep_name.to_owned();
     let mut deep = deep.clone();
     deep.timeout_ms = deep.timeout_ms.min(ESCALATION_TIMEOUT_MS);
     let env = |name: &str| std::env::var(name).ok();
-    match provider_for(&deep, &env) {
-        Ok(provider) => LfmEngine::new(provider).escalate(input, primary),
-        Err(error) => DecisionResult {
-            provider: format!(
-                "{ESCALATED_PREFIX} failed ({error}); kept {}",
-                primary.provider
-            ),
-            ..primary
-        },
+    let provider = match provider_for(&deep, &env) {
+        Ok(provider) => provider,
+        Err(error) => return failed_escalation(primary, &error.to_string()),
+    };
+    let needs_swap = deep.hardware == Hardware::Gpu
+        && !launcher::is_healthy(&models::health_url(&deep.endpoint));
+    if !needs_swap {
+        return LfmEngine::new(provider).escalate(input, primary);
+    }
+    let fallback = primary.clone();
+    match with_deep_on_gpu(app, &deep_name, || {
+        LfmEngine::new(provider).escalate(input, primary)
+    }) {
+        Ok(answer) => answer,
+        Err(error) => failed_escalation(fallback, &error.to_string()),
     }
 }
 
-/// The escalations a task has used: every decision that went to the deep slot, successful or not.
-fn escalations_used(task: &harness_runtime::state::Task<'_>) -> Result<u32> {
-    let used = task
-        .decisions()?
+/// The escalated decision kept, labelled with the reason the escalation did not happen.
+fn failed_escalation(primary: DecisionResult, reason: &str) -> DecisionResult {
+    DecisionResult {
+        provider: format!(
+            "{ESCALATED_PREFIX} failed ({reason}); kept {}",
+            primary.provider
+        ),
+        ..primary
+    }
+}
+
+/// The GPU slots other than `deep`, in name order: the ones a deep call on the GPU must park.
+fn other_gpu_slots(config: &Config, deep: &str) -> Vec<String> {
+    config
+        .models
         .iter()
-        .filter(|record| record.result.provider.starts_with(ESCALATED_PREFIX))
-        .count();
-    Ok(u32::try_from(used).unwrap_or(u32::MAX))
+        .filter(|(name, model)| name.as_str() != deep && model.hardware == Hardware::Gpu)
+        .map(|(name, _)| name.clone())
+        .collect()
+}
+
+/// Runs `call` with the deep slot serving. The running GPU slots are stopped, the deep slot starts, and afterwards the
+/// deep slot stops and the parked slots start again, whatever `call` returned. Nothing is printed: the hook's stdout
+/// carries the answer. Returns the error when the deep slot did not start; `call` is then not run.
+fn with_deep_on_gpu<T>(app: &App, deep: &str, call: impl FnOnce() -> T) -> anyhow::Result<T> {
+    let mut parked = Vec::new();
+    for slot in other_gpu_slots(&app.config, deep) {
+        // A slot that cannot be stopped stays where it is; the slots already parked are still restored below.
+        if models::is_running(app, &slot).unwrap_or(false) && models::stop_quiet(app, &slot).is_ok()
+        {
+            parked.push(slot);
+        }
+    }
+    let answer = models::start_quiet(app, deep, DEEP_START_WAIT).map(|()| call());
+    let _ = models::stop_quiet(app, deep);
+    for slot in &parked {
+        let _ = models::start_quiet(app, slot, PARKED_RESTORE_WAIT);
+    }
+    answer
+}
+
+/// Whether a decision came from the deep slot, successful or not.
+fn is_escalated(result: &DecisionResult) -> bool {
+    result.provider.starts_with(ESCALATED_PREFIX)
+}
+
+/// The deep slot's answer for the loop the task is in, while that answer applies (see `TaskState::escalation_open`).
+/// The last decision from the deep slot is the answer: it is written before the journal counts the escalation.
+fn answered_loop(task: &Task<'_>, state: &TaskState) -> Result<Option<DecisionResult>> {
+    if !state.escalation_open {
+        return Ok(None);
+    }
+    let answer = task
+        .decisions()?
+        .into_iter()
+        .rev()
+        .find(|record| is_escalated(&record.result))
+        .map(|record| record.result);
+    Ok(answer)
+}
+
+/// Runs the loop rules when a verification has just failed, so a due escalation is taken at the failure rather than
+/// when the agent next makes a call. The answer is kept for the calls after it (see [`answered_loop`]). Nothing happens
+/// unless the call is a failed verification the journal knows, and an answer that is already open is not asked for
+/// again.
+fn escalate_on_failure(app: &App, task: &Task<'_>, call_id: &str) -> Result<()> {
+    let journal = task.snapshot()?;
+    let failed = journal
+        .ring
+        .iter()
+        .rev()
+        .find(|call| call.call_id == call_id)
+        .is_some_and(|call| call.passed == Some(false));
+    if !failed || journal.state.escalation_open {
+        return Ok(());
+    }
+    let thresholds = Thresholds::from_config(&app.config.agent, &app.config.workflow);
+    let signals = detect(&journal.ring, &journal.state, &thresholds);
+    let result = decide_for(
+        app,
+        &DecisionInput {
+            state: &journal.state,
+            signals: &signals,
+        },
+        journal.state.escalation_count,
+        None,
+    );
+    if !is_escalated(&result) {
+        return Ok(());
+    }
+    task.record_decision(&DecisionRecord {
+        call_id: call_id.to_owned(),
+        signals,
+        result,
+        refused: false,
+    })?;
+    task.append(Record::Escalated {
+        call_id: call_id.to_owned(),
+    })?;
+    Ok(())
 }
 
 /// The rules' decision, labelled as a fallback from the engine that could not decide.
@@ -291,7 +419,7 @@ pub fn after(app: &App, input: &Value) -> Result<()> {
             outcome,
             fingerprints,
         })?;
-        return Ok(());
+        return escalate_on_failure(app, &task, call_id);
     }
 
     // A shell test run: its output is parsed here. The call was marked as a verification before it ran.
@@ -328,7 +456,7 @@ pub fn after(app: &App, input: &Value) -> Result<()> {
         outcome,
         fingerprints,
     })?;
-    Ok(())
+    escalate_on_failure(app, &task, call_id)
 }
 
 /// The refusal text: the rule that fired, why, and the next action that is still allowed.
@@ -460,6 +588,7 @@ mod tests {
                 signals: &signals,
             },
             0,
+            None,
         );
         assert!(
             result.provider.starts_with("rules (fallback from jev:"),
@@ -482,6 +611,7 @@ mod tests {
                 signals: &signals,
             },
             0,
+            None,
         );
         assert_eq!(
             result.provider,
@@ -504,6 +634,65 @@ mod tests {
         app.config.models.insert("deep".to_owned(), deep);
     }
 
+    #[test]
+    fn only_the_other_gpu_slots_are_parked_for_a_deep_call() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut app = app(dir.path());
+        for (name, role, hardware) in [
+            ("main", "engineer", "gpu"),
+            ("micro", "decision", "cpu"),
+            ("deep", "deep_reasoning", "gpu"),
+        ] {
+            let model: harness_core::config::ModelConfig = serde_json::from_value(json!({
+                "provider": "mock",
+                "id": name,
+                "role": role,
+                "endpoint": "http://127.0.0.1:9/v1",
+                "context": 8192,
+                "hardware": hardware,
+            }))
+            .expect("test model config is valid");
+            app.config.models.insert(name.to_owned(), model);
+        }
+        // The CPU micro model stays where it is; the GPU main model is parked while the deep slot runs.
+        assert_eq!(
+            other_gpu_slots(&app.config, "deep"),
+            vec!["main".to_owned()]
+        );
+    }
+
+    /// Live check of the escalation swap (2026-10-28). Needs the main model served, the environment naming the machine's
+    /// model and runtime folders, and `BRIDLE_SWAP_WORKSPACE` naming a workspace whose config has launch sections for
+    /// `main` and `deep`. It stops and restarts the main model, so it is run by hand.
+    #[test]
+    #[ignore = "needs the main model served and a workspace with launch sections"]
+    fn a_deep_escalation_swaps_the_gpu_model_and_restores_it() {
+        let workspace = std::env::var("BRIDLE_SWAP_WORKSPACE").expect("set BRIDLE_SWAP_WORKSPACE");
+        let app =
+            App::load(None, Some(std::path::Path::new(&workspace))).expect("the workspace loads");
+        assert!(
+            models::is_running(&app, "main").expect("main's record reads"),
+            "the main model must be running before the swap"
+        );
+        let deep_endpoint = app.config.models["deep"].endpoint.clone();
+        let deep_answered = with_deep_on_gpu(&app, "deep", || {
+            launcher::is_healthy(&models::health_url(&deep_endpoint))
+        })
+        .expect("the swap runs");
+        assert!(
+            deep_answered,
+            "the deep slot answered health while main was parked"
+        );
+        assert!(
+            models::is_running(&app, "main").expect("main's record reads"),
+            "main is started again after the swap"
+        );
+        assert!(
+            !models::is_running(&app, "deep").expect("deep's record reads"),
+            "deep is stopped after the swap"
+        );
+    }
+
     fn same_failure() -> Vec<LoopSignal> {
         vec![LoopSignal::SameFailure {
             fingerprint: "fp_v1:aaaa".to_owned(),
@@ -520,6 +709,7 @@ mod tests {
                 signals,
             },
             escalations,
+            None,
         )
     }
 
@@ -596,6 +786,111 @@ mod tests {
         );
     }
 
+    /// The output of a failing test run. Every run of it has the same fingerprint.
+    fn failing_run(call: &str) -> Value {
+        json!({
+            "sessionID": "ses_test",
+            "callID": call,
+            "tool": "bash",
+            "output": "tests/test_calc.py:5: in test_add\nE       assert -1 == 3\nFAILED tests/test_calc.py::test_add - assert -1 == 3\n"
+        })
+    }
+
+    /// Runs the test command `count` times in a row, each run failing, after the edit that starts the task.
+    fn fail_tests_in_a_row(app: &App, count: usize) {
+        before(app, &edit("e0", "calc.py"), false).unwrap();
+        for run in 0..count {
+            let call = format!("t{run}");
+            assert_eq!(
+                before(app, &bash(&call, "python -m pytest -q"), false).unwrap(),
+                None,
+                "run {run}"
+            );
+            after(app, &failing_run(&call)).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_third_failing_verification_is_escalated_at_the_failure_and_not_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = app(dir.path());
+        with_deep_slot(&mut app);
+        app.config.routing.enable_deep_escalation = true;
+        fail_tests_in_a_row(&app, 3);
+        let state = StateDir::open(dir.path()).unwrap();
+        let journal = state.task("task-0001").unwrap().snapshot().unwrap();
+        assert_eq!(journal.state.escalation_count, 1, "counted at the failure");
+        assert!(journal.state.escalation_open);
+        // The next call does not ask the deep slot again: the answer for the loop is what refuses it.
+        let refused = before(&app, &bash("t3", "python -m pytest -q"), false)
+            .unwrap()
+            .expect("refused");
+        assert!(refused.contains("same_failure"), "{refused}");
+        let journal = state.task("task-0001").unwrap().snapshot().unwrap();
+        assert_eq!(journal.state.escalation_count, 1, "no second escalation");
+    }
+
+    #[test]
+    fn the_threshold_decides_whether_the_third_failure_reaches_the_deep_slot() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = app(dir.path());
+        with_deep_slot(&mut app);
+        app.config.routing.enable_deep_escalation = true;
+        app.config.routing.escalation_threshold = 0.9;
+        fail_tests_in_a_row(&app, 3);
+        let state = StateDir::open(dir.path()).unwrap();
+        let journal = state.task("task-0001").unwrap().snapshot().unwrap();
+        assert_eq!(
+            journal.state.escalation_count, 0,
+            "three repeats give 0.75, below 0.9"
+        );
+        assert!(!journal.state.escalation_open);
+    }
+
+    #[test]
+    fn the_answer_of_the_deep_slot_is_kept_for_the_loop_it_answered() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = app(dir.path());
+        let answer = DecisionResult {
+            decision: Decision::AskUser,
+            confidence: None,
+            reason_code: ReasonCode::SameFailure,
+            provider: format!("{ESCALATED_PREFIX} (deep-mock)"),
+            latency_ms: 0,
+            model_reason: Some("the schema cannot hold both rules".to_owned()),
+        };
+        let state = TaskState::new("task-0001", "repo", "fix");
+        let same = same_failure();
+        let kept = decide_for(
+            &app,
+            &DecisionInput {
+                state: &state,
+                signals: &same,
+            },
+            1,
+            Some(&answer),
+        );
+        assert_eq!(kept, answer);
+        let other = [LoopSignal::RepeatedEdit {
+            file: "a.py".to_owned(),
+            count: 4,
+        }];
+        let decided_afresh = decide_for(
+            &app,
+            &DecisionInput {
+                state: &state,
+                signals: &other,
+            },
+            1,
+            Some(&answer),
+        );
+        assert_eq!(
+            decided_afresh.reason_code,
+            ReasonCode::RepeatedEdit,
+            "another loop is decided afresh"
+        );
+    }
+
     fn app(dir: &std::path::Path) -> App {
         let mut config = Config::default();
         config.workflow.enabled = true;
@@ -604,6 +899,7 @@ mod tests {
             config,
             config_files: Vec::new(),
             issues: Vec::new(),
+            origins: std::collections::BTreeMap::new(),
         }
     }
 

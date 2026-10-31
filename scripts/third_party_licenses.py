@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Writes THIRD_PARTY_LICENSES.md from the dependency graph in Cargo.lock (M11, R-52.1).
+"""Writes THIRD_PARTY_LICENSES.md from the dependency graph in Cargo.lock.
 
 The licence expression of each crate is the one its manifest declares. The script does not read licence texts and does
-not decide compatibility: a person reviews the list at each release (see docs/status/milestones/m11-release.md).
+not decide compatibility: a person reviews the list at each release.
 
 Run from the repository root:  python3 scripts/third_party_licenses.py
 """

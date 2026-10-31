@@ -1,4 +1,4 @@
-//! The subagent tier, run (M4b): gathers the inputs a call names, asks the small model once, and checks the answer.
+//! The subagent tier, run: gathers the inputs a call names, asks the small model once, and checks the answer.
 //!
 //! Every path goes through the tool policy before it is read, and every input is redacted before it leaves this module,
 //! so a secret in an allowed file still never reaches the small model. The parent gets the checked answer only.

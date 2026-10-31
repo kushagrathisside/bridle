@@ -1,4 +1,4 @@
-//! The subagent tier (M4b, R-12.2, R-12.3, R-13.1, R-13.2): a small model reads a bounded, redacted set of inputs and
+//! The subagent tier: a small model reads a bounded, redacted set of inputs and
 //! answers one question, or condenses one text, with cited evidence. This module is the pure part: the roles, the
 //! bounds, the checked answer and what the parent reads. The model call is in `harness-runtime`. ADR-0009 sets the limits.
 //!

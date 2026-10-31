@@ -2,9 +2,14 @@
 //! and, for the OpenCode integration, in [`host::opencode_v1`].
 
 mod app;
+mod chat;
 mod commands;
 mod host;
+mod image;
 mod output;
+mod prompt;
+mod route;
+mod tui;
 mod workflow;
 
 use std::path::PathBuf;
@@ -29,12 +34,12 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Check hardware, runtimes, models, endpoints and the OpenCode integration (§43).
+    /// Check hardware, runtimes, models, endpoints and the OpenCode integration.
     Doctor {
         #[arg(long)]
         json: bool,
     },
-    /// Run functional health checks against model endpoints (§44).
+    /// Run functional health checks against model endpoints.
     Health {
         /// Model slot to check (default: every slot).
         slot: Option<String>,
@@ -61,12 +66,12 @@ enum Command {
     Hook { event: host::opencode_v1::HookEvent },
     /// Serve the harness tools over MCP on stdio.
     Mcp,
-    /// Start, resume, inspect, reset, repair and prune tasks (M3).
+    /// Start, resume, inspect, reset, repair and prune tasks.
     Task {
         #[command(subcommand)]
         action: commands::task::TaskAction,
     },
-    /// Explain the recent decisions of a task (R-54.2).
+    /// Explain the recent decisions of a task.
     Explain {
         /// Task id (default: the latest task).
         task: Option<String>,
@@ -74,7 +79,7 @@ enum Command {
         #[arg(long, default_value_t = 10)]
         limit: usize,
     },
-    /// A/B run of the rules and the micro model on recorded loop cases (M4).
+    /// A/B run of the rules and the micro model on recorded loop cases.
     EvalDecisions {
         /// A JSON file of cases: name, task state and loop signals.
         cases: PathBuf,
@@ -85,9 +90,24 @@ enum Command {
         #[arg(long)]
         out: Option<PathBuf>,
     },
-    /// List every outbound destination of this configuration, and the proxy state (M9). Sends nothing.
+    /// Measure the routing choice on a labelled set of requests: the rules, then the decision model (ADR-0010).
+    EvalRouting {
+        /// A JSON file of cases: name, text and the slot expected (MAIN or DEEP).
+        cases: PathBuf,
+        /// Also write the per-case results to this file.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// Show which slot a request would go to, and why: the rules first, then the decision model (ADR-0010).
+    Route {
+        /// The request text.
+        text: String,
+    },
+    /// List every outbound destination of this configuration, and the proxy state. Sends nothing.
     Egress,
-    /// Ask the subagent tier (M4b): a small local model reads a few bounded inputs and answers with cited evidence.
+    /// List the plugin manifests and their tools, with the class each tool is offered under, and what was not loaded.
+    Plugins,
+    /// Ask the subagent tier: a small local model reads a few bounded inputs and answers with cited evidence.
     Subagent {
         /// `explore` answers a task about the inputs; `summarise` condenses one text.
         #[arg(long)]
@@ -102,12 +122,14 @@ enum Command {
         #[arg(long)]
         text: Option<String>,
     },
-    /// Run a task corpus under a condition, or summarise the results (M10).
+    /// Run a task corpus under a condition, or summarise the results.
     Bench {
         #[command(subcommand)]
         action: commands::bench::BenchAction,
     },
-    /// Show the ordered record of a task (R-54.3).
+    /// Open the interactive Control Center (needs a terminal).
+    Tui,
+    /// Show the ordered record of a task.
     Trace {
         /// Task id (default: the latest task).
         task: Option<String>,
@@ -129,6 +151,11 @@ fn main() -> ExitCode {
             commands::init::run(&args, cli.config.as_deref(), cli.workspace.as_deref())
         }
         Command::Bench { action } => commands::bench::run(&action),
+        // The TUI loads the configuration itself: a broken config is a state to show, not a crash.
+        Command::Tui => tui::run(tui::data::LoadArgs {
+            config: cli.config.clone(),
+            workspace: cli.workspace.clone(),
+        }),
         command => match app::App::load(cli.config.as_deref(), cli.workspace.as_deref()) {
             Ok(app) => match command {
                 Command::Doctor { json } => commands::doctor::run(&app, json),
@@ -152,10 +179,13 @@ fn main() -> ExitCode {
                     paths,
                     text,
                 } => commands::subagent::run(&app, &role, &task, &paths, text.as_deref()),
+                Command::Route { text } => route::run(&app, &text),
+                Command::EvalRouting { cases, out } => route::eval(&app, &cases, out.as_deref()),
+                Command::Plugins => commands::plugins::run(&app),
                 Command::EvalDecisions { cases, slot, out } => {
                     commands::eval::run(&app, &slot, &cases, out.as_deref())
                 }
-                Command::Hook { .. } | Command::Init(_) | Command::Bench { .. } => {
+                Command::Hook { .. } | Command::Init(_) | Command::Bench { .. } | Command::Tui => {
                     unreachable!("handled above")
                 }
             },

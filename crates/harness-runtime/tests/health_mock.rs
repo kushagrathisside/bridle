@@ -1,4 +1,4 @@
-//! Functional health checks (§44) driven by `MockProvider::scripted`. Never touches the network.
+//! Functional health checks driven by `MockProvider::scripted`. Never touches the network.
 
 use harness_core::config::ModelConfig;
 use harness_runtime::health::{

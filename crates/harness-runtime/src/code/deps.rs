@@ -1,4 +1,4 @@
-//! Declared dependencies from build manifests (M2 step 6). Pure parsing: each function takes the
+//! Declared dependencies from build manifests. Pure parsing: each function takes the
 //! text of one manifest and returns the dependencies it declares. Names are compared after
 //! normalising (case-insensitive, `-` and `_` equal), as Cargo and PyPI do.
 

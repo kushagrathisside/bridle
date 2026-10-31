@@ -1,4 +1,4 @@
-//! The temporary product identity (R-0.7).
+//! The temporary product identity.
 //!
 //! The final product name has not been chosen. Every user-visible name derived from it is defined
 //! here and nowhere else, so a rename is a one-file change (plus the `[[bin]]` name in
@@ -11,7 +11,7 @@ pub const PRODUCT_ID: &str = "local-agent";
 /// Name of the command-line binary.
 pub const CLI_NAME: &str = "agent";
 
-/// Per-repository state directory (gitignored by `agent init`, R-16.2).
+/// Per-repository state directory (gitignored by `agent init`).
 pub const STATE_DIR: &str = ".local-agent";
 
 /// Per-repository config file name, searched for from the workspace root upwards.

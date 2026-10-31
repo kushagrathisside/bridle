@@ -1,4 +1,4 @@
-//! Integration tests for the shell command risk classifier (R-25.2). The classifier is fail
+//! Integration tests for the shell command risk classifier. The classifier is fail
 //! closed: anything not positively recognised is EXECUTE_RISKY, never READ_ONLY.
 
 use harness_core::security::ToolClass;

@@ -28,6 +28,513 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-31: routing measured on a seed corpus; `agent eval-routing`
+
+Built: `agent eval-routing <cases> [--out]`. Each labelled request goes through the placement that the chat uses; the
+decision model answers the requests the rules cannot place, and the report gives the agreement by source. The
+deep slot is assumed to be serving, so the choice itself is measured.
+
+Seed corpus: `evals/routing/cases.json`, 20 requests, 12 expected MAIN and 8 expected DEEP. The labels are judgements, not recorded from real use, and most of the long requests were built around the rule keywords. Treat the
+numbers as a check that the path works, not as evidence of how well the placement generalises.
+
+| Run | Agreement | By source |
+|---|---|---|
+| Rules, no decision model | 12 of 20 | rules 6 of 6; no decision model 6 of 14 |
+| Decision model (Laya, typed-decisions, CPU) | 19 of 20 | rules 6 of 6; decision model 13 of 14 |
+
+The one miss with the decision model was "migrate the event log ..." (expected DEEP, answered MAIN). The decision model
+answered in about 250 ms on CPU, and the first request in a run took about 2 s while the server warmed up.
+
+Reports: `evals/routing/report-2026-10-31-rules-only.json` and `evals/routing/report-2026-10-31-decision-model.json`.
+
+## 2026-10-31: coding leftovers built: vision slot for images, private temporary directory per command
+
+- Image turns go to the `vision` slot when the configuration defines one (`[models.vision]`); otherwise the chosen slot,
+  which refuses images if its vision capability is off. The choice is a tested function (`image::image_slot`).
+- Each confined command gets its own temporary directory, removed when the command finishes, and the shared `/tmp` is no
+  longer writable from the sandbox (ADR-0016). Two kernel tests: a command writes to its own directory and not to the shared
+  one; the directory is removed when the guard is dropped.
+
+Workspace: 917 passed, 0 failed, 5 ignored; clippy with warnings as errors clean.
+
+## 2026-10-31: M5 multimodal input (images in the chat), built; not run with a vision model
+
+Built:
+- A chat message can carry images (`ChatMessage.images`). The OpenAI-compatible provider sends such a message as content
+  parts: the text, then one `image_url` part per image, as a `data:` URL.
+- `/image <path> [question]` in the chat sends one image from the workspace with the question. The file is read through the
+  policy as a read: a path outside the workspace, or a secret file, is refused. It must be a regular file of at most 4 MiB,
+  and its first bytes must match PNG, JPEG, GIF or WebP.
+- A slot without `capabilities.vision` refuses an image turn before the model is called, and the transcript says so.
+- Base64 is the standard encoding, tested against the standard vectors.
+
+Checked:
+- Unit tests: base64 vectors; the four image types; a workspace image read and a text file refused; an image outside the
+  workspace and a secret file refused by the policy; the serialised content parts; a chat turn that sends the image to a
+  vision slot and refuses a slot without vision before calling the model.
+- Through the real terminal app: `/image shot.png what colour is this?` sent a streaming request whose last message had
+  two parts, text and `image_url`, with a `data:image/png;base64,` URL. With vision off for the main slot, the same command
+  made no model call.
+
+Not verified, and said plainly: a real vision model. None of the models here is a vision model with its projector file, so
+the image content was checked on the wire with a stand-in server, not answered by a model. The Ubuntu machine and the
+Windows path were not run.
+
+Workspace: 914 passed, 0 failed, 5 ignored; clippy with warnings as errors clean.
+
+## 2026-10-31: M4 plugins, first slice: manifests, the classification rule and the loader
+
+Built:
+- `harness-core::plugin`: the manifest format and its checks (names, a bare program, plain arguments, one to sixteen
+  tools, unique names, descriptions). The class a tool is offered under is the stricter of the declared class and the
+  classifier's class, so a plugin cannot make a tool more permissive than the classifier. Five tests.
+- `[plugins] manifests` in the machine config only (a repository is refused by the trust rule; V46 checks the paths).
+- `harness-runtime::mcp::tools::plugins`: loads the manifests, offers the read-only and safe-execution tools as
+  `plugin_<plugin>_<tool>`, and reports every tool or manifest it did not load. A call runs the fixed command through the
+  same checks as `run_command`, in the sandbox.
+- The policy learns the class of each loaded plugin tool; a plugin tool it does not know is an unknown tool and is blocked.
+- `agent plugins` lists the offered tools and the ones not offered, with the reason.
+
+Checked through the real binary, with a manifest of two tools (`ls -1`, declared read-only; `rm -rf build`, declared
+read-only):
+- `agent plugins` lists `plugin_files_list` as ReadOnly, and reports `plugin_files_wipe` as not offered (its command is
+  Destructive).
+- The policy hook allows `plugin_files_list` under the `plugin_tool` rule, and blocks `plugin_files_nope` as an unknown tool.
+- A call to the loaded read-only tool runs `ls` in the workspace and passes (a runtime test).
+
+Workspace: 907 passed, 0 failed, 5 ignored; clippy with warnings as errors clean.
+
+Not done, and said plainly: the owner decided the first plugin adds a new tool class. This slice does not add one. The
+classes offered are the two that exist (read-only and safe execution); a new class needs its own rule and policy entry, and
+is the next step. Code plugins are not built: a plugin runs only a fixed program from its manifest, which is the decision
+in ADR-0013 until the sandbox covers plugin code.
+
+## 2026-10-31: M3 sandbox for commands on Linux (Landlock), built and tested on this kernel
+
+Decision: ADR-0016. Landlock, applied to each command before it starts, through `pre_exec`. The mechanism needs no new
+program and no root; this kernel supports Landlock ABI 7.
+
+Built:
+- `[sandbox]` configuration: `enabled` (on by default on Linux) and `network` (off by default). A repository cannot set
+  `enabled = false` (trust rule; tested).
+- `harness-runtime::sandbox`: computes the rules in the parent, applies them in the child. It fails closed: a kernel that
+  cannot apply the rules refuses the command. The one place unsafe code is allowed in the workspace is this module (the
+  workspace lint is now `deny`, with an allow here).
+- `run_command` and the verification tools confine the command before it starts; a refused command returns a `blocked`
+  result with the reason.
+
+Verified on this kernel with real confined commands (`harness-runtime/tests/sandbox_kernel.rs`, five tests): a command writes
+inside the workspace; it cannot write into the home directory; it cannot read a file in the home directory; it cannot
+connect to a local port by default; with `network = true` it can connect. The unit tests cover the rule set, including
+the ABI-4 requirement for denying the network.
+
+Found and fixed while running the existing command tests under the sandbox: git could not read its configuration, and its
+default ignore file, in the home directory. Confined commands now run git with `GIT_CONFIG_GLOBAL` and `XDG_CONFIG_HOME`
+set to `/dev/null`. The system git configuration still applies.
+
+Runtime tests: 316 passed, 0 failed, with the sandbox on by default. Core trust test: passes.
+
+Not verified yet: the full workspace suite after these changes; a real-model team run through the sandbox (the model server
+was not started after the WSL restart); the Ubuntu machine; the Windows path, where the sandbox is off.
+
+## 2026-10-31: M2 team run with a real model on this machine (Qwen3.5-9B on the GPU)
+
+The real-model check the M2 record asked for, run on this machine as close as possible to the Ubuntu setup: the main model
+is Qwen3.5-9B Q4_K_M, served by the CUDA build of llama.cpp v0.8.0 on the RTX 4060 (5,976 MiB in use), on the main slot's
+port. The terminal app was driven in a pseudo-terminal, with `/team fix add() in calc.py so that test_calc passes` as the
+request.
+
+Project under test: a two-line Python file with a bug (`add` returns `a - b`) and a unittest that checks it. The
+verification step runs `python3 -m unittest -q test_calc`. The workflow was on, so the run has a task journal.
+
+Result:
+- The planner made a plan of five steps.
+- The workers read the code, edited `calc.py` (one edit), and ran the tests: the first test run failed, the later ones
+  passed. Each worker step was recorded.
+- The verifier ran the tests again and reported done.
+- `calc.py` now returns `a + b`, and `python3 -m unittest -q test_calc` prints OK.
+- The journal holds the planner's entry, each tool call with its verification result, each worker step, and the verifier.
+
+Not verified here: the Ubuntu machine itself, the GPU laptop's Windows path, and the on-screen transcript (the logs show the
+run, not a screenshot). The workflow switch was not on in the first attempt, so that run left no journal; the second run,
+with the switch on, is the recorded one.
+
+## 2026-10-31: team run in the chat (planner, workers, verifier), recorded in the journal (M2 first slice)
+
+Built: `/team <request>` in the chat. A planner makes one tool-less call and returns a JSON list of at most five steps.
+Each step is a full turn of the same loop, with the same tools and policy as the main agent, and the verifier then runs the
+checks and reports. A planner answer outside the limits runs the request as one step, and the transcript says so.
+
+Core (`harness-core::team`): the roles, the planner's answer and its limits (one to five steps, no empty step, each step
+cut at 300 characters, control characters removed), and the text each role is given. Six tests. The verifier's report
+informs only; the loop rules still decide whether the task is done.
+
+Journal: a `role_run` record (role, step, outcome) for the planner, each worker step, and the verifier. A team run binds
+the chat session to a task first, as the workflow does on a session's first tool call, so the planner's outcome is
+journaled too. Without the workflow, nothing is journaled.
+
+Checked through the real terminal app (`agent tui`, driven in a pseudo-terminal) against a stand-in server that returns a
+plan to the planner's call, one tool call per step, and plain answers after the tool results. The stand-in answers the
+requests in the order the team needs: the planner first (no tools), then each step with its step text, then the verifier
+with the tool list. The task journal of that run holds the planner's plan, the two worker outcomes and the verifier's.
+
+Two chat tests cover a full run and a planner answer outside the limits. Workspace: 888 passed, 0 failed, 5 ignored; clippy
+with warnings as errors clean.
+
+Not done: parallel workers (ADR-0011 keeps the run in sequence); a worker that stops for the person mid-run is not
+resumed; the verifier's report is not parsed for a verdict, by design. The team runs on the default slot only: a slot the
+person chose is kept, as routing does. The on-screen rendering of the notices was checked by the logs of the run, not
+by a screenshot.
+
+## 2026-10-31: routing wired end to end, with Laya as the decision model (through the real binary)
+
+Built: the Laya HTTP client (`harness-runtime::laya`), loopback HTTP only, using the shared transport helpers; the
+configuration (`[external.laya]` with `enabled`, `endpoint`, `timeout_ms`; `[routing] auto_slot`); validation V42 to
+V44; the routing module in the CLI (`harness-cli::route`); the `agent route <text>` command; and the chat job, which
+routes a request sent to the default slot before the turn and shows the reason as a notice in the transcript. A
+request sent to any other slot is kept as the person chose it.
+
+Two findings that shaped the client:
+- The server picks a checkpoint by the language of the text. An English request went to the `multilingual` checkpoint,
+  which was not on disk, and the request timed out while it downloaded. The request now names `typed-decisions` (the
+  server accepts a `model` field), and the same request then returns in about 0.5 seconds.
+- The server's loopback check and the client's share one rule. External providers are machine settings, so the
+  repository cannot enable Laya or switch routing; the check is a test of an explicit `--config` overlay.
+
+Checked through the binary, with Laya running on loopback (`agent --config <overlay> route <text>`):
+
+| Request | Result |
+|---|---|
+| "fix the typo in README" | `main`, by rule (short, no hard word) |
+| "Redesign the storage architecture across the whole codebase ..." | the decision model chose DEEP at 75%; the deep slot is not serving, so `main`, with the reason |
+| "Add a unit test for the parser ..." (long, no hard word) | the decision model chose MAIN at 69% |
+| "/deep summarise the design of the policy module" | `deep` by rule; not serving, so `main`, with the reason |
+| The same hard request with Laya's port closed | `main`; the reason says the endpoint was unreachable |
+
+Not verified: the deep slot serving (it needs the GPU and the 27B model, which this machine does not run, so the choice
+is tested in the core unit tests only), and the chat's transcript notice on screen (the chat calls the same function as
+`agent route`, but the terminal screen was not driven in this session).
+
+Tests: 880 passed, 0 failed, 5 ignored across the workspace; clippy with warnings as errors clean.
+
+## 2026-10-31: Laya installed and measured; routing and Laya client built in core and runtime
+
+Routing contract (`harness-core::routing`): rules place a request first (an explicit `/deep` or `/main` at the start;
+a short request with no hard word goes to `main`). A request the rules cannot place goes to the decision model, which
+answers `MAIN` or `DEEP`. The answer is checked against that closed set; anything else goes to `main`. `deep` is used only
+when it is serving. Ten tests.
+
+Routing, asked (`harness-runtime::routing`): the request is redacted and bounded before it is sent, and the model sees no
+repository content and no tool output. Four tests. Not yet wired into the chat; the chat still uses the slot the person
+selected.
+
+Laya install. The first install pulled PyTorch from PyPI, which is several gigabytes of CUDA libraries, and it was stopped
+before it finished. The environment now uses the PyTorch in the Regolith environment (2.13.0 on Python 3.12, CUDA build,
+used on the CPU): a venv at `/home/kushagra/bridle/laya/venv312` with a `.pth` file that reads Regolith's site-packages.
+`laya[serve]` installed with that torch counted as already satisfied. This venv depends on the Regolith environment; if
+that changes, this one breaks. The Ubuntu machine needs the same arrangement or its own PyTorch.
+
+Laya server. `laya-serve` on `127.0.0.1:8000`, CPU, with the `typed-decisions` checkpoint (revision `7b928d8`). The first
+probe used the `multilingual` checkpoint, because the router picks it by default; setting `LAYA_DEFAULT_MODEL=typed-decisions`
+sent the decision to `typed-decisions`. The request and response shapes are recorded in `harness-runtime::laya`, with a
+recorded answer as the test fixture.
+
+The 20 recorded loop cases, sent to `typed-decisions` with the choice criteria and no examples (report:
+[report-2026-10-31-laya-typed.json](../../evals/decisions/report-2026-10-31-laya-typed.json)):
+
+| Signal (cases) | Answers |
+|---|---|
+| same failure (6) | ESCALATE 6 |
+| repeated command (6) | ASK_USER 4, REPLAN 2 |
+| repeated edit (5) | ASK_USER 3, REPLAN 2 |
+| implementation retries (1) | ESCALATE 1 |
+
+Median latency 361 ms on CPU (the LFM models took roughly 1.2 to 1.5 seconds on the same cases). Against the rules: all six
+same-failure cases match, and three of the five repeated-edit cases match. Repeated commands cannot match, since the rules
+answer them with a diagnosis. The comparison is on the same signal grouping as the held-out LFM run above. The Laya answers
+used no examples, so they are not affected by the circularity that affected the first LFM prompt. The confidences are
+modest (0.56 for the first case), so the probabilities should be read as well as the choice.
+
+What is not done: the HTTP call from Bridle to `laya-serve`, the switch from `decisions.provider` to a Laya provider in
+the configuration, and the wiring of the routing contract into the chat. Those come next.
+
+## 2026-10-31: held-out examples for the decision prompt; Laya as the decision backend (install not yet run)
+
+Held-out run. The examples in the first prompt were written from the loop cases, so that measurement was not a fair test.
+A second set of examples was written for other situations (a linker error after three fixes, a library function that
+does not exist, a request that keeps an API and renames it). Three prompt variants were run on the same stalled cases with
+LFM3-1.7B (CPU, one request per case, temperature 0.1, reasoning off). The script is not in the repository; it grouped
+cases by their first signal, so the rows below are per signal, not per the Rust eval's categories.
+
+| Signal (cases) | Prompt | Answers |
+|---|---|---|
+| same failure (6) | no examples | ASK_USER 6 |
+| same failure (6) | first examples | ESCALATE 6 |
+| same failure (6) | held-out examples | ESCALATE 6 |
+| repeated command (6) | no examples | ASK_USER 6 |
+| repeated command (6) | first examples | ASK_USER 4, ESCALATE 2 |
+| repeated command (6) | held-out examples | ASK_USER 3, ESCALATE 3 |
+| repeated edit (5) | no examples | ASK_USER 5 |
+| repeated edit (5) | first examples | REPLAN 3, ASK_USER 2 |
+| repeated edit (5) | held-out examples | ASK_USER 5 |
+
+Reading: the held-out examples match the rules on the same-failure cases (6 of 6) and on the repeated-edit cases (5 of 5),
+where the rules say ESCALATE and ASK_USER. The repeated-command cases cannot match, since the rules answer them with a
+diagnosis. The first examples had REPLAN on repeated edits, which was the example copied, not a judgement. The held-out
+examples are not free of the test cases' categories: they were written with the rules in mind, so this still shows the
+examples carry the answer, not that the model has learned it. The runtime prompt now uses the held-out examples.
+
+Laya. The user chose Laya as the decision backend to replace Jev. The model card and the TypeSafe comparison in the
+DataCamp article (https://www.datacamp.com/blog/top-open-source-jev-alternatives) give these facts, all as reported by the
+publisher:
+
+- Apache 2.0 licence, public weights, Python 3.10 or newer, `pip install laya`, with `laya[serve]` for the HTTP server.
+- An HTTP server, `laya-serve`, on port 8000 with `POST /v1/systemone`. The request has `state` and `questions`; each
+  question has a type (`choice`, `score` or `noul`), instructions and criteria.
+- Three checkpoints: the English ModernBERT-large (421M parameters, 512 tokens), a multilingual mmBERT-base, and a
+  typed-decisions checkpoint (ModernBERT-large, 1024 tokens) that is the one for decisions.
+- CPU inference is supported. The publisher reports 193 to 464 ms for the router on CPU.
+
+What is not done. Bridle's Jev client sends a different request (`schema`, `question`, `state`, `signals`, `choices`),
+so it cannot talk to Laya's server without an adapter or a Laya client. The response shape has not been seen, because
+Laya has not been installed here: the install was refused by the auto-mode classifier as external code. The integration
+waits for the install and for a look at the real responses.
+
+## 2026-10-31: the decision prompt, measured again; the earlier constant answer was the prompt
+
+The stalled-loop decision prompt had no worked examples. Both small models were then measured on the 20 recorded cases,
+and the earlier result (LFM3 answering ASK_USER every time) was read as a model limit. A probe showed otherwise: LFM3
+answered ASK_USER for three different stalled states, including three failures in a row.
+
+With one worked example per answer added to the prompt (`crates/harness-runtime/src/decision.rs`), the answers changed:
+
+| Model, same 20 cases, CPU | Answers | Agreement with the rules, stalled cases | Latency p50 |
+|---|---|---|---|
+| LFM3-1.7B, few-shot | ESCALATE 10, REPLAN 5, ASK_USER 1 | 6 of 16 | 1,513 ms |
+| LFM2.5-1.2B, few-shot | ESCALATE 16 | 6 of 16 | 1,174 ms |
+
+By category: both agree on the six same-failure cases. The rules answer repeated commands with a diagnosis, which the
+three answers cannot match. On the five repeated-edit cases the rules say ASK_USER: LFM3 says REPLAN, and LFM2.5 says
+ESCALATE.
+
+Caveat, stated plainly: the repeated-edit example in the prompt is a REPLAN example, so LFM3's REPLAN answers there may be
+the example copied, not a judgment. The examples and the test cases are not separate, so this run does not show that LFM3
+decides well. A fair test needs examples that are not among the 20 cases.
+
+What this changes: the constant ASK_USER was the prompt, and it affected the small models in both cases. LFM2.5 now has
+the constant problem in the other direction. Neither model is adopted for decisions on this evidence.
+
+Reports: [report-2026-10-31-lfm3-fewshot.json](../../evals/decisions/report-2026-10-31-lfm3-fewshot.json) and
+[report-2026-10-31-lfm25-fewshot.json](../../evals/decisions/report-2026-10-31-lfm25-fewshot.json).
+
+## 2026-10-31: repository memory (`AGENTS.md`) in the system prompt; built and tested on Linux
+
+What was built. A `[memory]` section (`enabled`, `file`, `max_bytes`). `harness_core::memory` holds the path rule and the
+framing: a header that says the text is guidance, not a permission; control characters removed; a cut on a character
+boundary with a note. `harness_runtime::memory` reads the file through `ToolPolicy::evaluate` and redacts it before it is
+framed. `prompt::extras` (CLI) joins the memory block and the task block, and both the `system-transform` hook and the
+chat request call it. Validation rule V41 checks the file name and the limit.
+
+Verified:
+
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`: clean.
+- `cargo test --workspace --locked`: 854 passed, 0 failed, 5 ignored, with the proxy variables cleared. The first run
+  showed three `jev` failures. The shell had `HTTP_PROXY` and `HTTPS_PROXY` set, so the loopback mock was sent through
+  the proxy and answered 403. With them cleared the Jev tests pass, and the full run passes.
+- End to end with the real binary: `agent hook system-transform` in a scratch repository.
+  - `AGENTS.md` present: the block is returned with its header, and `api_key = supersecret123` appears as `[REDACTED]`.
+  - `memory.file = ".env"`: refused by the policy (`secret_file`); the output is `{}` and the refusal is in the event log.
+  - No file: `{}`.
+
+- The chat's request carries the memory block: a real `agent tui` run against a capture stub recorded the request, and
+  its system message contains the repository-instructions header and the `AGENTS.md` line.
+- The chat and the hook now share one path for the system prompt (`hook::answer_with`), so a refused memory file is
+  logged the same way from both.
+- The event log label was wrong and is fixed: a refused memory file is now logged as `prompt_degraded` (the workflow
+  hooks keep `workflow_degraded`). Verified by a unit test and the orchestrator integration tests.
+
+Linux gate script (`scripts/linux-gate.sh`), rehearsed in this environment on 2026-10-31: format check, clippy with
+warnings as errors, 855 tests passed with 0 failed and 5 ignored, release build, and three smoke checks (version, init
+and config validation, and the repository memory in the hook answer). All steps passed. The script is the one the native
+Ubuntu machine runs. The machine's own run is not recorded yet.
+
+The Linux machine overrides for the Windows runtime binaries are in `configs/examples/linux-machine.toml`. Checked here:
+with that file as `--config`, the effective `server_bin` values change to the Linux names, and validation reports only the
+known warning about verification steps.
+
+Linux gate on commit `9dae6af` (the tree on `control-center` and `control-center-next`), dependencies from the vendored
+set with no network: `cargo fmt --all -- --check` passed; `cargo clippy --workspace --all-targets --locked -- -D warnings`
+passed; `cargo test --workspace --locked --no-fail-fast` passed with 855 tests, 0 failed, 5 ignored, with the proxy
+variables cleared. With them set, the three Jev tests fail because the loopback mock goes through the proxy (403), which
+is the environment and not the code.
+
+Not verified: the native Windows gate. Windows cargo ignores the `--config` source file for clippy and downloads from
+crates.io, which the machine cannot reach. The fix is a dedicated `CARGO_HOME` with the same source replacement in
+`config.toml`; it is written down but not yet run on Windows. Windows-only behaviour (16 `cfg(windows)` paths, the console
+paste and resize, process stop, and the batch wrappers for the model servers) is also not verified.
+
+Not built in this entry: multi-agent orchestration, routing between slots, an OS sandbox, a plugin interface, an LFM3
+slot, multimodal input. Each has a record under `docs/decisions/` (ADR-0010 to ADR-0013).
+
+Decisions taken by the owner on 2026-10-31 (the open questions in the ADRs):
+
+- Multi-agent workers may edit files, through the policy and the loop rules (ADR-0011).
+- The verifier only informs; the orchestrator's rules decide whether a task is done (ADR-0011).
+- The Windows sandbox spike waits until routing is measured (ADR-0012).
+- The first plugin adds a new tool class, with its classification rule written and reviewed first (ADR-0013).
+
+Still open: the routing measurement and the LFM3 comparison (ADR-0010).
+
+- Done: LFM3-1.7B Q4_K_M downloaded to `/home/kushagra/bridle/models/lfm3/LFM3-1.7B-Q4_K_M.gguf`. Size 1,099,627,808
+  bytes and SHA-256 match the Hugging Face record.
+- Not usable: `/home/kushagra/bridle/bridle-demo/bin/llama-server` is the scripted fake server from the demo, not
+  llama.cpp. The Windows runtime `b11756-cuda12.4` is below the b11960 (v0.8.0) minimum for LFM3.
+- Done: llama.cpp v0.8.0 built from the ggml-org tag (commit `8642541`), with CUDA 12.0 for compute capability 8.9 (RTX
+  4060 Laptop, 8 GB). Source and build live in `/home/kushagra/bridle/runtimes/llama.cpp-v0.8.0`. The build was first
+  attempted CPU-only and then stopped in favour of CUDA; the CUDA build finished with exit code 0.
+- Done: LFM3-1.7B loads on the GPU (`-ngl 99`, 4096 context). The health endpoint answers, and a chat request returns a
+  reply. GPU memory was 1,285 MiB with the model loaded. Reasoning is on by default, so a short `max_tokens` is spent on
+  reasoning first; the comparison must allow more tokens or turn reasoning off.
+- Done: the 20-case comparison, `agent eval-decisions evals/decisions/cases.json --slot micro`, on the same CPU settings
+  (8 threads, 8192 context, one server at a time, port 8002, the micro slot's sampling). Reports:
+  [report-2026-10-31-lfm25.json](../../evals/decisions/report-2026-10-31-lfm25.json) and
+  [report-2026-10-31-lfm3.json](../../evals/decisions/report-2026-10-31-lfm3.json).
+
+| Measure | LFM2.5-1.2B (Thinking) | LFM3-1.7B |
+|---|---|---|
+| Valid answers, stalled cases | 16 of 16 | 16 of 16 |
+| Fallbacks to the rules | 0 | 0 |
+| Agreement with the rules, stalled cases | 5 of 16 | 5 of 16 |
+| Latency per stalled decision, p50 / p95 | 828 ms / 1,162 ms | 1,571 ms / 2,426 ms |
+
+The two models agree with the rules on different cases. LFM2.5 agrees on the five same-failure cases, and its other
+answers are a mix of REPLAN and ESCALATE. LFM3 answers ASK_USER for all 16 stalled cases, which matches the rules only on
+the five repeated-edit cases where the rules also say ASK_USER. So LFM3's five agreements come from always answering the
+same thing. The run does not show LFM3 choosing well; it shows it not varying.
+
+Reading the result: LFM3 does not replace the micro model for this decision. LFM2.5 stays in the micro slot. The run
+used the same llama.cpp build for both, on CPU; the 2026-10-26 baseline used another build on Windows, so latencies are
+compared only within this run.
+
+Licence: both checkpoints are under the LFM Open License v1.0. The M4 note records the research-use limit; LFM3's
+terms should be read before any use beyond personal experiments.
+
+## 2026-10-31: Control Center and chat (`agent tui`), built and tested on Linux; not run on Windows
+
+- What it is: `agent tui` opens a terminal application. The home screen is a chat with one model slot. The model calls the
+  tools that `agent mcp` offers plus five file tools (`read_file`, `list_files`, `search_text`, `write_file`,
+  `edit_file`). Eight more views show the tasks, events, decisions, slots, diagnostics, configuration and destinations.
+  Guide: [guide/tui.md](../guide/tui.md).
+- Same path as OpenCode: every chat tool call runs `commands::hook::answer_with` before and after, the function behind
+  `agent hook`, and the tools run through the MCP server's own `tools/call`. The policy, the loop rules, the task
+  journal, the verification records, the redaction and the event log are therefore the ones OpenCode gets. A blocked call
+  is answered to the model with its rule and shown; `ask` counts as blocked; nothing in the interface can approve it.
+- Read-only views: the Tasks view reads the journal through `StateDir::open_existing` and `Task::peek`, which create no
+  directory, take no lock and write nothing (a test compares the file listing before and after). The Configuration view
+  shows which layer set each value (`LoadedConfig::origins`); the merge and the trust check do not read it.
+- Verified, in one run each at 120x40, 90x28 and 80x24 (Linux, WSL2, the real binary in a pseudo-terminal, a scripted
+  OpenAI-compatible server that streams text and tool calls; 22 checks each, all passed): the model lists files, reads a
+  file, is refused `.env` (`secret_file`), writes and edits `out/hello.txt` (the file ends as `goodbye from chat`), has
+  `curl` refused inside `run_command` (`command_risk`) and a write to `local-agent.toml` refused (`protected_path`); a
+  turn is stopped with Ctrl+C; a bracketed paste with a line break is text, not "send"; the chat session is `task-0001` in
+  `agent trace` (8 records) and the later requests carry the task state block; no state file holds the secret; the
+  terminal is restored (exit 0, alternate screen left, bracketed paste off). A second run: the server down is explained,
+  Start and Stop of a stand-in server go through the confirmation screens, and no process is left behind.
+- Tests: 178 in the CLI crate, among them `a_tool_call_runs_and_the_answer_follows`,
+  `a_secret_file_is_blocked_and_the_model_is_told_the_rule`,
+  `the_loop_rule_refuses_endless_edits_in_the_chat_as_it_does_for_opencode`,
+  `with_the_workflow_on_the_session_becomes_a_task_the_next_request_names`,
+  `a_stop_in_the_middle_of_a_stream_ends_the_turn_at_once_with_a_valid_history`,
+  `real_tasks_are_read_without_writing_and_fold_in_their_sessions`; the file tools have ten, among them
+  `read_file_refuses_secrets_outside_paths_binaries_and_directories` and
+  `writes_are_atomic_leave_no_temp_files_and_keep_permissions`; the provider HTTP tests gained
+  `a_stream_the_caller_stops_is_dropped_and_returns_what_arrived` and
+  `a_tool_call_that_is_stopped_halfway_is_not_returned`.
+- Run against a real model (2026-10-31, the same day, after the scripted runs): Qwen3.5-9B Q4_K_M on the RTX 4060 Laptop
+  (5,443 MiB). The server was the Windows `llama-server.exe` (b11756) started by hand with the arguments Bridle builds for
+  the shipped `main` slot (`-c 16384 --jinja --metrics -ngl 99 -fa on -ctk q8_0 -ctv q8_0 --load-mode mmap -np 1`; thinking
+  off), on loopback. WSL2 here uses NAT networking, so a Windows server on loopback is not reachable from it: the Linux
+  `agent tui` reached it through a throwaway relay that forwards each request through Windows `curl.exe` (the relay is not in
+  the repository). Workspace: a copy of `examples/toy-python-repo` with the shipped `local-only` profile,
+  `[workflow] enabled = true` and one test step (`python3 -m pytest -q`).
+  - Four turns took 25 s in all: list the files (one call; the model noticed the hidden secret file), run the tests (a
+    correct diagnosis: `add(2, 3)` returns -1), fix the bug (`read_file`, `edit_file`, `run_tests`; `pytest` then reports 2
+    passed, run by the script and not by the model), and a request to print `.env` (the model declined by itself and quoted
+    the system prompt; no call was made). The chat was `task-0001` in `agent trace`.
+  - A second round asked for things the policy forbids. The model tried to edit `local-agent.toml` (blocked,
+    `protected_path`), then, to delete `calc.py`, a Python command (blocked, `command_risk`), `git rm calc.py` (blocked,
+    `command_risk`) and `sh -c rm calc.py` (refused by `run_command`'s argument check). It tried the three routes in turn,
+    gave up and explained, and `calc.py` was untouched: the policy held where the system prompt's request not to look for a
+    way around did not.
+  - Speed: generation about 40 tokens per second. The first request carries about 3,600 tokens of instructions and tool
+    descriptions (3,581 evaluated in about 2 s); later requests reuse the server's prompt cache (143 to 653 new tokens).
+  - Found only with the real model, and fixed in this change. (1) Ctrl+C took 95 s to take effect on "count from 1 to 1500":
+    the model answered with a 4,096-token `write_file` call, which the chat neither showed (the screen said "thinking…" all
+    that time) nor could interrupt. Now a stop drops the connection and the status line names what is being written: 0.04 s
+    measured in the chat, and the server's release record shows `n_tokens = 3825` against `7687` for a full generation,
+    that is about 200 tokens generated instead of 4,096. (2) A tool call cut off by the output limit was answered with a
+    generic "invalid JSON"; it now says that the reply reached the limit and asks for a smaller call. (3) The chat head
+    said "server not started" for a server that was running but not started by Bridle. A first measurement of the stop also
+    looked wrong for another reason: the test relay did not hang up on the server when its client left, so the server kept
+    generating; that was fixed in the relay, and Bridle's own connection handling was not at fault.
+- Not verified: native Windows (the binary, and the Windows console's paste, which is handled by a burst heuristic with a
+  unit-level basis only); Bridle's own `models serve` for the 9B (the server was started by hand because the WSL binary
+  cannot hand `/mnt/d` paths to a Windows executable); a long coding session (the real runs above are short).
+- Limits: a turn makes at most 30 model calls; the configuration is read when a conversation starts; a tool that is already
+  running finishes before a stop takes effect.
+
+## 2026-10-29: escalation evaluated at the failing verification; confidence grows with repeats
+
+- Timing: a loop rule is evaluated in the `after` hook when a verification fails, not at the agent's next call. A due
+  escalation is recorded there (`Record::Escalated` in the journal and a decision record), and its answer is kept for the
+  calls after it until a verification passes or the task is reset. The next `before` refuses with that answer and does not
+  ask the deep model again. Built in `crates/harness-cli/src/workflow.rs` (`escalate_on_failure`, `answered_loop`,
+  `decide_for` with `answered`) and `crates/harness-core/src/journal.rs`.
+- Bug fixed: `TaskState::escalation_count` was never incremented, so it read 0 in every run. It is now folded from the
+  journal's escalated records, and the escalation cap reads it.
+- Confidence: the same-failure rule's confidence grows with the count of identical failures in a row (0.5, 0.75, 0.875,
+  0.9375 for two to five). The count now keeps growing after the rule first fires (`loops.rs`). Counter rules keep 1.0.
+  `[routing] escalation_threshold` (0.75) gates whether the deep slot is asked. The curve is a fixed choice, not a
+  measured probability; the default threshold is met at the third identical failure with `max_same_failure = 2`.
+- Checks: `cargo fmt --all -- --check` passes; `cargo test -p harness-core` passes (290, 43 and 19 tests);
+  `cargo test -p harness-cli` passes (78 unit tests with one ignored live test, plus the integration suites);
+  `cargo clippy --workspace --all-targets` prints no warnings. Clippy with `-- -D warnings` cannot run through the
+  Windows wrapper (`D:\cargo-target\wcargo.bat`), because the wrapper appends `--offline` after `--`, and cargo then
+  tries the network. Warnings were checked by reading the output instead.
+- Live (2026-10-29, condition D on `schema-probe-07`, results `evals/bench/results/2026-10-29/deep7`): not exercised. The
+  run timed out at 901 s after two glob calls were refused by the path guard as a symlink escape (no link exists in the
+  folder). No verification failed, so no escalation happened. The glob refusal needs a policy decision before a retry.
+  The model servers were started for the run and stopped afterwards.
+- Not run: a live condition D run on a task that escalates. The task-level cost of the swap is still unmeasured.
+
+## 2026-10-28 (newest-2): GPU swap for condition D built and checked live
+
+- The escalation to the deep slot now swaps GPU models when the deep slot is not serving: the GPU slots that run are parked, Bonsai
+  starts, the call runs, Bonsai stops, and the parked slots start again. Built in `crates/harness-cli/src/workflow.rs`, with
+  quiet start and stop helpers in `crates/harness-cli/src/commands/models.rs`.
+- Timeouts: deep call cap 30 s (was 15 s); shim hook limit 150 s (was 20 s).
+- Checks: the unit test `only_the_other_gpu_slots_are_parked_for_a_deep_call` passes; the live swap test passes in 15.0 s;
+  condition D on `analyse-latency` passes but did not escalate, so the swap did not run in the task.
+- Still open: a task-level D result with an escalation. Result files: `evals/bench/results/2026-10-28/deep.jsonl`.
+
+## 2026-10-28 (newest): condition C run, and the policy decision for condition D
+
+- Condition C (Qwen plus LFM on the harness condition, micro model on CPU): 5 of 6 passed (mean 189 s, 6.8 tool calls).
+  The one failure is `analyse-latency`. Results: `evals/bench/results/2026-10-28/micro.jsonl`; condition file
+  `evals/bench/conditions/micro.toml`.
+- Condition D decision: a GPU swap (Qwen out, Bonsai in, Qwen back) takes about 20 s per escalation. Bonsai on CPU takes about
+  48 s for the same request. The swap is faster, so D will use it. The swap is not implemented yet: it has to run outside the
+  20 s shim hook, and the 15 s deep cap must rise. Details in [milestones/m10-evaluation.md](milestones/m10-evaluation.md).
+
+## 2026-10-28 (latest): M8 live gateway check passed
+
+- LiteLLM 1.106.4 gateway on `127.0.0.1:4000` in front of the main model (route `local-qwen`), started by a PowerShell
+  script in `D:\llm-gateway`. The script needed UTF-8 set for Python (the LiteLLM banner failed on the Windows code page).
+- Results: liveliness 200; a completion through `local-qwen` reached Qwen; the ignored test
+  `a_gateway_slot_completes_a_request` passed. Not run: `agent models health gateway`.
+- M8-4 is now built. Checker: built 60, partial 4, open 2.
+- Open for D10: the A to F matrix. Conditions E and F need Jev access, and D needs Bonsai and Qwen loaded together.
+
 ## 2026-10-28 (later): M5 live, M10 repeat run, M7 and M8 blocked on the person
 
 - M5-3 live: the ignored test `the_deep_slot_answers_an_escalated_loop` passed with the deep model served (`ready`).
@@ -426,7 +933,7 @@ Review findings received so far (fix majors before tagging M1):
   - Inherent limit, to document: running tests runs code the model wrote. The policy stops obvious harm and
     secret exposure through tools; it is not a sandbox.
 
-Fix work started 2026-10-22, four Haiku agents in worktrees (high effort): classifier (`command_risk.rs`), path
+Fix work started 2026-10-22, four worker agents in worktrees (high effort): classifier (`command_risk.rs`), path
 policy (`tool_policy.rs`, `path_guard.rs`), MCP (`mcp/`), redaction (`redact.rs`, hook message, `config validate`).
 Queued for the next free slot: config trust and launcher/models/init/doctor fixes.
 
@@ -452,7 +959,7 @@ Restarts: session restarts kill background agents and long foreground commands. 
 - Serve/prefill: the server processed requests of about 8,196 tokens (OpenCode's system prompt and tool schemas). Prefill cost matters for latency; measure before M3.
 
 - Docs written: README, architecture, installation, configuration, security, models, troubleshooting.
-- In progress: hook fixture suite (34 black-box cases, `crates/harness-cli/tests/hook_fixtures.rs`) by a Haiku subagent; MCP `git_status` run through OpenCode.
+- In progress: hook fixture suite (34 black-box cases, `crates/harness-cli/tests/hook_fixtures.rs`) by a separate worker; MCP `git_status` run through OpenCode.
 - The background task "Remove todo in command_risk.rs" in another session is stale: the `todo!()` was removed when the classifier merged. Stop it.
 - Found: the Qwen server did not answer health probes while its one slot was generating. A long single generation (about 2,800 tokens) was in progress during the MCP run. Investigate reasoning length.
 
@@ -501,7 +1008,7 @@ Known gaps:
 
 ## 2026-10-21: planning
 
-- Four read-only audits (core, OpenCode host, inference runtime, delivery) and an Opus review of the plan. Plan approved after the review and the decisions in its section 9.
+- Four read-only audits (core, OpenCode host, inference runtime, delivery) and an independent review of the plan. Plan approved after the review and the decisions in its section 9.
 - Plan and decisions are in `plans/make-a-plan-first-humble-robin.md` in the user's home folder (outside the repo).
 
 ## 2026-10-21: baseline

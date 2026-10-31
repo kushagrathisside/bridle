@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Checks the project checklist against the code (M11).
+"""Checks the project checklist against the code.
 
 Every row of docs/status/checklist.md has an id, a stage, an item, a status and evidence. For a row marked `built` or
 `partial` this script verifies the evidence exists:

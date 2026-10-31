@@ -10,5 +10,6 @@ pub mod hook;
 pub mod init;
 pub mod mcp;
 pub mod models;
+pub mod plugins;
 pub mod subagent;
 pub mod task;

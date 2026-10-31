@@ -1,0 +1,215 @@
+{
+  "model": "lfm3-1.7b",
+  "summary": {
+    "cases": 20,
+    "stalled": 16,
+    "model_answers": 16,
+    "fallbacks": 0,
+    "answers_allowed": 16,
+    "agreements": 5,
+    "latency_p50_ms": 1571,
+    "latency_p95_ms": 2426
+  },
+  "rows": [
+    {
+      "name": "same failure, guard test, three runs",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "AskUser",
+      "model_reason": "The loop has stalled after two failures and no refusals; need user input to decide next step (e.g., retry, change approach, or escalate).",
+      "agrees": false,
+      "latency_ms": 2072
+    },
+    {
+      "name": "same failure, unit test after a fix",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "AskUser",
+      "model_reason": "The loop has stalled after three consecutive failures and one refusal; need user input to decide next step (e.g., retry, change approach, escalate).",
+      "agrees": false,
+      "latency_ms": 1833
+    },
+    {
+      "name": "same failure, two failures per run",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "AskUser",
+      "model_reason": "Verification failed repeatedly; need user input to resolve the blocker.",
+      "agrees": false,
+      "latency_ms": 1199
+    },
+    {
+      "name": "same failure, import error",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "AskUser",
+      "model_reason": "The loop has stalled after two failures and no refusals; need user input to decide next step (e.g., retry, change approach, or escalate).",
+      "agrees": false,
+      "latency_ms": 1821
+    },
+    {
+      "name": "same failure, lint finding",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "AskUser",
+      "model_reason": "Loop stalled after run_linter; need user input to decide next step or resolve the blocker.",
+      "agrees": false,
+      "latency_ms": 1420
+    },
+    {
+      "name": "same failure, after two edits",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "AskUser",
+      "model_reason": "Three consecutive failures after editing calc.py suggest the bug is still unresolved; need user input to decide next debugging step.",
+      "agrees": false,
+      "latency_ms": 1522
+    },
+    {
+      "name": "repeated command, unittest",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "AskUser",
+      "model_reason": "The repeated bash command 'python -m unittest' suggests the test run is stuck or failing; I need to know what output/error you saw and whether to retry, debug, or change the command.",
+      "agrees": false,
+      "latency_ms": 2074
+    },
+    {
+      "name": "repeated command, build",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "AskUser",
+      "model_reason": "The previous 'bash: cargo build' command did not produce expected output or indicate success, so I need to know what the user wants to do next (e.g., debug, retry, or proceed with a different step).",
+      "agrees": false,
+      "latency_ms": 2177
+    },
+    {
+      "name": "repeated command, install",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "AskUser",
+      "model_reason": "The previous bash command (pip install -e ...) appears to have stalled or failed repeatedly; I need to know what the user wants to do next—whether to retry, diagnose the error, or take a different app",
+      "agrees": false,
+      "latency_ms": 2426
+    },
+    {
+      "name": "repeated command, make",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "AskUser",
+      "model_reason": "The previous 'bash: make test' command stalled the loop; need user input to decide next step (e.g., rerun, debug, or change approach).",
+      "agrees": false,
+      "latency_ms": 2021
+    },
+    {
+      "name": "repeated command, formatter",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "AskUser",
+      "model_reason": "The previous `bash: cargo fmt` command completed but did not resolve the issue; need user input to decide next steps (e.g., run tests, check formatting errors, or proceed with other tasks).",
+      "agrees": false,
+      "latency_ms": 2033
+    },
+    {
+      "name": "repeated edit, calc.py",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "AskUser",
+      "model_reason": "Repeated edits to calc.py without resolution or clear next steps; need user input to decide how to proceed.",
+      "agrees": true,
+      "latency_ms": 1571
+    },
+    {
+      "name": "repeated edit, README",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "AskUser",
+      "model_reason": "The loop stalled after editing README.md; need user input to decide next step.",
+      "agrees": true,
+      "latency_ms": 1367
+    },
+    {
+      "name": "repeated edit, test file",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "AskUser",
+      "model_reason": "Repeated edits to test_calc.py caused a stalled loop; need user input to decide next concrete change or fix.",
+      "agrees": true,
+      "latency_ms": 1549
+    },
+    {
+      "name": "repeated edit, module",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "AskUser",
+      "model_reason": "Repeated edits to src/lib.rs caused a stalled loop; need user input to decide next concrete change or resolution.",
+      "agrees": true,
+      "latency_ms": 1502
+    },
+    {
+      "name": "repeated edit, utilities",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "AskUser",
+      "model_reason": "Stalled edit on utils.py after two iterations; need user input to decide next concrete change or resolution.",
+      "agrees": true,
+      "latency_ms": 1415
+    },
+    {
+      "name": "iteration limit reached",
+      "stalled": false,
+      "rules": "TaskBlocked",
+      "source": "rules",
+      "model": null,
+      "model_reason": null,
+      "agrees": null,
+      "latency_ms": 0
+    },
+    {
+      "name": "implementation retries exceeded",
+      "stalled": false,
+      "rules": "Escalate",
+      "source": "rules",
+      "model": null,
+      "model_reason": null,
+      "agrees": null,
+      "latency_ms": 0
+    },
+    {
+      "name": "iteration limit with a repeated command",
+      "stalled": false,
+      "rules": "TaskBlocked",
+      "source": "rules",
+      "model": null,
+      "model_reason": null,
+      "agrees": null,
+      "latency_ms": 0
+    },
+    {
+      "name": "retries exceeded with a same failure",
+      "stalled": false,
+      "rules": "Escalate",
+      "source": "rules",
+      "model": null,
+      "model_reason": null,
+      "agrees": null,
+      "latency_ms": 0
+    }
+  ]
+}

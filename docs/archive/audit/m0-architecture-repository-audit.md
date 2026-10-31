@@ -184,7 +184,7 @@ There is none yet. The design:
 | K-17 | Shell risk classification across bash and PowerShell (`-EncodedCommand`, `iex`, chaining) | High | High | Conservative: unrecognised commands → `ask`. Explicit allow-list for EXECUTE_SAFE. Compound commands are classified by their riskiest segment. |
 | K-18 | **New (D-1):** hook bridge latency and availability (process spawn per hook) | Med | Med | Measure in M1. Fail closed for policy hooks. Daemon fallback behind the same JSON contract (ADR-0001). |
 | K-19 | **New:** the repo and `target/` sit on the WSL disk, which is on C: (60 GB free) | Med | Low | Use `cargo clean` hygiene. Windows builds use `CARGO_TARGET_DIR=D:\cargo-target\harness`. No weights in WSL (D-2). |
-| K-20 | **New:** subagent-written code quality (D-3) | Med | Med | Opus writes interfaces and acceptance tests first. Every change is reviewed and must pass fmt, clippy and tests before commit. |
+| K-20 | **New:** delegated-work code quality (D-3) | Med | Med | Interfaces and acceptance tests are written first. Every change is reviewed and must pass fmt, clippy and tests before commit. |
 
 ## 10. Recommended implementation sequence
 

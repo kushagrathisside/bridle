@@ -1,4 +1,4 @@
-//! Capability-based model registry (§7, §55).
+//! Capability-based model registry.
 //!
 //! The registry answers "which configured model can do X?" from roles and advertised capabilities,
 //! never from model names, so replacing Qwen/LFM/Bonsai is a config change.

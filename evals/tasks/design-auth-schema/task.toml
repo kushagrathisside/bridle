@@ -1,0 +1,4 @@
+id = "design-auth-schema"
+title = "Design the SQLite schema of a user authentication system"
+category = "design"
+prompt = """Read README.md. Write schema.sql with the SQLite schema it specifies: five tables with the columns, keys, uniqueness and cascade rules it lists. Store no plaintext password and no raw session or reset token. When schema.sql is written, check that it loads with python -c "import sqlite3; sqlite3.connect(':memory:').executescript(open('schema.sql').read())"."""

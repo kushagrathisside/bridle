@@ -1,11 +1,8 @@
-# Module: index of the module pages
+# Module reference
 
 Code-level reference for the three crates of the Bridle harness, one page per module group. Each page lists the
 public items of its modules, the rules the code enforces, the tests that cover them, and the known gaps. These
 pages describe code; they do not set policy. The system view is in [architecture.md](../../concepts/architecture.md).
-
-> **Status:** Covers the code as of milestone M2 (tagged `m2`, 2026-10-22). Verified status lives in
-> [progress.md](../../status/progress.md); where a page and that log disagree, the log wins.
 
 ## Responsibilities
 
@@ -15,11 +12,11 @@ pages describe code; they do not set policy. The system view is in [architecture
 | [core-security.md](core-security.md) | `harness-core` | `security`: path guard, redaction, command classifier, tool policy |
 | [runtime-providers.md](runtime-providers.md) | `harness-runtime` | `providers` (trait, OpenAI-compatible, llama.cpp, mock) and `http` |
 | [runtime-serving.md](runtime-serving.md) | `harness-runtime` | `launcher`, `health`, `manifest`, `sysprobe`, `event_log` |
-| [runtime-mcp.md](runtime-mcp.md) | `harness-runtime` | `mcp`: JSON-RPC protocol and the MCP tools (M1 and M2) |
+| [runtime-mcp.md](runtime-mcp.md) | `harness-runtime` | `mcp`: JSON-RPC protocol and the MCP tools |
 | [cli-commands.md](cli-commands.md) | `harness-cli` | The `agent` commands and the `App` context |
 | [cli-host-opencode.md](cli-host-opencode.md) | `harness-cli` | OpenCode adapter, hook protocol, `opencode.json` generation, the TypeScript shim |
-| [orchestrator.md](orchestrator.md) | `harness-core`, `harness-runtime`, `harness-cli` | Task, journal, loops, decisions, state store, hook and `agent task` glue (M3) |
-| [context.md](context.md) | `harness-core`, `harness-cli` | Context policy, the per-request transforms and the task block for the system prompt (M6) |
+| [orchestrator.md](orchestrator.md) | `harness-core`, `harness-runtime`, `harness-cli` | Task, journal, loops, decisions, state store, hook and `agent task` glue |
+| [context.md](context.md) | `harness-core`, `harness-cli` | Context policy, the per-request transforms and the task block for the system prompt |
 
 ## Behaviour
 
@@ -42,7 +39,7 @@ OpenCode  ──stdio MCP──▶  agent mcp
 Conventions the code follows:
 
 1. Fail closed. A policy hook that cannot answer blocks the call. An unparseable command is classed as risky.
-   Only an explicit Allow passes; Ask is treated as a denial (decision D3).
+   Only an explicit Allow passes; Ask is treated as a denial.
 2. No panics in non-test code. Errors are values; telemetry I/O errors never stop the agent.
 3. Pure functions for anything testable: argv building, parsers, classification, config merging. I/O sits at the
    edges.
@@ -63,12 +60,9 @@ module they cover.
   (tree-sitter code intelligence, [ADR-0003](../../decisions/0003-tree-sitter-for-code-intelligence.md)),
   `harness_runtime::code::deps` (manifest parsing) and `harness_runtime::artifacts` (result-file summaries).
   [runtime-mcp.md](runtime-mcp.md) lists the tools that use them.
-- Update a page in the same commit as the behaviour change it describes. Each page lists its open findings. When
-  a finding is fixed, remove it from the page and record the fix in [progress.md](../../status/progress.md).
+- Each page lists its open findings. When a finding is fixed, remove it from the page.
 
 ## Related
 
 - Concepts: [architecture.md](../../concepts/architecture.md), [security.md](../../concepts/security.md)
 - Decisions: [docs/decisions/](../../decisions/)
-- Requirements: [requirements-traceability.md](../requirements-traceability.md)
-- Status: [progress.md](../../status/progress.md)

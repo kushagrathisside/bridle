@@ -6,7 +6,7 @@
 //! the user has since edited is only replaced with `--force`.
 //!
 //! Machine mode (`--machine`) writes the machine-level config with model/runtime directories and
-//! the OpenCode binary path (directive D-2: weights live wherever the user says, e.g. `D:\models`).
+//! the OpenCode binary path (weights live wherever the user says, e.g. `D:\models`).
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -107,7 +107,7 @@ pub fn run(
     let shim = SHIM_TEMPLATE.replacen(SHIM_BIN_PLACEHOLDER, &bin_literal, 1);
     write_host_files(&ws, &app.state_dir(), &oc_text, &shim, args.force)?;
 
-    // 3. Keep harness state out of git (R-16.2).
+    // 3. Keep harness state out of git.
     ensure_gitignore(&ws, &[&format!("{}/", identity::STATE_DIR), ".worktrees/"])?;
 
     let warnings = app.issues.len();

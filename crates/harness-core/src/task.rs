@@ -1,4 +1,4 @@
-//! The task model of the orchestrator (M3 step 2): phases, the transition table and `TaskState`.
+//! The task model of the orchestrator: phases, the transition table and `TaskState`.
 //!
 //! Pure data and rules. Nothing here reads a file or a clock. The state store in `harness-runtime`
 //! persists these values, and the loop detector and the decision engine read them.
@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// The workflow phases of R-17.1. A task is always in exactly one phase.
+/// The workflow phases. A task is always in exactly one phase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Phase {
@@ -42,7 +42,7 @@ impl Phase {
         Phase::Escalate,
     ];
 
-    /// The name used in logs and in the controlled vocabulary (R-10.1).
+    /// The name used in logs and in the controlled vocabulary.
     pub fn name(self) -> &'static str {
         match self {
             Phase::Start => "START",
@@ -67,7 +67,7 @@ impl std::fmt::Display for Phase {
 }
 
 /// The legal moves between phases. A move to the same phase is not a transition and is always
-/// allowed (see [`transition`]). The table follows R-17.1; the comment on each row says why it exists.
+/// allowed (see [`transition`]). The table follows the workflow definition; the comment on each row says why it exists.
 pub const TRANSITIONS: &[(Phase, Phase)] = &[
     (Phase::Start, Phase::Discover),
     (Phase::Discover, Phase::Plan),
@@ -75,25 +75,25 @@ pub const TRANSITIONS: &[(Phase, Phase)] = &[
     (Phase::Discover, Phase::Implement),
     (Phase::Plan, Phase::Implement),
     (Phase::Implement, Phase::Verify),
-    // Implementation retries are exhausted (R-17.3).
+    // Implementation retries are exhausted.
     (Phase::Implement, Phase::Escalate),
-    // Verification passed (R-17.1 PASS).
+    // Verification passed (PASS).
     // An edit after a run whose outcome was unknown, or before its result was recorded.
     (Phase::Verify, Phase::Implement),
     (Phase::Verify, Phase::Review),
-    // Verification failed (R-17.1 FAIL).
+    // Verification failed (FAIL).
     (Phase::Verify, Phase::Fail),
-    // The same failure has repeated beyond its retries (R-17.3).
+    // The same failure has repeated beyond its retries.
     (Phase::Verify, Phase::Escalate),
     (Phase::Review, Phase::Done),
     // A review asks for changes.
     (Phase::Review, Phase::Implement),
     (Phase::Fail, Phase::Diagnose),
-    // Recoverable failure (R-17.1).
+    // Recoverable failure.
     (Phase::Diagnose, Phase::Implement),
-    // Unclear failure (R-17.1).
+    // Unclear failure.
     (Phase::Diagnose, Phase::Explore),
-    // Repeated failure (R-17.1).
+    // Repeated failure.
     (Phase::Diagnose, Phase::Escalate),
     (Phase::Explore, Phase::Plan),
     (Phase::Explore, Phase::Implement),
@@ -168,7 +168,7 @@ pub enum TaskStatus {
     Aborted,
 }
 
-/// The state of one task (R-16.4). Every field is set when the task starts, and the orchestrator
+/// The state of one task. Every field is set when the task starts, and the orchestrator
 /// updates it from observed events.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskState {
@@ -185,7 +185,12 @@ pub struct TaskState {
     pub last_test: Option<String>,
     pub failure_class: Option<String>,
     pub failure_count: u32,
+    /// Escalations to the deep slot this task has used, successful or not.
     pub escalation_count: u32,
+    /// Whether the deep slot's answer still applies to the loop. Set by an escalation; cleared by a passing
+    /// verification and by `agent task reset`. Serde default keeps files written before this field readable.
+    #[serde(default)]
+    pub escalation_open: bool,
     pub context_version: u32,
     pub status: TaskStatus,
     /// Loop refusals since the last call that was not refused. Reset by a successful call and by
@@ -217,6 +222,7 @@ impl TaskState {
             failure_class: None,
             failure_count: 0,
             escalation_count: 0,
+            escalation_open: false,
             context_version: 0,
             status: TaskStatus::Active,
             consecutive_refusals: 0,

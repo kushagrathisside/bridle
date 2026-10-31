@@ -1,16 +1,18 @@
-# Module: orchestrator (M3)
+# Module: orchestrator
 
 The orchestrator keeps a record of each task, detects loops in the model's calls, and decides whether a call may
 run. It spans three crates: the pure rules in `harness-core`, the storage in `harness-runtime`, and the hook and
 command glue in `harness-cli`.
 
-> **Status:** Built (M3 to M5). The rules decide every call. The micro model decides stalled loops (M4). The deep model is served on demand (M5). The context policy and the task block for the system prompt (M6) are in [context.md](context.md). Jev (M7) is not built.
+> **Status:** Built. The rules decide every call. The micro model decides stalled loops, and the deep model is served on
+> demand. The context policy and the task block for the system prompt are in [context.md](context.md). The Jev backend is
+> built and tested against a mock; it has not been run against a live service.
 
 ## Responsibilities
 
 | File | Public items | What they do |
 |---|---|---|
-| `harness-core/src/task.rs` | `Phase`, `TRANSITIONS`, `transition`, `path`, `TaskStatus`, `TaskState` | Phases of R-17.1, the legal moves, the shortest legal path, and the task fields of R-16.4 |
+| `harness-core/src/task.rs` | `Phase`, `TRANSITIONS`, `transition`, `path`, `TaskStatus`, `TaskState` | Phases, the legal moves, the shortest legal path, and the task fields |
 | `harness-core/src/journal.rs` | `Record`, `Entry`, `Outcome`, `Journal` | The facts about a task; `Journal::apply` folds them into the state and the ring of recent calls |
 | `harness-core/src/fingerprint.rs` | `fingerprint`, `fingerprint_fields`, `command_hash`, `args_hash` | Failure fingerprints (`fp_v1:`), command and argument hashes |
 | `harness-core/src/loops.rs` | `CallRecord`, `Thresholds`, `LoopSignal`, `detect` | The four loop rules and the iteration limit, as a pure function |
@@ -21,10 +23,10 @@ command glue in `harness-cli`.
 | `harness-runtime/src/mcp/tools/task.rs` | `TaskStatusTool` | The `task_status` tool, off by default |
 | `harness-cli/src/workflow.rs` | `before`, `after`, `refusal_message` | Maps hook payloads to records; applies the rules before an allowed call |
 | `harness-cli/src/commands/task.rs` | `TaskAction`, `explain`, `trace` | The `agent task`, `agent explain` and `agent trace` commands |
-| `harness-core/src/lfm.rs` | `CHOICES`, `parse_choice`, `is_stalled` | The contract of the micro model's answers: ESCALATE, ASK_USER or REPLAN; a strict check (M4) |
-| `harness-runtime/src/decision.rs` | `LfmEngine` | The micro model for stalled loops, with fallback to the rules; the request holds no prompt text (M4) |
-| `harness-cli/src/commands/eval.rs` | `run` | `agent eval-decisions`: the A/B run of the rules and a model on recorded cases (M4, M5) |
-| `harness-cli/src/commands/models.rs` | `check_one_gpu_model` | `agent models serve` refuses a second GPU server while one runs (M5) |
+| `harness-core/src/lfm.rs` | `CHOICES`, `parse_choice`, `is_stalled` | The contract of the micro model's answers: ESCALATE, ASK_USER or REPLAN; a strict check |
+| `harness-runtime/src/decision.rs` | `LfmEngine` | The micro model for stalled loops, with fallback to the rules; the request holds no prompt text |
+| `harness-cli/src/commands/eval.rs` | `run` | `agent eval-decisions`: the A/B run of the rules and a model on recorded cases |
+| `harness-cli/src/commands/models.rs` | `check_one_gpu_model` | `agent models serve` refuses a second GPU server while one runs |
 
 ## Behaviour
 
@@ -54,13 +56,12 @@ command glue in `harness-cli`.
 
 ## Related
 
-- [M3 plan and result](../../status/milestones/m3-state.md)
 - [ADR-0004](../../decisions/0004-orchestrator-observes-and-steers.md): how the orchestrator relates to OpenCode's loop
 - [Security](../../concepts/security.md): residual risks 6 to 9
 
-## Jev decision backend (M7)
+## Jev decision backend
 
 `harness-core/src/jev.rs` checks the answer of the Jev service: one of the three stalled-loop choices, with a confidence
 from 0 to 1 that is kept. `harness-runtime/src/jev.rs` holds `JevEngine`, which asks the service only for stalled loops,
 and falls back to the rules on any failure. `harness-cli/src/workflow.rs` selects it in `decide_for`. The endpoint policy
-is rules V30 to V35. Result and limits: [M7](../../status/milestones/m7-jev.md); design: [ADR-0007](../../decisions/0007-jev-is-an-optional-decision-backend.md).
+is rules V30 to V35. The Jev contract has not been checked against a live service; see [ADR-0007](../../decisions/0007-jev-is-an-optional-decision-backend.md).

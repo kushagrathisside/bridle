@@ -16,10 +16,14 @@ pub mod jev;
 pub mod journal;
 pub mod lfm;
 pub mod loops;
+pub mod memory;
 pub mod models;
+pub mod plugin;
+pub mod routing;
 pub mod security;
 pub mod subagent;
 pub mod task;
+pub mod team;
 pub mod telemetry;
 
 pub use config::Config;

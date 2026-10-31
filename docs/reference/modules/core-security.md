@@ -6,8 +6,7 @@ policy that combines them into one verdict (Allow, Ask or Deny). It is pure logi
 OpenCode adapter calls it on every tool call ([cli-host-opencode.md](cli-host-opencode.md)), and the MCP server
 calls it for its own tools ([runtime-mcp.md](runtime-mcp.md)).
 
-> **Status:** Built and tested in M1. M2 added the M2 MCP tool names to the harness tool lists and the
-> `adapter_*` rule.
+> **Status:** Built and tested. The MCP tool names and the `adapter_*` rule are included in the harness tool lists.
 
 ## Responsibilities
 
@@ -34,7 +33,7 @@ the class of its worst segment, so the order matters.
 | DESTRUCTIVE | `security.destructive_commands` (Ask) | `rm -rf`, `git reset --hard`, `git push +main` |
 | PRIVILEGED | `security.privileged_commands` (Deny) | `sudo`, `systemctl`, `reg add HKLM`, encoded PowerShell |
 
-The host adapter blocks Ask (decision D3), so in release 1 only Allow runs.
+The host adapter blocks Ask, so in this release only Allow runs.
 
 ### Evaluation order (`ToolPolicy::evaluate`)
 
@@ -80,7 +79,7 @@ plant a `core.fsmonitor` command that the next `git status` runs. Reading these 
 4. Canonicalise the longest existing ancestor (resolving symlinks and junctions) and check containment again, so a
    symlink inside the workspace cannot point out of it.
 
-Bases must be spelled like the canonical root. A Windows 8.3 short path (`C:\Users\KUSHAG~1\...`) is refused
+Bases must be spelled like the canonical root. A Windows 8.3 short path (`C:\Users\USERNA~1\...`) is refused
 lexically; the policy always passes canonical bases.
 
 ### Command classifier (`command_risk.rs`)
@@ -161,7 +160,7 @@ By design, and documented in [security.md](../../concepts/security.md):
 - Concepts: [security.md](../../concepts/security.md), [architecture.md](../../concepts/architecture.md)
 - Decisions: [docs/decisions/](../../decisions/)
 
-## M9 additions
+## Secret names and environment dumps
 
 `tool_policy.rs` judges, in order: the secret names first (`may_name_secret`: the secret names, Windows short names with
 `~` and a digit, and glob patterns that could name a secret), then the path guard, then the environment dump check

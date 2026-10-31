@@ -2,14 +2,14 @@
 
 - **Status:** Accepted (2026-10-26)
 - **Date:** 2026-10-26 (proposed, revised after review, accepted the same day)
-- **Deciders:** Kushagra Srivastava
+- **Deciders:** Project maintainer
 
 ## Context
 
-Release 1 runs inside OpenCode, which owns the agent loop, sessions and the interface (ADR-0001). The harness
-therefore cannot call the model itself or stop a turn. M3 needs three things that the harness can provide from
-outside the loop: a task state, loop detection, and a decision for the next step (R-16, R-17, R-20). The brief asks
-for a bounded explicit workflow (R-17.1), which the harness cannot enforce by controlling the loop.
+This release runs inside OpenCode, which owns the agent loop, sessions and the interface (ADR-0001). The harness
+therefore cannot call the model itself or stop a turn. The workflow needs three things that the harness can provide from
+outside the loop: a task state, loop detection, and a decision for the next step. The design calls for a bounded,
+explicit workflow, which the harness cannot enforce by controlling the loop.
 
 Three facts constrain the design. Each hook call is a separate `agent hook` process, and OpenCode may run tool calls in
 parallel. OpenCode does not pass MCP tool output to `tool.execute.after`, so test results are visible only to the
@@ -22,13 +22,13 @@ The alternatives considered are listed below.
 1. **Observe and steer.** The harness observes every tool call and tool result through the hooks and the MCP server,
    keeps the task state, and steers only through a verdict on `tool-before` (allow or block) and the text of tool
    results. Phases are inferred from observed events, not declared by the model. Every block states the rule that
-   fired and the next action that is still allowed. The decision logic is deterministic in M3 (rules only).
+   fired and the next action that is still allowed. The decision logic is deterministic (rules only).
 2. **The event log is the source of truth.** Each task has an append-only event log. Every record has a per-task `seq`,
    and records are ordered by `seq`, not by time. `task.json` and `state.json` are caches that one pure fold function
    rebuilds from the logs. Every append and every cache write holds an exclusive lock file (`std::fs::File::lock`), held
    for the shortest time possible.
 3. **State failures degrade; policy stays fail-closed.** If the state cannot be read or written, the call is decided by
-   the M2 policy alone, a notice appears in the next tool result, and a record is written when the log is writable.
+   the policy alone, a notice appears in the next tool result, and a record is written when the log is writable.
    `agent task repair` rebuilds the caches. A policy that cannot be evaluated still denies the call.
 4. **Compatibility.** Unknown fields are tolerated. A newer major schema version is refused with a named error. An
    older one is migrated forward, keeping a `.bak` copy. Each JSONL line carries a version. A torn last line is skipped
@@ -40,10 +40,8 @@ The alternatives considered are listed below.
    ids must match `[A-Za-z0-9_-]` with a length cap before they are used as keys or file names; anything else is
    rejected.
 7. **Workflow switch.** `[workflow].enabled = false` may be set only in the machine config. A repository config may
-   enable the workflow or tune its thresholds, but cannot switch it off. The trust rule that enforces this is added
-   with the `[workflow]` config in M3 step 5.
-
-The step-by-step design, thresholds and the other decisions are in the [M3 plan](../status/milestones/m3-state.md).
+   enable the workflow or tune its thresholds, but cannot switch it off. The trust rule that enforces this is part of
+   the `[workflow]` configuration.
 
 ## Consequences
 
@@ -85,5 +83,4 @@ The step-by-step design, thresholds and the other decisions are in the [M3 plan]
 ## Related
 
 - [ADR-0001: Rust core with a thin host adapter](0001-rust-core-thin-host-adapter.md)
-- [M3 plan](../status/milestones/m3-state.md): the steps that depend on this decision
 - [Security](../concepts/security.md): the fail-closed policy that decision 3 leaves unchanged

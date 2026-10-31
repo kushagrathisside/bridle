@@ -52,22 +52,34 @@ health check's completion uses the reasoning budget and takes about 30 s.
 When the decision is ESCALATE and `[routing] enable_deep_escalation = true`, the deep slot is asked for the decision
 instead of the person (R-3.6, R-18.1). The rules are as follows, all checked in `workflow::escalate_if_due`:
 
-- An ESCALATE decision is acted on when its confidence reaches `[routing] escalation_threshold` (rules give 1.0 for a
-  loop rule; the micro model gives none and is always acted on; Jev gives its own confidence). This is the meaning
-  the config already documented.
+- An ESCALATE decision is acted on when its confidence reaches `[routing] escalation_threshold`. The rules give a
+  repeated failure a confidence that grows with the count of identical failures: 0.5 at two, 0.75 at three (the default
+  threshold), 0.875 at four. A counter rule (implementation retries) gives 1.0. The micro model gives none and is always
+  acted on; Jev gives its own confidence.
 - A task may use `[agent] max_deep_escalations` escalations (default 1). Each attempt counts, successful or not. The
-  count is read from the task's recorded decisions, so it survives across the separate hook processes.
-- The deep call has a timeout of 15 s, not the slot's own (up to 30 min). The hook that asks has a limit of 20 s and
-  blocks the call when it is reached, so a slow deep model must not hold the hook. A call that fails or times out
-  keeps the escalated decision, which goes to the person.
-- The deep slot is never started by the harness. It has to be running already (`agent models serve deep`). Starting
-  it would need the main model stopped first, and that is a choice for the person.
+  count is `TaskState::escalation_count`, folded from the journal's `escalated` records. It was never incremented
+  before 2026-10-29, so it read 0 in every run, including the runs that escalated.
+- The deep call has a timeout of 30 s, not the slot's own (up to 30 min). The shim gives the hook 150 s, and a
+  `tool_before` that times out blocks the call, so a slow deep model must not hold the hook. A call that fails or times
+  out keeps the escalated decision, which goes to the person.
+- When the deep slot runs on the GPU and is not serving, the harness swaps the GPU models for the call: the other GPU
+  slots that run are parked, the deep slot starts, and afterwards it stops and the parked slots start again
+  (2026-10-28). Without a swap the slot has to be running already (`agent models serve deep`).
+- Timing (2026-10-29): a loop rule is evaluated when a verification fails (`after`), not at the agent's next call. An
+  escalation taken there is recorded, and its answer is kept in the task until a verification passes or the task is
+  reset. The next call is refused with that answer, and the deep model is not asked again. A loop first seen at a call
+  (`before`) is still evaluated there.
 - Validation: V39 (enable_deep_escalation without a `deep_reasoning` slot) is an error. V40 (`decisions.provider =
   "local_lfm"` while `enable_micro_decisions` is off) is a warning; the micro model is then not used.
 
 Checked by unit tests: the trigger (`escalation_due`), the deep answer replacing the escalated decision, the failure
-path keeping it, the cap, the missing deep slot, and that only ESCALATE is escalated. The deep model's own answers were
-measured before (the A/B above). An escalation from a real stalled loop in a live session is not run; the live check below is.
+path keeping it, the cap, the missing deep slot, and that only ESCALATE is escalated. For 2026-10-29: the confidence
+curve and the counter rule's confidence (`decision`), the threshold deciding whether the third failure reaches the deep
+slot (`workflow`, `the_threshold_decides_...`), a third failing verification escalating at the failure and not again
+(`a_third_failing_verification_...`), the kept answer (`the_answer_of_the_deep_slot_...`), the journal's escalation
+count and its reset by a pass or a reset (`journal`), and the same-failure count growing past the trigger (`loops`).
+The deep model's own answers were measured before (the A/B above). An escalation from a real stalled loop in a live
+session is not run; the live check below is.
 
 A live check of the deep answer is in `crates/harness-runtime/src/decision.rs`, the ignored test
 `the_deep_slot_answers_an_escalated_loop`. It sends a same-failure escalation to the deep slot and checks that the answer

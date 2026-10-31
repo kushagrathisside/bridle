@@ -1,0 +1,1 @@
+{"condition":"deep","task":"design-auth-schema","category":"design","success":true,"verify_exit":0,"opencode_exit":0,"timed_out":false,"wall_s":176.1531914,"tool_calls":6,"blocked_calls":2,"loop_refusals":0,"context_bytes_before":25395,"context_bytes_after":25395,"attempts":1}

@@ -5,13 +5,13 @@ trait, the OpenAI-compatible client, the llama.cpp provider, a scripted mock for
 constructor. It talks to the outside world (HTTP to local model servers) but makes no policy decisions; those come
 from `harness-core`.
 
-> **Status:** Built and tested in M1. Verified end to end on Windows against llama.cpp b11756 with Qwen3.5-9B.
+> **Status:** Built and tested. Verified end to end on Windows against llama.cpp b11756 with Qwen3.5-9B.
 
 ## Responsibilities
 
 | File | Public items | What they do |
 |---|---|---|
-| `src/providers/mod.rs` | `ModelProvider`, `ChatMessage`, `Role`, `ToolSpec`, `ToolCall`, `ChatRequest`, `ChatResponse`, `Usage`, `Timings`, `HealthStatus`, `ProviderError`, `provider_for` | Trait, request and response types, errors, provider selection |
+| `src/providers/mod.rs` | `ModelProvider`, `StreamEvent`, `ChatMessage`, `Role`, `ToolSpec`, `ToolCall`, `ChatRequest`, `ChatResponse`, `Usage`, `Timings`, `HealthStatus`, `ProviderError`, `provider_for` | Trait, request and response types, errors, provider selection |
 | `src/providers/openai_compat.rs` | `OpenAiCompatProvider` | `/v1/chat/completions` client: chat, SSE streaming, model list, retries |
 | `src/providers/llama_cpp.rs` | `LlamaCppProvider`, `props_context`, `props_build`, `props_model_path`, `props_speculative` | llama.cpp and PrismML servers: `/health`, `/props`, plus chat via the OpenAI client |
 | `src/providers/mock.rs` | `MockProvider` (`echo`, `scripted`, `unhealthy`, `requests`) | Scripted provider for tests; no network |
@@ -28,12 +28,19 @@ pub trait ModelProvider: Send + Sync {
     fn list_models(&self) -> Result<Vec<String>, ProviderError>;
     fn chat(&self, req: &ChatRequest) -> Result<ChatResponse, ProviderError>;
     fn chat_stream(&self, req: &ChatRequest, on_delta: ...) -> Result<ChatResponse, ProviderError>;
+    fn chat_stream_with(&self, req: &ChatRequest, on_event: ...) -> Result<ChatResponse, ProviderError>;
     fn server_props(&self) -> Result<Option<serde_json::Value>, ProviderError> { Ok(None) }
 }
 ```
 
-Every model call goes through this trait, so no code is tied to one server (R-7.1). The API is synchronous on
+Every model call goes through this trait, so no code is tied to one server. The API is synchronous on
 purpose: the CLI and hook processes are short-lived and make one call at a time.
+
+`chat_stream_with` also reports what is not text, as `StreamEvent`s: a piece of text, a tool call being written (its name and
+the length of its arguments so far) and hidden reasoning (its length so far). When the callback returns `false` the stream is
+abandoned: the connection is dropped, so the server stops generating, and the response carries `finish_reason = "stopped"`,
+what had arrived, and no tool calls (a call that was still being written is incomplete). The default implementation reports
+text only and cannot stop early; `OpenAiCompatProvider` implements it and `LlamaCppProvider` forwards to it.
 
 Types: `ChatMessage` (`system`, `user` helpers; roles `system`, `user`, `assistant`, `tool`), `ToolSpec`,
 `ToolCall`, `ChatRequest` (per-request overrides such as `max_tokens`, `enable_thinking`, `response_format`,
@@ -85,7 +92,7 @@ The PrismML fork (Bonsai) speaks the same protocol, so it uses the same provider
 
 `loopback_agent(timeout)` builds a `ureq::Agent` with a global timeout, HTTP status codes not treated as errors,
 and no proxy. The target workstation set `HTTP_PROXY`; following it for `127.0.0.1` made every health probe time
-out. All M1 endpoints are loopback (rule V4).
+out. All endpoints are loopback (rule V4).
 
 ## Tests
 
@@ -105,8 +112,8 @@ out. All M1 endpoints are loopback (rule V4).
 
 ## Limits
 
-- External providers (M7, M8) will need their own client and endpoint policy; `loopback_agent` is for loopback
-  servers only.
+- External providers (the Jev and LiteLLM backends) use `remote_agent` for non-loopback hosts; `loopback_agent` is for
+  loopback servers only.
 - `props_speculative` and the Mtp health check disagree on strings such as `"none"` (see above).
 - The API is synchronous; a streaming call blocks its thread until the response ends.
 
@@ -118,9 +125,9 @@ out. All M1 endpoints are loopback (rule V4).
 - Decisions: [docs/decisions/](../../decisions/)
 - Guide: [models.md](../../guide/models.md)
 
-## LiteLLM gateway (M8)
+## LiteLLM gateway
 
 `provider = "litellm"` builds the same OpenAI-compatible client, with the gateway's route name as `model` and the key from
 `api_key_env` as a bearer token. A loopback gateway uses the no-proxy agent; any other host uses the environment's proxy and
-native-tls (`remote_agent`, M7). The design is in [ADR-0008](../../decisions/0008-litellm-is-an-optional-gateway-behind-the-policy.md);
-the result and the pending live check are in [M8](../../status/milestones/m8-litellm.md).
+native-tls (`remote_agent`). The design is in [ADR-0008](../../decisions/0008-litellm-is-an-optional-gateway-behind-the-policy.md);
+a live check against a running gateway passed on 2026-10-28.

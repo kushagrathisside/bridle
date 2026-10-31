@@ -1,4 +1,4 @@
-//! Per-task storage (M3 step 6).
+//! Per-task storage.
 //!
 //! Each task has a directory `.local-agent/tasks/<task_id>/` with:
 //! - `task-events.jsonl`: the journal, the source of truth. Entries carry a `seq`.
@@ -361,6 +361,12 @@ impl Task<'_> {
     /// task lock, so the result is consistent with the last append.
     pub fn snapshot(&self) -> Result<Journal, StateError> {
         let _guard = self.lock()?;
+        self.load_unlocked()
+    }
+
+    /// The journal as [`Task::snapshot`] reads it, without the task lock and without creating
+    /// anything. For viewers that must not write. An append in flight may not be included yet.
+    pub fn peek(&self) -> Result<Journal, StateError> {
         self.load_unlocked()
     }
 

@@ -14,6 +14,7 @@ use serde_json::{Value, json};
 
 use crate::app::App;
 use crate::host::opencode_v1::{self, HookContext, HookEvent};
+use crate::prompt;
 use crate::workflow;
 
 pub fn run(event: HookEvent, config: Option<&Path>, workspace: Option<&Path>) -> ExitCode {
@@ -37,10 +38,16 @@ fn answer(
     config: Option<&Path>,
     workspace: Option<&Path>,
 ) -> Value {
-    let app = match App::load(config, workspace) {
-        Ok(app) => app,
-        Err(e) => return opencode_v1::failure_answer(event, &format!("{e:#}")),
-    };
+    match App::load(config, workspace) {
+        Ok(app) => answer_with(&app, event, input),
+        Err(e) => opencode_v1::failure_answer(event, &format!("{e:#}")),
+    }
+}
+
+/// The hook's answer for an application that is already loaded: the policy's verdict, the
+/// orchestrator's loop rules and records, and the event-log entry. `agent hook` calls it once per
+/// process; the chat in `agent tui` calls it for every tool call, so both follow the same path.
+pub(crate) fn answer_with(app: &App, event: HookEvent, input: &Value) -> Value {
     if app.has_config_errors() {
         return opencode_v1::failure_answer(
             event,
@@ -63,7 +70,7 @@ fn answer(
     match event {
         HookEvent::ToolBefore if answer["action"] == "allow" => {
             let read_only = answer["class"] == "READ_ONLY";
-            match workflow::before(&app, input, read_only) {
+            match workflow::before(app, input, read_only) {
                 Ok(None) => {}
                 Ok(Some(message)) => {
                     telemetry = Some(loop_refusal_event(input, &message));
@@ -79,15 +86,19 @@ fn answer(
             }
         }
         HookEvent::ToolAfter => {
-            if let Err(error) = workflow::after(&app, input) {
+            if let Err(error) = workflow::after(app, input) {
                 telemetry = Some(degraded_event(event, input, &error));
             }
         }
-        HookEvent::SystemTransform => match workflow::system_block(&app, input) {
-            Ok(Some(text)) => answer = json!({ "text": text }),
-            Ok(None) => {}
-            Err(error) => telemetry = Some(degraded_event(event, input, &error)),
-        },
+        HookEvent::SystemTransform => {
+            let extras = prompt::extras(app, input);
+            if let Some(text) = extras.text {
+                answer = json!({ "text": text });
+            }
+            if let Some(error) = extras.degraded {
+                telemetry = Some(degraded_event(event, input, &error));
+            }
+        }
         _ => {}
     }
     if let Some(ev) = telemetry {
@@ -128,6 +139,29 @@ fn degraded_event(event: HookEvent, input: &Value, error: &anyhow::Error) -> Eve
         .get("callID")
         .and_then(Value::as_str)
         .map(str::to_owned);
-    ev.status = Some("workflow_degraded".to_owned());
+    // A part of the system prompt (the memory file or the task block) is named for what it is, so a refused memory
+    // file is not logged as a workflow failure.
+    let status = match event {
+        HookEvent::SystemTransform => "prompt_degraded",
+        _ => "workflow_degraded",
+    };
+    ev.status = Some(status.to_owned());
     ev.with("error", format!("{error:#}"))
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_degraded_system_prompt_is_logged_under_its_own_name() {
+        let input = json!({ "sessionID": "s1" });
+        let error = anyhow::anyhow!(".env was refused by policy");
+        let prompt = degraded_event(HookEvent::SystemTransform, &input, &error);
+        assert_eq!(prompt.status.as_deref(), Some("prompt_degraded"));
+        assert_eq!(prompt.session_id.as_deref(), Some("s1"));
+        let tool = degraded_event(HookEvent::ToolBefore, &input, &error);
+        assert_eq!(tool.status.as_deref(), Some("workflow_degraded"));
+    }
 }

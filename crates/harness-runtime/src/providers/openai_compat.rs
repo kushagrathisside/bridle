@@ -1,4 +1,4 @@
-//! OpenAI-compatible `/v1/chat/completions` client over `ureq` (plain HTTP in M1).
+//! OpenAI-compatible `/v1/chat/completions` client over `ureq` (plain HTTP).
 //!
 //! Covers non-streaming and SSE streaming chat, model listing and a liveness probe. Connection
 //! failures and HTTP 503 are retried with a short backoff; every other failure is returned at
@@ -15,7 +15,7 @@ use serde_json::{Map, Value, json};
 
 use super::{
     ChatMessage, ChatRequest, ChatResponse, HealthStatus, ModelProvider, ProviderError, Role,
-    Timings, ToolCall, Usage,
+    StreamEvent, Timings, ToolCall, Usage,
 };
 
 /// Sleep before retry `n` (1-based) is `RETRY_BACKOFF * n`.
@@ -25,7 +25,7 @@ const ERROR_BODY_LIMIT: usize = 2048;
 
 type HttpResponse = ureq::http::Response<ureq::Body>;
 
-/// Secret holder whose `Debug` output never reveals the value (R-35.2).
+/// Secret holder whose `Debug` output never reveals the value.
 struct ApiKey(String);
 
 impl fmt::Debug for ApiKey {
@@ -54,7 +54,7 @@ impl OpenAiCompatProvider {
     /// counts as no key.
     pub fn new(model: &ModelConfig, api_key: Option<String>) -> Self {
         let timeout = Duration::from_millis(model.timeout_ms);
-        // A loopback endpoint never goes through a proxy; any other host uses the environment's proxy and TLS (M7, M8).
+        // A loopback endpoint never goes through a proxy; any other host uses the environment's proxy and TLS.
         let agent = if harness_core::config::endpoint_is_loopback(&model.endpoint) {
             crate::http::local_agent(timeout)
         } else {
@@ -241,6 +241,19 @@ impl ModelProvider for OpenAiCompatProvider {
         req: &ChatRequest,
         on_delta: &mut dyn FnMut(&str),
     ) -> Result<ChatResponse, ProviderError> {
+        self.chat_stream_with(req, &mut |event| {
+            if let StreamEvent::Text(piece) = event {
+                on_delta(piece);
+            }
+            true
+        })
+    }
+
+    fn chat_stream_with(
+        &self,
+        req: &ChatRequest,
+        on_event: &mut dyn FnMut(StreamEvent<'_>) -> bool,
+    ) -> Result<ChatResponse, ProviderError> {
         let started = Instant::now();
         let body = self.build_body(req, true);
         // Retries cover only the connect/status phase: once a delta has reached the caller, a retry
@@ -249,16 +262,36 @@ impl ModelProvider for OpenAiCompatProvider {
         let mut acc = StreamAccumulator::new(started);
         let mut reader = BufReader::new(resp.body_mut().as_reader());
         let mut raw = Vec::new();
+        let mut seen = Progress::default();
+        let mut stopped = false;
         while read_sse_line(&mut reader, &mut raw)
             .map_err(|e| transport_error(ureq::Error::from(e), self.timeout))?
         {
             let line = std::str::from_utf8(&raw)
                 .map_err(|_| ProviderError::InvalidResponse("SSE line is not UTF-8".to_owned()))?;
-            if acc.feed_line(line, on_delta)? {
+            let mut keep_going = true;
+            let done = acc.feed_line(line, &mut |piece| {
+                keep_going &= on_event(StreamEvent::Text(piece));
+            })?;
+            keep_going &= acc.report_progress(&mut seen, on_event);
+            if done {
+                break;
+            }
+            if !keep_going {
+                stopped = true;
                 break;
             }
         }
-        Ok(acc.finish(&self.model_id))
+        // Dropping the reader and the response here closes the connection, which is what makes the
+        // server stop generating after a stop.
+        drop(reader);
+        drop(resp);
+        let mut response = acc.finish(&self.model_id);
+        if stopped {
+            response.finish_reason = Some("stopped".to_owned());
+            response.tool_calls.clear();
+        }
+        Ok(response)
     }
 }
 
@@ -407,7 +440,20 @@ fn role_str(role: Role) -> &'static str {
 fn message_json(message: &ChatMessage) -> Value {
     let mut obj = Map::new();
     obj.insert("role".to_owned(), json!(role_str(message.role)));
-    obj.insert("content".to_owned(), json!(message.content));
+    if message.images.is_empty() {
+        obj.insert("content".to_owned(), json!(message.content));
+    } else {
+        // An image is a content part, after the text (M5). The data is sent inline as a data URL.
+        let mut parts =
+            vec![json!({"type": "text", "text": message.content.clone().unwrap_or_default()})];
+        for image in &message.images {
+            parts.push(json!({
+                "type": "image_url",
+                "image_url": {"url": format!("data:{};base64,{}", image.media_type, image.base64)},
+            }));
+        }
+        obj.insert("content".to_owned(), json!(parts));
+    }
     if !message.tool_calls.is_empty() {
         let calls: Vec<Value> = message
             .tool_calls
@@ -515,6 +561,14 @@ fn parse_chat(
         latency_ms,
         first_token_ms: None,
     })
+}
+
+/// What [`StreamAccumulator::report_progress`] has reported so far.
+#[derive(Debug, Default)]
+struct Progress {
+    tool_chars: usize,
+    tool_name: String,
+    reasoning: usize,
 }
 
 /// Incremental assembler for an OpenAI-style SSE chat stream. Pure: feed it lines, then `finish`.
@@ -630,6 +684,34 @@ impl StreamAccumulator {
             }
         }
         Ok(false)
+    }
+
+    /// Reports the parts of the stream that are not text when they have grown since the last report.
+    /// Returns `false` once the caller asked to stop.
+    fn report_progress(
+        &self,
+        seen: &mut Progress,
+        on_event: &mut dyn FnMut(StreamEvent<'_>) -> bool,
+    ) -> bool {
+        let mut keep_going = true;
+        // The call being written is the one with the highest index.
+        if let Some(call) = self.tool_calls.values().next_back() {
+            let chars = call.arguments.len();
+            if chars != seen.tool_chars || call.name != seen.tool_name {
+                seen.tool_chars = chars;
+                seen.tool_name.clone_from(&call.name);
+                keep_going &= on_event(StreamEvent::ToolCall {
+                    name: &call.name,
+                    chars,
+                });
+            }
+        }
+        let reasoning = self.reasoning.as_ref().map_or(0, String::len);
+        if reasoning != seen.reasoning {
+            seen.reasoning = reasoning;
+            keep_going &= on_event(StreamEvent::Reasoning { chars: reasoning });
+        }
+        keep_going
     }
 
     fn finish(self, default_model: &str) -> ChatResponse {
@@ -773,12 +855,14 @@ mod tests {
                         arguments: "{\"path\":\"a.rs\"}".into(),
                     }],
                     tool_call_id: None,
+                    images: Vec::new(),
                 },
                 ChatMessage {
                     role: Role::Tool,
                     content: Some("contents".into()),
                     tool_calls: vec![],
                     tool_call_id: Some("call_1".into()),
+                    images: Vec::new(),
                 },
             ],
             tools: vec![ToolSpec {
@@ -974,5 +1058,32 @@ mod tests {
     fn f32_values_serialise_in_short_form() {
         assert_eq!(f32_json(0.7), json!(0.7));
         assert_eq!(f32_json(1.0), json!(1.0));
+    }
+
+    #[test]
+    fn a_message_with_images_sends_the_text_then_one_image_part_per_image() {
+        let message = ChatMessage::user_with_images(
+            "what is this?",
+            vec![crate::providers::Image {
+                media_type: "image/png".to_owned(),
+                base64: "aGk=".to_owned(),
+            }],
+        );
+        let json = message_json(&message);
+        assert_eq!(
+            json["content"][0],
+            json!({"type": "text", "text": "what is this?"})
+        );
+        assert_eq!(json["content"][1]["type"], "image_url");
+        assert_eq!(
+            json["content"][1]["image_url"]["url"],
+            "data:image/png;base64,aGk="
+        );
+        let plain = message_json(&ChatMessage::user("hi"));
+        assert_eq!(
+            plain["content"],
+            json!("hi"),
+            "a message without images keeps plain text"
+        );
     }
 }
