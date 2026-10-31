@@ -34,8 +34,7 @@ Built: `agent eval-routing <cases> [--out]`. Each labelled request goes through 
 decision model answers the requests the rules cannot place, and the report gives the agreement by source. The
 deep slot is assumed to be serving, so the choice itself is measured.
 
-Seed corpus: `evals/routing/cases.json`, 20 requests, 12 expected MAIN and 8 expected DEEP. The labels were written by the
-assistant, not recorded from real use, and most of the long requests were written around the rule keywords. Treat the
+Seed corpus: `evals/routing/cases.json`, 20 requests, 12 expected MAIN and 8 expected DEEP. The labels are judgements, not recorded from real use, and most of the long requests were built around the rule keywords. Treat the
 numbers as a check that the path works, not as evidence of how well the placement generalises.
 
 | Run | Agreement | By source |

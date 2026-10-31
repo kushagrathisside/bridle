@@ -53,8 +53,7 @@ third-party guide, not measured here. The license is the LFM Open License v1.0.
 ## Open
 
 - A routing corpus of recorded requests, labelled with the slot that should answer each. A seed corpus of 20 requests is in
-  `evals/routing/cases.json`, and the command `agent eval-routing` measures it. The seed labels were written by the assistant
-  and must be reviewed by the owner; they overlap the rule keywords, so they do not yet show how the placement generalises.
+  `evals/routing/cases.json`, and the command `agent eval-routing` measures it. The seed labels must be reviewed by the owner; they overlap the rule keywords, so they do not yet show how the placement generalises.
   The corpus has to grow from real requests before any threshold is set.
 - The measurements (progress.md): rules only, 12 of 20; with the decision model, 19 of 20.
 - Whether a prompt change would make LFM3 vary its answers. That is a separate experiment and is not claimed here.
