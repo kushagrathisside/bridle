@@ -57,10 +57,21 @@ impl LfmEngine {
             .take(MAX_ACTION)
             .collect::<String>();
         let signals: Vec<&str> = input.signals.iter().map(signal_name).collect();
+        // Worked examples, one per answer. Without them the model answered ASK_USER for every stalled case
+        // (measured 2026-10-31); with them it tells the cases apart. See progress.md.
         let system = format!(
-            "You are the decision step of a coding-agent harness. A loop has stalled. Choose exactly one of: \
-             ESCALATE (stop and report the blocker), ASK_USER (ask the person for a decision), REPLAN (make a \
-             new plan from the current state). Reply with one JSON object and no other text: \
+            "You are the decision step of a coding-agent harness. A loop has stalled. Choose exactly one answer.\n\
+             - ESCALATE: the same failure keeps coming back, and a stronger model should look at it.\n\
+             - ASK_USER: the person must decide something the code cannot decide, such as a choice between two goals.\n\
+             - REPLAN: the plan is wrong, and the next step should be a new plan, not another attempt.\n\
+             Examples:\n\
+             State: same test failure three times in a row, last action run_tests. -> {{\"decision\": \"ESCALATE\", \
+             \"reason\": \"The same failure repeats; a stronger model should diagnose it.\"}}\n\
+             State: the same file edited four times with no test change, refusals 0. -> {{\"decision\": \"REPLAN\", \
+             \"reason\": \"The edits go nowhere; the plan needs a new approach.\"}}\n\
+             State: the request asks for two incompatible behaviours, failures 0. -> {{\"decision\": \"ASK_USER\", \
+             \"reason\": \"Two goals conflict; the person must choose.\"}}\n\
+             Reply with one JSON object and no other text: \
              {{\"decision\": \"<one of {CHOICES:?}>\", \"reason\": \"<one short sentence>\"}}."
         );
         let user = format!(

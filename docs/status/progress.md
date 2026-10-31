@@ -28,6 +28,33 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-31: the decision prompt, measured again; the earlier constant answer was the prompt
+
+The stalled-loop decision prompt had no worked examples. Both small models were then measured on the 20 recorded cases,
+and the earlier result (LFM3 answering ASK_USER every time) was read as a model limit. A probe showed otherwise: LFM3
+answered ASK_USER for three different stalled states, including three failures in a row.
+
+With one worked example per answer added to the prompt (`crates/harness-runtime/src/decision.rs`), the answers changed:
+
+| Model, same 20 cases, CPU | Answers | Agreement with the rules, stalled cases | Latency p50 |
+|---|---|---|---|
+| LFM3-1.7B, few-shot | ESCALATE 10, REPLAN 5, ASK_USER 1 | 6 of 16 | 1,513 ms |
+| LFM2.5-1.2B, few-shot | ESCALATE 16 | 6 of 16 | 1,174 ms |
+
+By category: both agree on the six same-failure cases. The rules answer repeated commands with a diagnosis, which the
+three answers cannot match. On the five repeated-edit cases the rules say ASK_USER: LFM3 says REPLAN, and LFM2.5 says
+ESCALATE.
+
+Caveat, stated plainly: the repeated-edit example in the prompt is a REPLAN example, so LFM3's REPLAN answers there may be
+the example copied, not a judgment. The examples and the test cases are not separate, so this run does not show that LFM3
+decides well. A fair test needs examples that are not among the 20 cases.
+
+What this changes: the constant ASK_USER was the prompt, and it affected the small models in both cases. LFM2.5 now has
+the constant problem in the other direction. Neither model is adopted for decisions on this evidence.
+
+Reports: [report-2026-10-31-lfm3-fewshot.json](../../evals/decisions/report-2026-10-31-lfm3-fewshot.json) and
+[report-2026-10-31-lfm25-fewshot.json](../../evals/decisions/report-2026-10-31-lfm25-fewshot.json).
+
 ## 2026-10-31: repository memory (`AGENTS.md`) in the system prompt; built and tested on Linux
 
 What was built. A `[memory]` section (`enabled`, `file`, `max_bytes`). `harness_core::memory` holds the path rule and the

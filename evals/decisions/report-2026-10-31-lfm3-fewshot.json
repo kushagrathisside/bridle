@@ -1,0 +1,215 @@
+{
+  "model": "lfm3-1.7b",
+  "summary": {
+    "cases": 20,
+    "stalled": 16,
+    "model_answers": 16,
+    "fallbacks": 0,
+    "answers_allowed": 16,
+    "agreements": 6,
+    "latency_p50_ms": 1513,
+    "latency_p95_ms": 1841
+  },
+  "rows": [
+    {
+      "name": "same failure, guard test, three runs",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure has repeated across iterations, indicating a deeper issue that requires a stronger model's diagnosis.",
+      "agrees": true,
+      "latency_ms": 1479
+    },
+    {
+      "name": "same failure, unit test after a fix",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure has repeated across three iterations, indicating a deeper issue that a stronger model should diagnose.",
+      "agrees": true,
+      "latency_ms": 1473
+    },
+    {
+      "name": "same failure, two failures per run",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same verification failure has repeated across iterations, indicating a deeper issue that a stronger model should diagnose.",
+      "agrees": true,
+      "latency_ms": 1513
+    },
+    {
+      "name": "same failure, import error",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure has repeated across iterations, indicating a deeper issue that requires a stronger model's diagnosis.",
+      "agrees": true,
+      "latency_ms": 1463
+    },
+    {
+      "name": "same failure, lint finding",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure (run_linter) has repeated across iterations without resolution; a stronger model should diagnose the underlying issue.",
+      "agrees": true,
+      "latency_ms": 1610
+    },
+    {
+      "name": "same failure, after two edits",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure has repeated across three iterations after editing calc.py, indicating the issue is not being resolved by that change and requires a stronger model's diagnosis.",
+      "agrees": true,
+      "latency_ms": 1822
+    },
+    {
+      "name": "repeated command, unittest",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "AskUser",
+      "model_reason": "The user needs to decide what to do next since the repeated bash command did not resolve the stalled loop.",
+      "agrees": false,
+      "latency_ms": 1499
+    },
+    {
+      "name": "repeated command, build",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure (repeated 'bash: cargo build' loop) persists across iterations, indicating a deeper issue that a stronger model should diagnose.",
+      "agrees": false,
+      "latency_ms": 1773
+    },
+    {
+      "name": "repeated command, install",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "Repeated command without progress or test changes indicates the previous steps failed to resolve the issue; a stronger model should diagnose the underlying problem.",
+      "agrees": false,
+      "latency_ms": 1701
+    },
+    {
+      "name": "repeated command, make",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "Repeated 'make test' command without changes or new information suggests the test suite is failing but not being diagnosed; a stronger model should investigate the root cause.",
+      "agrees": false,
+      "latency_ms": 1841
+    },
+    {
+      "name": "repeated command, formatter",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "Repeated 'bash: cargo fmt' command without progress or resolution indicates the formatting task is stalled and needs stronger analysis.",
+      "agrees": false,
+      "latency_ms": 1644
+    },
+    {
+      "name": "repeated edit, calc.py",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "Repeated edits to calc.py without progress; need a new approach or clarification on the intended change.",
+      "agrees": false,
+      "latency_ms": 1451
+    },
+    {
+      "name": "repeated edit, README",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "Repeated edits to README.md without progress or test changes indicate the plan is stuck; need a new approach to complete the task.",
+      "agrees": false,
+      "latency_ms": 1743
+    },
+    {
+      "name": "repeated edit, test file",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "Repeated edits to test_calc.py without progress; need a new approach or clarification on the intended changes.",
+      "agrees": false,
+      "latency_ms": 1503
+    },
+    {
+      "name": "repeated edit, module",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "Repeated edits to src/lib.rs without progress or test changes indicate the plan is stuck; need a new approach to fix the issue.",
+      "agrees": false,
+      "latency_ms": 1655
+    },
+    {
+      "name": "repeated edit, utilities",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "Repeated edits to utils.py without progress or test changes indicate the plan needs a new approach.",
+      "agrees": false,
+      "latency_ms": 1426
+    },
+    {
+      "name": "iteration limit reached",
+      "stalled": false,
+      "rules": "TaskBlocked",
+      "source": "rules",
+      "model": null,
+      "model_reason": null,
+      "agrees": null,
+      "latency_ms": 0
+    },
+    {
+      "name": "implementation retries exceeded",
+      "stalled": false,
+      "rules": "Escalate",
+      "source": "rules",
+      "model": null,
+      "model_reason": null,
+      "agrees": null,
+      "latency_ms": 0
+    },
+    {
+      "name": "iteration limit with a repeated command",
+      "stalled": false,
+      "rules": "TaskBlocked",
+      "source": "rules",
+      "model": null,
+      "model_reason": null,
+      "agrees": null,
+      "latency_ms": 0
+    },
+    {
+      "name": "retries exceeded with a same failure",
+      "stalled": false,
+      "rules": "Escalate",
+      "source": "rules",
+      "model": null,
+      "model_reason": null,
+      "agrees": null,
+      "latency_ms": 0
+    }
+  ]
+}
