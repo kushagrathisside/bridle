@@ -28,6 +28,16 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-31: coding leftovers built: vision slot for images, private temporary directory per command
+
+- Image turns go to the `vision` slot when the configuration defines one (`[models.vision]`); otherwise the chosen slot,
+  which refuses images if its vision capability is off. The choice is a tested function (`image::image_slot`).
+- Each confined command gets its own temporary directory, removed when the command finishes, and the shared `/tmp` is no
+  longer writable from the sandbox (ADR-0016). Two kernel tests: a command writes to its own directory and not to the shared
+  one; the directory is removed when the guard is dropped.
+
+Workspace: 917 passed, 0 failed, 5 ignored; clippy with warnings as errors clean.
+
 ## 2026-10-31: M5 multimodal input (images in the chat), built; not run with a vision model
 
 Built:

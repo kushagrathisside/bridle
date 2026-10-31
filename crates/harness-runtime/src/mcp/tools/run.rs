@@ -155,22 +155,26 @@ pub(super) fn execute_plain(
         enabled: ctx.config.sandbox.enabled,
         network: ctx.config.sandbox.network,
     };
-    if let Err(reason) = crate::sandbox::confine(&mut command, &ctx.workspace, &settings) {
-        let text = ctx
-            .redactor
-            .redact(&format!("refused by the sandbox: {reason}"))
-            .into_owned();
-        return Ok(ToolOutput {
-            text: text.clone(),
-            structured: Some(json!({
-                "status": "blocked",
-                "command": ctx.redactor.redact(&line).into_owned(),
-                "rule": "sandbox",
-                "reason": text,
-            })),
-            is_error: false,
-        });
-    }
+    // The guard holds the command's temporary directory until the command has finished, then removes it.
+    let _scratch = match crate::sandbox::confine(&mut command, &ctx.workspace, &settings) {
+        Ok(scratch) => scratch,
+        Err(reason) => {
+            let text = ctx
+                .redactor
+                .redact(&format!("refused by the sandbox: {reason}"))
+                .into_owned();
+            return Ok(ToolOutput {
+                text: text.clone(),
+                structured: Some(json!({
+                    "status": "blocked",
+                    "command": ctx.redactor.redact(&line).into_owned(),
+                    "rule": "sandbox",
+                    "reason": text,
+                })),
+                is_error: false,
+            });
+        }
+    };
     let started = std::time::Instant::now();
     let run = run_child(
         command,
