@@ -1,0 +1,284 @@
+[
+ {
+  "name": "same failure, guard test, three runs",
+  "signals": [
+   "same_failure"
+  ],
+  "stalled": true,
+  "choice": "ESCALATE",
+  "p": {
+   "ESCALATE": 0.564,
+   "ASK_USER": 0.2359,
+   "REPLAN": 0.2001
+  },
+  "lat": 383.69107246398926
+ },
+ {
+  "name": "same failure, unit test after a fix",
+  "signals": [
+   "same_failure"
+  ],
+  "stalled": true,
+  "choice": "ESCALATE",
+  "p": {
+   "ESCALATE": 0.6026,
+   "ASK_USER": 0.2037,
+   "REPLAN": 0.1937
+  },
+  "lat": 351.63164138793945
+ },
+ {
+  "name": "same failure, two failures per run",
+  "signals": [
+   "same_failure"
+  ],
+  "stalled": true,
+  "choice": "ESCALATE",
+  "p": {
+   "ESCALATE": 0.4277,
+   "ASK_USER": 0.2882,
+   "REPLAN": 0.2841
+  },
+  "lat": 360.56041717529297
+ },
+ {
+  "name": "same failure, import error",
+  "signals": [
+   "same_failure"
+  ],
+  "stalled": true,
+  "choice": "ESCALATE",
+  "p": {
+   "ESCALATE": 0.564,
+   "ASK_USER": 0.2359,
+   "REPLAN": 0.2001
+  },
+  "lat": 350.4292964935303
+ },
+ {
+  "name": "same failure, lint finding",
+  "signals": [
+   "same_failure"
+  ],
+  "stalled": true,
+  "choice": "ESCALATE",
+  "p": {
+   "ESCALATE": 0.4492,
+   "ASK_USER": 0.2723,
+   "REPLAN": 0.2785
+  },
+  "lat": 354.82263565063477
+ },
+ {
+  "name": "same failure, after two edits",
+  "signals": [
+   "same_failure"
+  ],
+  "stalled": true,
+  "choice": "ESCALATE",
+  "p": {
+   "ESCALATE": 0.5645,
+   "ASK_USER": 0.221,
+   "REPLAN": 0.2145
+  },
+  "lat": 358.4408760070801
+ },
+ {
+  "name": "repeated command, unittest",
+  "signals": [
+   "repeated_command"
+  ],
+  "stalled": true,
+  "choice": "ASK_USER",
+  "p": {
+   "ESCALATE": 0.2813,
+   "ASK_USER": 0.3826,
+   "REPLAN": 0.3361
+  },
+  "lat": 388.2622718811035
+ },
+ {
+  "name": "repeated command, build",
+  "signals": [
+   "repeated_command"
+  ],
+  "stalled": true,
+  "choice": "ASK_USER",
+  "p": {
+   "ESCALATE": 0.253,
+   "ASK_USER": 0.3899,
+   "REPLAN": 0.3571
+  },
+  "lat": 385.967493057251
+ },
+ {
+  "name": "repeated command, install",
+  "signals": [
+   "repeated_command"
+  ],
+  "stalled": true,
+  "choice": "REPLAN",
+  "p": {
+   "ESCALATE": 0.2086,
+   "ASK_USER": 0.3534,
+   "REPLAN": 0.438
+  },
+  "lat": 369.71569061279297
+ },
+ {
+  "name": "repeated command, make",
+  "signals": [
+   "repeated_command"
+  ],
+  "stalled": true,
+  "choice": "REPLAN",
+  "p": {
+   "ESCALATE": 0.2998,
+   "ASK_USER": 0.3471,
+   "REPLAN": 0.3531
+  },
+  "lat": 355.5917739868164
+ },
+ {
+  "name": "repeated command, formatter",
+  "signals": [
+   "repeated_command"
+  ],
+  "stalled": true,
+  "choice": "ASK_USER",
+  "p": {
+   "ESCALATE": 0.254,
+   "ASK_USER": 0.3921,
+   "REPLAN": 0.3539
+  },
+  "lat": 360.2766990661621
+ },
+ {
+  "name": "repeated edit, calc.py",
+  "signals": [
+   "repeated_edit"
+  ],
+  "stalled": true,
+  "choice": "REPLAN",
+  "p": {
+   "ESCALATE": 0.3132,
+   "ASK_USER": 0.3133,
+   "REPLAN": 0.3735
+  },
+  "lat": 361.7570400238037
+ },
+ {
+  "name": "repeated edit, README",
+  "signals": [
+   "repeated_edit"
+  ],
+  "stalled": true,
+  "choice": "ASK_USER",
+  "p": {
+   "ESCALATE": 0.2583,
+   "ASK_USER": 0.3834,
+   "REPLAN": 0.3584
+  },
+  "lat": 385.4951858520508
+ },
+ {
+  "name": "repeated edit, test file",
+  "signals": [
+   "repeated_edit"
+  ],
+  "stalled": true,
+  "choice": "ASK_USER",
+  "p": {
+   "ESCALATE": 0.3236,
+   "ASK_USER": 0.3529,
+   "REPLAN": 0.3234
+  },
+  "lat": 378.41796875
+ },
+ {
+  "name": "repeated edit, module",
+  "signals": [
+   "repeated_edit"
+  ],
+  "stalled": true,
+  "choice": "ASK_USER",
+  "p": {
+   "ESCALATE": 0.3268,
+   "ASK_USER": 0.3435,
+   "REPLAN": 0.3296
+  },
+  "lat": 359.2534065246582
+ },
+ {
+  "name": "repeated edit, utilities",
+  "signals": [
+   "repeated_edit"
+  ],
+  "stalled": true,
+  "choice": "REPLAN",
+  "p": {
+   "ESCALATE": 0.2375,
+   "ASK_USER": 0.3602,
+   "REPLAN": 0.4024
+  },
+  "lat": 354.54249382019043
+ },
+ {
+  "name": "iteration limit reached",
+  "signals": [
+   "iteration_limit"
+  ],
+  "stalled": false,
+  "choice": "ASK_USER",
+  "p": {
+   "ESCALATE": 0.2647,
+   "ASK_USER": 0.3905,
+   "REPLAN": 0.3448
+  },
+  "lat": 359.90166664123535
+ },
+ {
+  "name": "implementation retries exceeded",
+  "signals": [
+   "implementation_retries"
+  ],
+  "stalled": false,
+  "choice": "ASK_USER",
+  "p": {
+   "ESCALATE": 0.3152,
+   "ASK_USER": 0.3552,
+   "REPLAN": 0.3296
+  },
+  "lat": 379.49132919311523
+ },
+ {
+  "name": "iteration limit with a repeated command",
+  "signals": [
+   "repeated_command",
+   "iteration_limit"
+  ],
+  "stalled": true,
+  "choice": "ASK_USER",
+  "p": {
+   "ESCALATE": 0.2579,
+   "ASK_USER": 0.4182,
+   "REPLAN": 0.3239
+  },
+  "lat": 370.7878589630127
+ },
+ {
+  "name": "retries exceeded with a same failure",
+  "signals": [
+   "implementation_retries",
+   "same_failure"
+  ],
+  "stalled": true,
+  "choice": "ESCALATE",
+  "p": {
+   "ESCALATE": 0.45,
+   "ASK_USER": 0.2808,
+   "REPLAN": 0.2692
+  },
+  "lat": 375.75721740722656
+ }
+]
