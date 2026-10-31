@@ -10,8 +10,9 @@
 //! Nothing else in the home directory is readable or writable by a command, so SSH keys and cloud credentials stay
 //! out of reach. The policy still runs first; this module only limits what an allowed command can reach.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// What the sandbox is asked to do, from `[sandbox]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,16 +37,61 @@ pub fn support() -> Support {
 
 /// Confines `command` to the workspace as ADR-0016 describes. Does nothing when the settings turn the sandbox off.
 /// Returns an error, and the caller must not run the command, when the sandbox is on but cannot be applied.
-pub fn confine(command: &mut Command, workspace: &Path, settings: &Settings) -> Result<(), String> {
+pub fn confine(
+    command: &mut Command,
+    workspace: &Path,
+    settings: &Settings,
+) -> Result<Scratch, String> {
     if !settings.enabled {
-        return Ok(());
+        return Ok(Scratch(None));
     }
+    // The command gets its own temporary directory, and only that directory is writable for temporary files (ADR-0016).
+    let scratch = Scratch::create()?;
+    let dir = scratch.path().map(Path::to_path_buf).unwrap_or_default();
+    command.env("TMPDIR", &dir);
+    command.env("TMP", &dir);
+    command.env("TEMP", &dir);
     // Git reads the user's global configuration and default ignore file on every run, and both can name files in the home
     // directory. Inside the sandbox neither is read; git's system configuration still applies.
     command.env("GIT_CONFIG_GLOBAL", "/dev/null");
     // Git's default global ignore file lives under XDG_CONFIG_HOME; pointing it at /dev/null means no such file is found.
     command.env("XDG_CONFIG_HOME", "/dev/null");
-    imp::confine(command, workspace, settings.network)
+    imp::confine(command, workspace, settings.network, &dir)?;
+    Ok(scratch)
+}
+
+/// The private temporary directory of one confined command. Removed when this guard is dropped, so it is cleaned up on every
+/// path: a command that ran, timed out, or was refused.
+#[derive(Debug)]
+pub struct Scratch(Option<PathBuf>);
+
+impl Scratch {
+    /// The directory, or `None` when the sandbox is off.
+    pub fn path(&self) -> Option<&Path> {
+        self.0.as_deref()
+    }
+
+    fn create() -> Result<Self, String> {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let name = format!(
+            "bridle-cmd-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        );
+        let dir = std::env::temp_dir().join(name);
+        let guard = Self(Some(dir.clone()));
+        std::fs::create_dir(&dir)
+            .map_err(|error| format!("cannot create the command's temporary directory: {error}"))?;
+        Ok(guard)
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        if let Some(dir) = self.0.take() {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
 }
 
 #[allow(unsafe_code)] // ADR-0016: the Landlock system calls are the one place unsafe code is allowed.
@@ -166,12 +212,13 @@ mod imp {
         command: &mut Command,
         workspace: &Path,
         network: bool,
+        scratch: &Path,
     ) -> Result<(), String> {
         let abi = match support() {
             Support::Available { abi } => abi,
             Support::Unavailable(reason) => return Err(reason),
         };
-        let plan = build_plan(workspace, abi, network)?;
+        let plan = build_plan(workspace, abi, network, scratch)?;
         // SAFETY: `apply` runs in the child between fork and exec. It makes only system calls, on data the parent
         // prepared before the fork, and it returns an error instead of running the command unconfined.
         unsafe {
@@ -181,7 +228,12 @@ mod imp {
     }
 
     /// The ruleset: which paths may be read and written, and whether the network is denied.
-    pub(super) fn build_plan(workspace: &Path, abi: u32, network: bool) -> Result<Plan, String> {
+    pub(super) fn build_plan(
+        workspace: &Path,
+        abi: u32,
+        network: bool,
+        scratch: &Path,
+    ) -> Result<Plan, String> {
         let handled_net = if network {
             0
         } else if abi >= 4 {
@@ -213,9 +265,8 @@ mod imp {
             }
         }
         paths.push((workspace.to_path_buf(), dirs));
-        for scratch in ["/tmp", "/var/tmp"] {
-            paths.push((PathBuf::from(scratch), dirs));
-        }
+        // The command's own temporary directory. The shared /tmp is not writable from inside the sandbox.
+        paths.push((scratch.to_path_buf(), dirs));
         let mut rules = Vec::new();
         for (path, wanted) in paths {
             let Ok(metadata) = std::fs::metadata(&path) else {
@@ -320,15 +371,17 @@ mod imp {
 
         #[test]
         fn denying_the_network_needs_abi_four() {
-            let error = build_plan(Path::new("/tmp"), 3, false).err().unwrap();
+            let error = build_plan(Path::new("/tmp"), 3, false, Path::new("/tmp/scratch-test"))
+                .err()
+                .unwrap();
             assert!(error.contains("ABI 4"), "{error}");
-            assert!(build_plan(Path::new("/tmp"), 3, true).is_ok());
+            assert!(build_plan(Path::new("/tmp"), 3, true, Path::new("/tmp/scratch-test")).is_ok());
         }
 
         #[test]
         fn the_workspace_is_writable_and_the_home_directory_is_not_listed() {
             let dir = tempfile::tempdir().unwrap();
-            let plan = build_plan(dir.path(), 7, false).unwrap();
+            let plan = build_plan(dir.path(), 7, false, Path::new("/tmp/scratch-test")).unwrap();
             let workspace = dir.path().as_os_str().as_encoded_bytes().to_vec();
             let entry = plan
                 .paths
@@ -364,6 +417,7 @@ mod imp {
         _command: &mut Command,
         _workspace: &Path,
         _network: bool,
+        _scratch: &Path,
     ) -> Result<(), String> {
         Err(support_reason())
     }

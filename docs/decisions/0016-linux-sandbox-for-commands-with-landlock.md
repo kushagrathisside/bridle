@@ -47,7 +47,12 @@ Options considered on Linux:
 - The sandbox does not cover the model's own process, which is the harness's host, nor the git and model-server processes.
 - On Windows the sandbox is off: ADR-0012 still applies to that platform.
 
+## Decided later (2026-10-31)
+
+- **Temporary files are private per command.** Each confined command gets its own temporary directory, which is set as
+  `TMPDIR`, `TMP` and `TEMP`, and it is removed when the command finishes. The shared `/tmp` and `/var/tmp` are no longer
+  writable from inside the sandbox, so one command cannot leave files for another.
+
 ## Open
 
-- Whether `/tmp` should be private per command. Left shared for now, since build tools expect it.
 - The mechanism on Windows (ADR-0012).

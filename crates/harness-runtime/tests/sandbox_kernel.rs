@@ -33,7 +33,9 @@ fn confined(workspace: &std::path::Path, settings: &Settings, script: &str) -> b
         .current_dir(workspace)
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    sandbox::confine(&mut command, workspace, settings).expect("the sandbox can be applied");
+    // The guard keeps the command's temporary directory until the command has finished.
+    let _scratch =
+        sandbox::confine(&mut command, workspace, settings).expect("the sandbox can be applied");
     command.status().expect("the command starts").success()
 }
 
@@ -117,4 +119,40 @@ fn a_confined_command_connects_when_the_network_is_allowed() {
         "python3 -c \"import socket; socket.create_connection(('127.0.0.1', {port}), timeout=3)\""
     );
     assert!(confined(workspace.path(), &settings(true), &script));
+}
+
+#[test]
+fn a_confined_command_writes_to_its_own_temporary_directory_but_not_to_the_shared_tmp() {
+    if !available() {
+        return;
+    }
+    let workspace = tempfile::tempdir().unwrap();
+    let shared = PathBuf::from(format!(
+        "/tmp/bridle-sandbox-shared-probe-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&shared);
+    let script = format!(
+        "echo ok > \"$TMPDIR/own.txt\" && echo leak > {}",
+        shared.display()
+    );
+    let succeeded = confined(workspace.path(), &settings(false), &script);
+    let leaked = shared.exists();
+    let _ = std::fs::remove_file(&shared);
+    assert!(!succeeded, "the shared /tmp must not be writable");
+    assert!(!leaked, "no file may be created in the shared /tmp");
+}
+
+#[test]
+fn a_command_temporary_directory_is_removed_when_the_guard_is_dropped() {
+    if !available() {
+        return;
+    }
+    let workspace = tempfile::tempdir().unwrap();
+    let mut command = Command::new("true");
+    let scratch = sandbox::confine(&mut command, workspace.path(), &settings(false)).unwrap();
+    let dir = scratch.path().expect("the sandbox is on").to_path_buf();
+    assert!(dir.is_dir());
+    drop(scratch);
+    assert!(!dir.exists(), "the temporary directory must be removed");
 }
