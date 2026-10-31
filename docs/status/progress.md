@@ -34,8 +34,7 @@ Built: `agent eval-routing <cases> [--out]`. Each labelled request goes through 
 decision model answers the requests the rules cannot place, and the report gives the agreement by source. The
 deep slot is assumed to be serving, so the choice itself is measured.
 
-Seed corpus: `evals/routing/cases.json`, 20 requests, 12 expected MAIN and 8 expected DEEP. The labels were written by the
-assistant, not recorded from real use, and most of the long requests were written around the rule keywords. Treat the
+Seed corpus: `evals/routing/cases.json`, 20 requests, 12 expected MAIN and 8 expected DEEP. The labels are judgements, not recorded from real use, and most of the long requests were built around the rule keywords. Treat the
 numbers as a check that the path works, not as evidence of how well the placement generalises.
 
 | Run | Agreement | By source |
@@ -934,7 +933,7 @@ Review findings received so far (fix majors before tagging M1):
   - Inherent limit, to document: running tests runs code the model wrote. The policy stops obvious harm and
     secret exposure through tools; it is not a sandbox.
 
-Fix work started 2026-10-22, four Haiku agents in worktrees (high effort): classifier (`command_risk.rs`), path
+Fix work started 2026-10-22, four worker agents in worktrees (high effort): classifier (`command_risk.rs`), path
 policy (`tool_policy.rs`, `path_guard.rs`), MCP (`mcp/`), redaction (`redact.rs`, hook message, `config validate`).
 Queued for the next free slot: config trust and launcher/models/init/doctor fixes.
 
@@ -960,7 +959,7 @@ Restarts: session restarts kill background agents and long foreground commands. 
 - Serve/prefill: the server processed requests of about 8,196 tokens (OpenCode's system prompt and tool schemas). Prefill cost matters for latency; measure before M3.
 
 - Docs written: README, architecture, installation, configuration, security, models, troubleshooting.
-- In progress: hook fixture suite (34 black-box cases, `crates/harness-cli/tests/hook_fixtures.rs`) by a Haiku subagent; MCP `git_status` run through OpenCode.
+- In progress: hook fixture suite (34 black-box cases, `crates/harness-cli/tests/hook_fixtures.rs`) by a separate worker; MCP `git_status` run through OpenCode.
 - The background task "Remove todo in command_risk.rs" in another session is stale: the `todo!()` was removed when the classifier merged. Stop it.
 - Found: the Qwen server did not answer health probes while its one slot was generating. A long single generation (about 2,800 tokens) was in progress during the MCP run. Investigate reasoning length.
 
@@ -1009,7 +1008,7 @@ Known gaps:
 
 ## 2026-10-21: planning
 
-- Four read-only audits (core, OpenCode host, inference runtime, delivery) and an Opus review of the plan. Plan approved after the review and the decisions in its section 9.
+- Four read-only audits (core, OpenCode host, inference runtime, delivery) and an independent review of the plan. Plan approved after the review and the decisions in its section 9.
 - Plan and decisions are in `plans/make-a-plan-first-humble-robin.md` in the user's home folder (outside the repo).
 
 ## 2026-10-21: baseline
