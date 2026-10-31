@@ -1,6 +1,7 @@
 # ADR-0015: Laya is the decision backend in place of Jev
 
-- **Status:** Accepted (2026-10-31) by the owner's choice; the integration is not yet built, and the install is pending
+- **Status:** Accepted (2026-10-31) by the owner's choice. Installed and measured on 2026-10-31 (progress.md). The wire
+  contract is in `harness-runtime::laya`. The HTTP call, the configuration switch and the chat wiring are not yet built.
 - **Date:** 2026-10-31
 - **Deciders:** Kushagra Srivastava
 

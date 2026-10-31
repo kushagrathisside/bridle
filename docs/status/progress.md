@@ -28,6 +28,47 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-31: Laya installed and measured; routing and Laya client built in core and runtime
+
+Routing contract (`harness-core::routing`): rules place a request first (an explicit `/deep` or `/main` at the start;
+a short request with no hard word goes to `main`). A request the rules cannot place goes to the decision model, which
+answers `MAIN` or `DEEP`. The answer is checked against that closed set; anything else goes to `main`. `deep` is used only
+when it is serving. Ten tests.
+
+Routing, asked (`harness-runtime::routing`): the request is redacted and bounded before it is sent, and the model sees no
+repository content and no tool output. Four tests. Not yet wired into the chat; the chat still uses the slot the person
+selected.
+
+Laya install. The first install pulled PyTorch from PyPI, which is several gigabytes of CUDA libraries, and it was stopped
+before it finished. The environment now uses the PyTorch in the Regolith environment (2.13.0 on Python 3.12, CUDA build,
+used on the CPU): a venv at `/home/kushagra/bridle/laya/venv312` with a `.pth` file that reads Regolith's site-packages.
+`laya[serve]` installed with that torch counted as already satisfied. This venv depends on the Regolith environment; if
+that changes, this one breaks. The Ubuntu machine needs the same arrangement or its own PyTorch.
+
+Laya server. `laya-serve` on `127.0.0.1:8000`, CPU, with the `typed-decisions` checkpoint (revision `7b928d8`). The first
+probe used the `multilingual` checkpoint, because the router picks it by default; setting `LAYA_DEFAULT_MODEL=typed-decisions`
+sent the decision to `typed-decisions`. The request and response shapes are recorded in `harness-runtime::laya`, with a
+recorded answer as the test fixture.
+
+The 20 recorded loop cases, sent to `typed-decisions` with the choice criteria and no examples (report:
+[report-2026-10-31-laya-typed.json](../../evals/decisions/report-2026-10-31-laya-typed.json)):
+
+| Signal (cases) | Answers |
+|---|---|
+| same failure (6) | ESCALATE 6 |
+| repeated command (6) | ASK_USER 4, REPLAN 2 |
+| repeated edit (5) | ASK_USER 3, REPLAN 2 |
+| implementation retries (1) | ESCALATE 1 |
+
+Median latency 361 ms on CPU (the LFM models took roughly 1.2 to 1.5 seconds on the same cases). Against the rules: all six
+same-failure cases match, and three of the five repeated-edit cases match. Repeated commands cannot match, since the rules
+answer them with a diagnosis. The comparison is on the same signal grouping as the held-out LFM run above. The Laya answers
+used no examples, so they are not affected by the circularity that affected the first LFM prompt. The confidences are
+modest (0.56 for the first case), so the probabilities should be read as well as the choice.
+
+What is not done: the HTTP call from Bridle to `laya-serve`, the switch from `decisions.provider` to a Laya provider in
+the configuration, and the wiring of the routing contract into the chat. Those come next.
+
 ## 2026-10-31: held-out examples for the decision prompt; Laya as the decision backend (install not yet run)
 
 Held-out run. The examples in the first prompt were written from the loop cases, so that measurement was not a fair test.
