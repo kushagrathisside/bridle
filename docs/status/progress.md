@@ -28,6 +28,33 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-31: team run in the chat (planner, workers, verifier), recorded in the journal (M2 first slice)
+
+Built: `/team <request>` in the chat. A planner makes one tool-less call and returns a JSON list of at most five steps.
+Each step is a full turn of the same loop, with the same tools and policy as the main agent, and the verifier then runs the
+checks and reports. A planner answer outside the limits runs the request as one step, and the transcript says so.
+
+Core (`harness-core::team`): the roles, the planner's answer and its limits (one to five steps, no empty step, each step
+cut at 300 characters, control characters removed), and the text each role is given. Six tests. The verifier's report
+informs only; the loop rules still decide whether the task is done.
+
+Journal: a `role_run` record (role, step, outcome) for the planner, each worker step, and the verifier. A team run binds
+the chat session to a task first, as the workflow does on a session's first tool call, so the planner's outcome is
+journaled too. Without the workflow, nothing is journaled.
+
+Checked through the real terminal app (`agent tui`, driven in a pseudo-terminal) against a stand-in server that returns a
+plan to the planner's call, one tool call per step, and plain answers after the tool results. The stand-in answers the
+requests in the order the team needs: the planner first (no tools), then each step with its step text, then the verifier
+with the tool list. The task journal of that run holds the planner's plan, the two worker outcomes and the verifier's.
+
+Two chat tests cover a full run and a planner answer outside the limits. Workspace: 888 passed, 0 failed, 5 ignored; clippy
+with warnings as errors clean.
+
+Not done: parallel workers (ADR-0011 keeps the run in sequence); a worker that stops for the person mid-run is not
+resumed; the verifier's report is not parsed for a verdict, by design. The team runs on the default slot only: a slot the
+person chose is kept, as routing does. The on-screen rendering of the notices was checked by the logs of the run, not
+by a screenshot.
+
 ## 2026-10-31: routing wired end to end, with Laya as the decision model (through the real binary)
 
 Built: the Laya HTTP client (`harness-runtime::laya`), loopback HTTP only, using the shared transport helpers; the
