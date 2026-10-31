@@ -286,6 +286,13 @@ fn run_chat(turn: Turn, args: &LoadArgs, tx: &Sender<JobMsg>) {
         }
         None => slot,
     };
+    // An image turn goes to the vision slot when the configuration defines one (`[models.vision]`). Otherwise it stays on
+    // the slot chosen, and that slot refuses the image if it cannot read images.
+    let slot = if matches!(&image_turn, Some(Ok(_))) {
+        crate::image::image_slot(|name| agent.app().config.models.contains_key(name), &slot)
+    } else {
+        slot
+    };
     let (provider, model) = match agent.provider(&slot) {
         Ok(pair) => pair,
         Err(error) => {
