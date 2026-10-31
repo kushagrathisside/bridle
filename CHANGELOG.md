@@ -1,7 +1,7 @@
 # Changelog
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-The project has not been published; versions are for the repository only.
+The project has not been published, so the version below is for the repository only.
 
 ## [Unreleased] - 0.1.0 candidate
 
@@ -43,7 +43,8 @@ The project has not been published; versions are for the repository only.
 
 ### Known limits
 
-- The live checks of Jev and of the LiteLLM gateway were not run: no Jev service was available, and the gateway
-  check waits for approval.
-- A recursive search can read a secret file without naming it (security.md, residual risk 1).
-- OpenCode's model-catalog fetch and the model downloads are outside the harness's control.
+- The release runs on native Windows and is verified on one machine.
+- Bridle is not a sandbox. See [security](docs/concepts/security.md).
+- The live checks of the Jev service and the LiteLLM gateway are not part of the verified results.
+- `security.require_worktree` and `verification.required_for_done` are read by the configuration checks only.
+- OpenCode's model catalogue fetch and the model downloads are outside Bridle's control.

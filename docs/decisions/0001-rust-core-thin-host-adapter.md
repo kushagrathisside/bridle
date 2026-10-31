@@ -3,13 +3,13 @@
 - **Status:** Accepted
 - **Date:** 2026-10-21
 - **Deciders:** Project lead
-- **Supersedes:** The TypeScript tooling of the earlier design (ESLint, Prettier and Vitest). It also narrows the earlier
+- **Supersedes:** The TypeScript tooling of the original design (ESLint, Prettier and Vitest). It also narrows the earlier
   TypeScript and tooling expectations.
 
 ## Context
 
-The earlier design preferred TypeScript for the OpenCode extension layer, and it warned against a second language
-runtime "unless it provides clear value". On 2026-10-21 the project lead directed that **Rust is the
+The original design preferred TypeScript for the OpenCode extension layer, and it warned against a second language
+runtime "unless it provides clear value". On 2026-10-21 it was decided that **Rust is the
 primary implementation language**.
 
 OpenCode itself cannot be changed. Its plugins are JavaScript or TypeScript modules that run inside
@@ -43,7 +43,7 @@ The open question was how much.
    throws to block, sets the permission status, or changes the environment or output. It has no runtime npm
    dependencies. The `@opencode-ai/plugin` import is type-only, and Bun erases it.
 
-4. **Configuration is TOML** (`local-agent.toml`, with profiles in `configs/*.toml`). The earlier design treats the
+4. **Configuration is TOML** (`local-agent.toml`, with profiles in `configs/*.toml`). The original design treats the
    format as negotiable. TOML is native to Rust, and the de facto YAML crate (`serde_yaml`) is archived
    and unmaintained.
 
@@ -75,11 +75,11 @@ The source records the consequences as risks, each with its mitigation.
 | The hook bridge fails, for example because the binary is missing. | The shim **fails closed** for `tool.execute.before` and `permission.ask` (block or ask). It fails open only for hooks that carry telemetry alone. |
 | The repository holds two languages. | TS is confined to `opencode-plugin/` (the shim) and holds no business logic. It is reviewed as an adapter, not as a component. |
 | A hand-written MCP server drifts from the specification. | Implement only `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. Negotiate the protocol version. Add a protocol conformance test. The `rmcp` crate remains an option if a richer MCP surface is needed. |
-| Contributors may expect a TypeScript plugin package, as the earlier design described. | Document how the earlier design's module list maps to the Rust modules in [architecture](../concepts/architecture.md). |
+| Contributors may expect a TypeScript plugin package, as the original design described. | Document how the original design's module list maps to the Rust modules in [architecture](../concepts/architecture.md). |
 
 ## Alternatives considered
 
-- **An all-TypeScript plugin (the earlier design's default).** Rejected by the project lead.
+- **An all-TypeScript plugin (the original design's default).** Rejected.
 - **Rust compiled to WASM and loaded inside the plugin.** Process spawning, file system access and HTTP from
   WASM inside Bun would need host shims for everything. That is more complex and slower to build. Rejected.
 - **A Rust N-API addon loaded by Bun.** This ties the build to Bun's Node-API compatibility and to native
