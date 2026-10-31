@@ -145,6 +145,9 @@ pub struct SandboxSection {
     pub network: bool,
 }
 
+// A derive would set `enabled` to false everywhere. It is true on Linux only, so the impl stays by hand; on Windows the
+// lint fires because the value then equals the derived default.
+#[allow(clippy::derivable_impls)]
 impl Default for SandboxSection {
     fn default() -> Self {
         Self {
