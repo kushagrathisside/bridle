@@ -310,20 +310,50 @@ mod tests {
         assert!(LayaClient::new("http://example.com:8000", Duration::from_secs(1)).is_err());
     }
 
+    /// Reads one whole request: the headers, then the body that `Content-Length` announces. A single read can return
+    /// only the headers, and answering before the body arrives can reset the connection under the client.
+    fn read_request(stream: &mut std::net::TcpStream) -> String {
+        let mut request = Vec::new();
+        let mut chunk = [0u8; 4096];
+        loop {
+            let read = stream.read(&mut chunk).unwrap();
+            if read == 0 {
+                break;
+            }
+            request.extend_from_slice(&chunk[..read]);
+            let text = String::from_utf8_lossy(&request).into_owned();
+            if let Some(end) = text.find("\r\n\r\n") {
+                let length = text[..end]
+                    .lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        name.trim()
+                            .eq_ignore_ascii_case("content-length")
+                            .then(|| value.trim().parse::<usize>().ok())
+                            .flatten()
+                    })
+                    .unwrap_or(0);
+                if request.len() >= end + 4 + length {
+                    break;
+                }
+            }
+        }
+        String::from_utf8_lossy(&request).into_owned()
+    }
+
     /// A one-shot server that answers the first request with `body`, and returns the request it read.
     fn serve_once(body: &'static str) -> (String, std::thread::JoinHandle<String>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = format!("http://{}", listener.local_addr().unwrap());
         let handle = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut buffer = vec![0u8; 16_384];
-            let read = stream.read(&mut buffer).unwrap();
+            let request = read_request(&mut stream);
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
             );
             stream.write_all(response.as_bytes()).unwrap();
-            String::from_utf8_lossy(&buffer[..read]).into_owned()
+            request
         });
         (addr, handle)
     }
