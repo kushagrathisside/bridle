@@ -48,4 +48,6 @@ near chance on typed decisions (0.362); the 0.766 figure is for the fine-tuned c
 ## Open
 
 - Install Laya and fetch the typed-decisions checkpoint, then record the real request and response shapes.
-- Measure Laya on the stalled-loop cases and on a routing set, with examples that are not among the test cases.
+- Measure Laya on the stalled-loop cases and on a routing set, with examples that are not among the test cases. Done for the
+  routing set in its seed form (`evals/routing`, 19 of 20, with the caveat in ADR-0010); the examples must still be
+  replaced by requests that are not written around the rule keywords.

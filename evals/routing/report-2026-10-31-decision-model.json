@@ -1,0 +1,182 @@
+[
+  {
+    "name": "short typo fix",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "rule",
+    "reason": "a short request with no hard word",
+    "latency_ms": 0,
+    "correct": true
+  },
+  {
+    "name": "short explanation",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "rule",
+    "reason": "a short request with no hard word",
+    "latency_ms": 0,
+    "correct": true
+  },
+  {
+    "name": "short test run",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "rule",
+    "reason": "a short request with no hard word",
+    "latency_ms": 0,
+    "correct": true
+  },
+  {
+    "name": "short changelog",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "rule",
+    "reason": "a short request with no hard word",
+    "latency_ms": 0,
+    "correct": true
+  },
+  {
+    "name": "short rename",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "rule",
+    "reason": "a short request with no hard word",
+    "latency_ms": 0,
+    "correct": true
+  },
+  {
+    "name": "short test case",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "rule",
+    "reason": "a short request with no hard word",
+    "latency_ms": 0,
+    "correct": true
+  },
+  {
+    "name": "long docstring",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "decision model",
+    "reason": "the decision model chose MAIN (65% probability)",
+    "latency_ms": 2085,
+    "correct": true
+  },
+  {
+    "name": "long config change",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "decision model",
+    "reason": "the decision model chose MAIN (73% probability)",
+    "latency_ms": 277,
+    "correct": true
+  },
+  {
+    "name": "long help text",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "decision model",
+    "reason": "the decision model chose MAIN (70% probability)",
+    "latency_ms": 247,
+    "correct": true
+  },
+  {
+    "name": "long formatting",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "decision model",
+    "reason": "the decision model chose MAIN (76% probability)",
+    "latency_ms": 263,
+    "correct": true
+  },
+  {
+    "name": "long import fix",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "decision model",
+    "reason": "the decision model chose MAIN (64% probability)",
+    "latency_ms": 265,
+    "correct": true
+  },
+  {
+    "name": "long release notes",
+    "expected": "MAIN",
+    "got": "MAIN",
+    "source": "decision model",
+    "reason": "the decision model chose MAIN (72% probability)",
+    "latency_ms": 251,
+    "correct": true
+  },
+  {
+    "name": "architecture",
+    "expected": "DEEP",
+    "got": "DEEP",
+    "source": "decision model",
+    "reason": "the decision model chose DEEP (76% probability)",
+    "latency_ms": 244,
+    "correct": true
+  },
+  {
+    "name": "root cause",
+    "expected": "DEEP",
+    "got": "DEEP",
+    "source": "decision model",
+    "reason": "the decision model chose DEEP (70% probability)",
+    "latency_ms": 259,
+    "correct": true
+  },
+  {
+    "name": "investigate",
+    "expected": "DEEP",
+    "got": "DEEP",
+    "source": "decision model",
+    "reason": "the decision model chose DEEP (66% probability)",
+    "latency_ms": 255,
+    "correct": true
+  },
+  {
+    "name": "migrate",
+    "expected": "DEEP",
+    "got": "MAIN",
+    "source": "decision model",
+    "reason": "the decision model chose MAIN (64% probability)",
+    "latency_ms": 251,
+    "correct": false
+  },
+  {
+    "name": "security review",
+    "expected": "DEEP",
+    "got": "DEEP",
+    "source": "decision model",
+    "reason": "the decision model chose DEEP (72% probability)",
+    "latency_ms": 246,
+    "correct": true
+  },
+  {
+    "name": "refactor",
+    "expected": "DEEP",
+    "got": "DEEP",
+    "source": "decision model",
+    "reason": "the decision model chose DEEP (66% probability)",
+    "latency_ms": 253,
+    "correct": true
+  },
+  {
+    "name": "design plugins",
+    "expected": "DEEP",
+    "got": "DEEP",
+    "source": "decision model",
+    "reason": "the decision model chose DEEP (69% probability)",
+    "latency_ms": 249,
+    "correct": true
+  },
+  {
+    "name": "long cross-module",
+    "expected": "DEEP",
+    "got": "DEEP",
+    "source": "decision model",
+    "reason": "the decision model chose DEEP (64% probability)",
+    "latency_ms": 270,
+    "correct": true
+  }
+]

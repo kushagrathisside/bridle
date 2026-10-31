@@ -5,8 +5,11 @@
 //! model, Laya, when `[external.laya]` is enabled. The deep slot is used only when Bridle reports it running; otherwise
 //! the request goes to `main`, and the reason says so.
 
+use std::path::Path;
+
 use harness_core::routing::{self, Answer, Placed, Slot};
 use harness_runtime::laya::{self, LayaClient};
+use serde::Deserialize;
 use std::time::Duration;
 
 use crate::app::App;
@@ -95,6 +98,96 @@ pub fn run(app: &App, text: &str) -> anyhow::Result<std::process::ExitCode> {
         None => println!(
             "slot: {default}\nreason: routing is off (routing.auto_slot is false), so the default slot answers"
         ),
+    }
+    Ok(std::process::ExitCode::SUCCESS)
+}
+
+/// One measured decision: the slot chosen, where the choice came from, and how long it took.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Measured {
+    pub slot: Slot,
+    pub source: &'static str,
+    pub reason: String,
+    pub latency_ms: u128,
+}
+
+/// The choice for a request, for measurement. Unlike [`for_request`] it does not ask whether the deep slot is serving, so
+/// the choice itself is what gets measured.
+pub fn decide(app: &App, text: &str) -> Measured {
+    let started = std::time::Instant::now();
+    let placed = routing::place(text);
+    let source = match &placed {
+        Placed::Rule { .. } => "rule",
+        Placed::Undecided if app.config.external.laya.enabled => "decision model",
+        Placed::Undecided => "no decision model",
+    };
+    let answer = match placed {
+        Placed::Undecided => ask_laya(app, text),
+        Placed::Rule { .. } => None,
+    };
+    let (slot, reason) = routing::choose(placed, answer, true);
+    Measured {
+        slot,
+        source,
+        reason,
+        latency_ms: started.elapsed().as_millis(),
+    }
+}
+
+/// One labelled request of the routing corpus (`evals/routing/cases.json`).
+#[derive(Debug, Deserialize)]
+struct Case {
+    name: String,
+    text: String,
+    expected: String,
+}
+
+/// `agent eval-routing <cases>`: runs each labelled request through the placement and prints the agreement, by source.
+/// The labels are a judgement that a person must review; the report says how many of each source agreed.
+pub fn eval(
+    app: &App,
+    cases_path: &Path,
+    out: Option<&Path>,
+) -> anyhow::Result<std::process::ExitCode> {
+    let cases: Vec<Case> = serde_json::from_str(&std::fs::read_to_string(cases_path)?)?;
+    let mut rows = Vec::new();
+    for case in &cases {
+        let measured = decide(app, &case.text);
+        let got = measured.slot.name().to_uppercase();
+        let correct = got == case.expected.to_uppercase();
+        println!(
+            "{:<22} expected {:<4} got {:<4} {:<18} {:>5} ms  {}",
+            case.name,
+            case.expected,
+            got,
+            measured.source,
+            measured.latency_ms,
+            if correct { "ok" } else { "DIFFERS" }
+        );
+        rows.push(serde_json::json!({
+            "name": case.name,
+            "expected": case.expected,
+            "got": got,
+            "source": measured.source,
+            "reason": measured.reason,
+            "latency_ms": measured.latency_ms,
+            "correct": correct,
+        }));
+    }
+    let total = rows.len();
+    let correct = rows.iter().filter(|row| row["correct"] == true).count();
+    println!("agreement: {correct} of {total}");
+    for source in ["rule", "decision model", "no decision model"] {
+        let of: Vec<&serde_json::Value> =
+            rows.iter().filter(|row| row["source"] == source).collect();
+        if of.is_empty() {
+            continue;
+        }
+        let agreed = of.iter().filter(|row| row["correct"] == true).count();
+        println!("  {source}: {agreed} of {}", of.len());
+    }
+    if let Some(path) = out {
+        std::fs::write(path, serde_json::to_string_pretty(&rows)? + "\n")?;
     }
     Ok(std::process::ExitCode::SUCCESS)
 }
