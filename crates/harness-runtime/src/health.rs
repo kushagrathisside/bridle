@@ -1,4 +1,4 @@
-//! Functional health checks (§44): an HTTP 200 is not evidence of compatibility.
+//! Functional health checks: an HTTP 200 is not evidence of compatibility.
 //!
 //! IMPLEMENTATION SPEC (delegated). `run_checks(provider, model, opts)` runs, in order, and
 //! returns one [`CheckResult`] per check (never panics, never returns early except: if `Health`
@@ -17,7 +17,7 @@
 //!    `get_weather(city: string, required)` with `tool_choice: "auto"` and prompt `What is the
 //!    weather in Paris? Use the get_weather tool.` Pass if the first tool call is named
 //!    `get_weather` and its arguments parse as a JSON object whose `city` contains "Paris"
-//!    (case-insensitive); Warn if a tool call is present but malformed (record why — K-9);
+//!    (case-insensitive); Warn if a tool call is present but malformed (record why);
 //!    Fail if no tool call.
 //! 6. `StructuredOutput` (only if `capabilities.structured_output`, else Skip) — `response_format`
 //!    `{"type":"json_schema","json_schema":{"name":"decision","strict":true,"schema":{"type":
@@ -44,7 +44,7 @@ use harness_core::config::{ModelConfig, MtpMode};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::providers::llama_cpp::{props_build, props_context};
+use crate::providers::llama_cpp::{props_build, props_context, props_speculative};
 use crate::providers::{
     ChatMessage, ChatRequest, HealthStatus, ModelProvider, ProviderError, ToolCall, ToolSpec,
 };
@@ -101,7 +101,7 @@ const ALL_CHECKS: [CheckKind; 8] = [
 
 /// Runs the functional checks against `provider` for the slot described by `model`.
 ///
-/// Returns one result per check, in §44 order. A failed health check skips every later check.
+/// Returns one result per check, in check order. A failed health check skips every later check.
 /// Quick mode returns only the first three results.
 pub fn run_checks(
     provider: &dyn ModelProvider,
@@ -430,7 +430,7 @@ fn check_mtp(
     if model.mtp == MtpMode::Off {
         return skipped(CheckKind::Mtp, "disabled (mtp = off)");
     }
-    let detected = props_value(props).and_then(speculative_flag);
+    let detected = props_value(props).and_then(props_speculative);
     match (detected, model.mtp) {
         (Some(true), _) => check(
             CheckKind::Mtp,
@@ -537,55 +537,6 @@ fn props_value(props: &Result<Option<Value>, ProviderError>) -> Option<&Value> {
     props.as_ref().ok().and_then(Option::as_ref)
 }
 
-/// Context size reported by llama.cpp props: `default_generation_settings.n_ctx`, falling back
-/// to a top-level `n_ctx`.
-/// Looks for keys that mention speculative or draft decoding anywhere in the props JSON.
-///
-/// `Some(true)` when such a key holds a truthy value, `Some(false)` when such keys exist but are
-/// all falsy, `None` when no such key exists. Heuristic: llama.cpp does not document a stable key.
-fn speculative_flag(props: &Value) -> Option<bool> {
-    let mut found = None;
-    collect_speculative(props, &mut found);
-    found
-}
-
-fn collect_speculative(value: &Value, found: &mut Option<bool>) {
-    match value {
-        Value::Object(map) => {
-            for (key, child) in map {
-                let lowered = key.to_ascii_lowercase();
-                if lowered.contains("speculative") || lowered.contains("draft") {
-                    *found = Some(found.unwrap_or(false) || is_truthy(child));
-                }
-                collect_speculative(child, found);
-            }
-        }
-        Value::Array(items) => {
-            for item in items {
-                collect_speculative(item, found);
-            }
-        }
-        _ => {}
-    }
-}
-
-/// Scalars are truthy when non-zero, non-empty or `true`. Containers are truthy when any value is.
-/// Strings that name an off state are falsy: llama.cpp reports `"types": "none"` when no
-/// speculative decoding is configured (checked against b11756 `/props`).
-fn is_truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(flag) => *flag,
-        Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
-        Value::String(s) => !matches!(
-            s.trim().to_ascii_lowercase().as_str(),
-            "" | "none" | "off" | "false" | "disabled" | "0"
-        ),
-        Value::Array(items) => items.iter().any(is_truthy),
-        Value::Object(map) => map.values().any(is_truthy),
-    }
-}
-
 fn check(
     kind: CheckKind,
     status: Status,
@@ -632,7 +583,7 @@ fn preview(text: &str, max_chars: usize) -> String {
 mod speculative_tests {
     use serde_json::json;
 
-    use super::speculative_flag;
+    use crate::providers::llama_cpp::props_speculative as speculative_flag;
 
     #[test]
     fn off_state_strings_are_not_speculative_decoding() {

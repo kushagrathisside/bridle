@@ -1,4 +1,4 @@
-//! Summaries of result files (M2 step 7): JSON, JSON Lines and CSV artifacts, and the numeric
+//! Summaries of result files: JSON, JSON Lines and CSV artifacts, and the numeric
 //! metrics of an experiment. Pure functions over text; the tools in `mcp::tools::artifacts`
 //! choose the files and apply the read policy.
 //!

@@ -1,4 +1,4 @@
-//! `agent bench` (M10, R-39, R-40, R-57.10): runs a task corpus under one condition, and reports the results.
+//! `agent bench`: runs a task corpus under one condition, and reports the results.
 //!
 //! A run copies each task's fixture into a fresh folder, writes the condition's config there, wires OpenCode to the
 //! harness with `agent init`, starts OpenCode with the task prompt, and checks the result with the task's `verify.py`.

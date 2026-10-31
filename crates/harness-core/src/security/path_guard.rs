@@ -1,4 +1,4 @@
-//! Workspace path guard (R-27.1): every file path a tool touches must resolve inside an
+//! Workspace path guard: every file path a tool touches must resolve inside an
 //! authorised root.
 //!
 //! IMPLEMENTATION SPEC (delegated):

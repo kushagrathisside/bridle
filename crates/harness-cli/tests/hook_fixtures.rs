@@ -124,7 +124,7 @@ fn rows() -> Vec<Row> {
             NO_ENV,
             Allow,
         ),
-        // A write to a secret is Ask, which the hook turns into a block (decision D3).
+        // A write to a secret is Ask, which the hook turns into a block.
         row(
             "06 edit .env",
             BEFORE,
@@ -259,7 +259,7 @@ fn rows() -> Vec<Row> {
             NO_ENV,
             Block("unknown_tool"),
         ),
-        // The pattern can name `.env`, which is judged first, so the secret rule answers (M9).
+        // The pattern can name `.env`, which is judged first, so the secret rule answers.
         row(
             "24 glob ../../**/*.env",
             BEFORE,

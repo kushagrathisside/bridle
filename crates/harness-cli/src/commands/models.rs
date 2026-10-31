@@ -1,4 +1,4 @@
-//! `agent models list|serve|stop|manifest` (§38, §43).
+//! `agent models list|serve|stop|manifest`.
 //!
 //! `serve` starts a slot's inference server from its `[models.<slot>.launch]` section. The PID is
 //! recorded under `<state>/servers/<slot>.pid` so `stop` can find the process later, and the output
@@ -90,7 +90,7 @@ fn list(app: &App) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Where a slot's server stands, as seen from outside the process (R-45.2). `loaded`, `idle` and
+/// Where a slot's server stands, as seen from outside the process. `loaded`, `idle` and
 /// `unloading` need signals this command does not have (weights resident, time since the last
 /// request, a stop in progress), so they are not reported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -235,7 +235,7 @@ fn serve(app: &App, slot: &str, detach: bool, wait_secs: u64) -> anyhow::Result<
     Ok(exit_code_for(status))
 }
 
-/// One GPU model at a time (M3 to M5 plan, R-7): a GPU slot may start only when no other GPU slot's server
+/// One GPU model at a time: a GPU slot may start only when no other GPU slot's server
 /// is running. The person stops the other one first; nothing is stopped automatically.
 fn check_one_gpu_model(app: &App, slot: &str) -> anyhow::Result<()> {
     let is_gpu = |name: &str| {
@@ -269,26 +269,52 @@ fn check_one_gpu_model(app: &App, slot: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn stop(app: &App, slot: &str) -> anyhow::Result<ExitCode> {
+/// What `stop_server` did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum StopOutcome {
+    NoRecord,
+    Stopped(u32),
+    /// The recorded process was not running; the stale record was removed.
+    Gone(u32),
+    /// The PID belongs to another program now; it was not signalled.
+    Reused {
+        pid: u32,
+        image: String,
+    },
+}
+
+/// Stops a server started by `serve`, with the PID-reuse safeguard, and reports what happened.
+/// Prints nothing. Shared by `stop` and the TUI.
+pub(crate) fn stop_server(app: &App, slot: &str) -> anyhow::Result<StopOutcome> {
     check_slot_name(slot)?;
     let pid_file = pid_path(&app.state_dir(), slot);
     let Some(record) = read_record(&pid_file)? else {
-        println!("· no server recorded for `{slot}`; nothing to stop");
-        return Ok(ExitCode::SUCCESS);
+        return Ok(StopOutcome::NoRecord);
     };
     let pid = record.pid;
-    match record_state(&record, &expected_server_bin(&app.config, slot)) {
+    let outcome = match record_state(&record, &expected_server_bin(&app.config, slot)) {
         RecordState::Running => {
             terminate(pid)?;
-            line(Mark::Ok, slot, format!("stopped (pid {pid})"));
+            StopOutcome::Stopped(pid)
         }
-        RecordState::Gone => line(
+        RecordState::Gone => StopOutcome::Gone(pid),
+        // After a crash or reboot the PID can belong to an unrelated program: never signal it.
+        RecordState::Reused(image) => StopOutcome::Reused { pid, image },
+    };
+    let _ = fs::remove_file(&pid_file);
+    Ok(outcome)
+}
+
+fn stop(app: &App, slot: &str) -> anyhow::Result<ExitCode> {
+    match stop_server(app, slot)? {
+        StopOutcome::NoRecord => println!("· no server recorded for `{slot}`; nothing to stop"),
+        StopOutcome::Stopped(pid) => line(Mark::Ok, slot, format!("stopped (pid {pid})")),
+        StopOutcome::Gone(pid) => line(
             Mark::Info,
             slot,
             format!("pid {pid} was not running; removed the stale record"),
         ),
-        // After a crash or reboot the PID can belong to an unrelated program: never signal it.
-        RecordState::Reused(image) => line(
+        StopOutcome::Reused { pid, image } => line(
             Mark::Warn,
             slot,
             format!(
@@ -297,8 +323,124 @@ fn stop(app: &App, slot: &str) -> anyhow::Result<ExitCode> {
             ),
         ),
     }
-    let _ = fs::remove_file(&pid_file);
     Ok(ExitCode::SUCCESS)
+}
+
+/// A slot's managed-server state from its PID record only. Read-only: it never signals, never
+/// contacts the endpoint, so a responding endpoint is not mistaken for a managed server.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ServerState {
+    /// No record: Bridle has not started a server for this slot.
+    NotManaged,
+    Running {
+        pid: u32,
+    },
+    /// A record exists but its process is gone.
+    Stale {
+        pid: u32,
+    },
+    /// A record exists but the PID now belongs to another program.
+    Reused {
+        pid: u32,
+        image: String,
+    },
+    /// The record file could not be read or parsed.
+    Unreadable(String),
+}
+
+pub(crate) fn server_state(app: &App, slot: &str) -> ServerState {
+    if check_slot_name(slot).is_err() {
+        return ServerState::Unreadable("invalid slot name".to_owned());
+    }
+    match read_record(&pid_path(&app.state_dir(), slot)) {
+        Ok(None) => ServerState::NotManaged,
+        Ok(Some(record)) => match record_state(&record, &expected_server_bin(&app.config, slot)) {
+            RecordState::Running => ServerState::Running { pid: record.pid },
+            RecordState::Gone => ServerState::Stale { pid: record.pid },
+            RecordState::Reused(image) => ServerState::Reused {
+                pid: record.pid,
+                image,
+            },
+        },
+        Err(err) => ServerState::Unreadable(format!("{err:#}")),
+    }
+}
+
+/// Where the slot's server log is (it may not exist).
+pub(crate) fn server_log_path(app: &App, slot: &str) -> PathBuf {
+    log_path(&app.state_dir(), slot)
+}
+
+/// `serve --detach` without printing: the checks `serve` makes (valid config, one GPU model at a
+/// time, no second server for the slot), then the quiet start, which waits for health.
+pub(crate) fn start_checked(app: &App, slot: &str, wait: Duration) -> anyhow::Result<()> {
+    app.require_valid_config()?;
+    check_slot_name(slot)?;
+    check_one_gpu_model(app, slot)?;
+    if is_running(app, slot)? {
+        bail!(
+            "`{slot}` already has a running server; stop it with `{} models stop {slot}` first",
+            identity::CLI_NAME
+        );
+    }
+    start_quiet(app, slot, wait)
+}
+
+/// Whether a slot's server is running: its PID record names a live process of the server's program.
+pub(crate) fn is_running(app: &App, slot: &str) -> anyhow::Result<bool> {
+    check_slot_name(slot)?;
+    let Some(record) = read_record(&pid_path(&app.state_dir(), slot))? else {
+        return Ok(false);
+    };
+    Ok(record_state(&record, &expected_server_bin(&app.config, slot)) == RecordState::Running)
+}
+
+/// Starts a slot's server and returns once it answers health. Prints nothing: the escalation swap runs inside a hook,
+/// whose stdout carries the answer. A server that is already running is left alone.
+pub(crate) fn start_quiet(app: &App, slot: &str, wait: Duration) -> anyhow::Result<()> {
+    check_slot_name(slot)?;
+    if is_running(app, slot)? {
+        return Ok(());
+    }
+    let plan = plan_serve(&app.config, slot)?;
+    let state = app.state_dir();
+    let pid_file = pid_path(&state, slot);
+    let _ = fs::remove_file(&pid_file);
+    let log = log_path(&state, slot);
+    let mut child = launcher::spawn_server(&plan.bin, &plan.args, &log)
+        .with_context(|| format!("starting {}", plan.bin.display()))?;
+    if let Err(err) = write_record(&pid_file, child.id(), &plan.bin) {
+        let _ = child.kill();
+        bail!(
+            "cannot record the server pid in {}: {err}",
+            pid_file.display()
+        );
+    }
+    match launcher::wait_until_healthy(&plan.health_url, wait, POLL_INTERVAL, Some(&mut child)) {
+        Ok(_) => Ok(()),
+        Err(err) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = fs::remove_file(&pid_file);
+            bail!(
+                "`{slot}` did not become healthy: {err} (see {})",
+                log.display()
+            );
+        }
+    }
+}
+
+/// Stops a slot's server and prints nothing. A record whose process is gone is removed.
+pub(crate) fn stop_quiet(app: &App, slot: &str) -> anyhow::Result<()> {
+    check_slot_name(slot)?;
+    let pid_file = pid_path(&app.state_dir(), slot);
+    if let Some(record) = read_record(&pid_file)? {
+        if record_state(&record, &expected_server_bin(&app.config, slot)) == RecordState::Running {
+            terminate(record.pid)?;
+        }
+        let _ = fs::remove_file(&pid_file);
+    }
+    Ok(())
 }
 
 fn manifest_command(app: &App, slot: Option<&str>, no_hash: bool) -> anyhow::Result<ExitCode> {
@@ -399,7 +541,7 @@ fn plan_serve(config: &Config, slot: &str) -> anyhow::Result<ServePlan> {
 }
 
 /// `GET <root>/health`, where the root is the endpoint without its `/v1` suffix.
-fn health_url(endpoint: &str) -> String {
+pub(crate) fn health_url(endpoint: &str) -> String {
     let root = endpoint.trim_end_matches('/');
     let root = root.strip_suffix("/v1").unwrap_or(root);
     format!("{root}/health")

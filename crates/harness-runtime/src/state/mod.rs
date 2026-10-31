@@ -1,4 +1,4 @@
-//! Persistent task state under `.local-agent/` (M3 step 1).
+//! Persistent task state under `.local-agent/`.
 //!
 //! Every file is a versioned envelope, `{"schema": 1, "data": ...}`. Readers tolerate unknown fields
 //! inside `data`, refuse a newer schema by name, and skip a torn last line of a JSON Lines file.
@@ -84,6 +84,17 @@ impl StateDir {
         })?;
         fs::remove_stale_temps(&root)?;
         Ok(Self {
+            root,
+            redactor: Redactor::new(),
+        })
+    }
+
+    /// The state directory of `workspace` for reading only: it is not created, no temporary file
+    /// is removed and no lock is taken. `None` when the workspace has no state directory yet.
+    /// For viewers that must not change anything; writers use [`StateDir::open`].
+    pub fn open_existing(workspace: &Path) -> Option<Self> {
+        let root = workspace.join(identity::STATE_DIR);
+        root.is_dir().then(|| Self {
             root,
             redactor: Redactor::new(),
         })

@@ -1,4 +1,4 @@
-//! Structured telemetry events (§28). Every agent action becomes one JSON line. Local only.
+//! Structured telemetry events. Every agent action becomes one JSON line. Local only.
 
 use serde::{Deserialize, Serialize};
 
@@ -20,7 +20,7 @@ pub enum EventKind {
     Verification,
     Mcp,
     Doctor,
-    /// The per-request view of tool results, and the task state put into the system prompt (M6).
+    /// The per-request view of tool results, and the task state put into the system prompt.
     Context,
 }
 

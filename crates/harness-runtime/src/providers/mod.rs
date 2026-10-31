@@ -1,5 +1,5 @@
-//! Model providers (§7): every LLM call goes through the [`ModelProvider`] trait, so the harness is
-//! never hard-coded against one server (R-7.1).
+//! Model providers: every LLM call goes through the [`ModelProvider`] trait, so the harness is
+//! never hard-coded against one server.
 //!
 //! The API is synchronous on purpose: the CLI and hook processes are short-lived and make one call
 //! at a time, so an async runtime would add weight without benefit.
@@ -52,7 +52,7 @@ pub struct ToolCall {
     pub id: String,
     /// Function name.
     pub name: String,
-    /// Raw JSON-encoded arguments string, exactly as returned (models can emit invalid JSON, R-59).
+    /// Raw JSON-encoded arguments string, exactly as returned (models can emit invalid JSON).
     pub arguments: String,
 }
 
@@ -64,15 +64,34 @@ pub struct ChatMessage {
     pub tool_calls: Vec<ToolCall>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    /// Images attached to a user message (M5). Sent only to a slot whose `capabilities.vision` is on.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<Image>,
+}
+
+/// An image attached to a message: its media type, and its bytes base64-encoded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Image {
+    pub media_type: String,
+    pub base64: String,
 }
 
 impl ChatMessage {
+    /// A user message with images attached.
+    pub fn user_with_images(text: impl Into<String>, images: Vec<Image>) -> Self {
+        Self {
+            images,
+            ..Self::user(text)
+        }
+    }
+
     pub fn system(text: impl Into<String>) -> Self {
         Self {
             role: Role::System,
             content: Some(text.into()),
             tool_calls: vec![],
             tool_call_id: None,
+            images: Vec::new(),
         }
     }
     pub fn user(text: impl Into<String>) -> Self {
@@ -81,6 +100,7 @@ impl ChatMessage {
             content: Some(text.into()),
             tool_calls: vec![],
             tool_call_id: None,
+            images: Vec::new(),
         }
     }
 }
@@ -115,14 +135,14 @@ pub struct ChatRequest {
     pub enable_thinking: Option<bool>,
 }
 
-/// Token usage reported by the server, when available (R-2.6).
+/// Token usage reported by the server, when available.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Usage {
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
 }
 
-/// Server-side timings (llama.cpp `timings` object), used to separate prefill from generation (R-41).
+/// Server-side timings (llama.cpp `timings` object), used to separate prefill from generation.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct Timings {
     pub prompt_ms: Option<f64>,
@@ -156,6 +176,18 @@ pub struct HealthStatus {
     pub detail: String,
 }
 
+/// What a stream reports while it is read (see [`ModelProvider::chat_stream_with`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamEvent<'a> {
+    /// A piece of the answer text.
+    Text(&'a str),
+    /// The model is writing a tool call. `name` is empty until the server has sent it; `chars` is the
+    /// length of the argument text so far.
+    ToolCall { name: &'a str, chars: usize },
+    /// The model is producing reasoning that is not part of the answer; `chars` is its length so far.
+    Reasoning { chars: usize },
+}
+
 pub trait ModelProvider: Send + Sync {
     /// Model id this provider sends in requests.
     fn model_id(&self) -> &str;
@@ -176,6 +208,22 @@ pub trait ModelProvider: Send + Sync {
         req: &ChatRequest,
         on_delta: &mut dyn FnMut(&str),
     ) -> Result<ChatResponse, ProviderError>;
+
+    /// Like [`chat_stream`](Self::chat_stream), and reports what arrives, including the parts that are not
+    /// text. When `on_event` returns `false` the stream is abandoned: the connection is dropped, so the
+    /// server stops generating, and the response holds what had arrived, with `finish_reason` set to
+    /// `stopped` and no tool calls (one that was still being written is incomplete and must not be run).
+    ///
+    /// The default implementation reports text only and cannot stop early.
+    fn chat_stream_with(
+        &self,
+        req: &ChatRequest,
+        on_event: &mut dyn FnMut(StreamEvent<'_>) -> bool,
+    ) -> Result<ChatResponse, ProviderError> {
+        self.chat_stream(req, &mut |piece| {
+            let _ = on_event(StreamEvent::Text(piece));
+        })
+    }
 
     /// Server introspection (llama.cpp `GET <root>/props`). `None` for servers without it.
     fn server_props(&self) -> Result<Option<serde_json::Value>, ProviderError> {

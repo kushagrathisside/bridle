@@ -1,11 +1,11 @@
-//! Loop detection (M3 step 4, R-20.1): a pure function over the recent calls of a task and its state.
+//! Loop detection: a pure function over the recent calls of a task and its state.
 //!
 //! The detector reports signals. It does not refuse calls, and it does not decide what happens next:
 //! that is the decision engine's job (step 5). Every rule is a function of the ring of recent calls and
 //! the task state, so the same input always gives the same signals.
 //!
-//! Two rules use the R-17.3 defaults; the other thresholds are proposals and are tuned from recorded
-//! trajectories (M10). All thresholds are plain values here. Config loading and validation are added in
+//! Two rules use the defaults; the other thresholds are proposals and are tuned from recorded
+//! trajectories. All thresholds are plain values here. Config loading and validation are added in
 //! step 5.
 
 use serde::{Deserialize, Serialize};
@@ -32,15 +32,15 @@ pub struct CallRecord {
     pub passed: Option<bool>,
 }
 
-/// How many recent calls are kept per task (proposed; see the M3 plan).
+/// How many recent calls are kept per task (proposed).
 pub const RING_SIZE: usize = 16;
 
 /// The thresholds of the loop rules.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Thresholds {
-    /// Consecutive verifications with the same failure before ESCALATE. R-17.3 (two retries).
+    /// Consecutive verifications with the same failure before ESCALATE (two retries).
     pub same_failure_verifications: u32,
-    /// IMPLEMENT entries beyond which the task escalates. R-17.3 (three retries).
+    /// IMPLEMENT entries beyond which the task escalates (three retries).
     pub implementation_retries: u32,
     /// Identical commands in the window, with no edit between, that count as a loop. Proposed.
     pub repeated_command_count: u32,
@@ -48,7 +48,7 @@ pub struct Thresholds {
     pub repeated_command_window: u32,
     /// Edits of one file since the last verification that count as a loop. Proposed.
     pub repeated_edit_count: u32,
-    /// Iterations after which the task is blocked (R-17.2). The value is the §17 starting value in `[agent]`.
+    /// Iterations after which the task is blocked. The value is the starting value in `[agent]`.
     pub max_iterations: u32,
 }
 
@@ -59,8 +59,8 @@ impl Default for Thresholds {
 }
 
 impl Thresholds {
-    /// The thresholds from the configuration. `[agent]` holds the bounds of §17; `[workflow]` holds the
-    /// thresholds added in M3. Same-failure retries are configured as retries, so the rule fires on the
+    /// The thresholds from the configuration. `[agent]` holds the bounds; `[workflow]` holds the
+    /// thresholds. Same-failure retries are configured as retries, so the rule fires on the
     /// verification after the last retry.
     pub fn from_config(agent: &AgentSection, workflow: &WorkflowSection) -> Self {
         Self {
@@ -146,28 +146,32 @@ fn repeated_command(ring: &[CallRecord], thresholds: &Thresholds) -> Option<Loop
     })
 }
 
-/// The same failure in the last consecutive verifications, with no pass between them.
+/// The same failure in the last consecutive verifications, with no pass between them. The count is every
+/// consecutive verification that reports the failure, so it keeps growing after the rule first fires.
 fn same_failure(ring: &[CallRecord], thresholds: &Thresholds) -> Option<LoopSignal> {
     let needed = usize::try_from(thresholds.same_failure_verifications).ok()?;
-    let verifications: Vec<&CallRecord> = ring
+    let failing: Vec<&CallRecord> = ring
         .iter()
         .rev()
         .filter(|call| call.verification)
         .take_while(|call| call.passed != Some(true))
-        .take(needed)
         .collect();
-    if verifications.len() < needed {
+    if failing.len() < needed {
         return None;
     }
-    let first = verifications.first()?;
+    let first = failing.first()?;
     let shared = first.fingerprints.iter().find(|fp| {
-        verifications
+        failing[..needed]
             .iter()
             .all(|call| call.fingerprints.contains(fp))
     })?;
+    let count = failing
+        .iter()
+        .take_while(|call| call.fingerprints.contains(shared))
+        .count();
     Some(LoopSignal::SameFailure {
         fingerprint: shared.clone(),
-        count: u32::try_from(verifications.len()).ok()?,
+        count: u32::try_from(count).ok()?,
     })
 }
 
@@ -319,6 +323,23 @@ mod tests {
             vec![LoopSignal::SameFailure {
                 fingerprint: "fp_v1:aaaa".to_owned(),
                 count: 3
+            }]
+        );
+    }
+
+    #[test]
+    fn the_same_failure_count_keeps_growing_after_the_rule_fires() {
+        let ring = vec![
+            verification("1", &["fp_v1:aaaa"]),
+            verification("2", &["fp_v1:aaaa"]),
+            verification("3", &["fp_v1:aaaa"]),
+            verification("4", &["fp_v1:aaaa"]),
+        ];
+        assert_eq!(
+            detect(&ring, &task(), &thresholds()),
+            vec![LoopSignal::SameFailure {
+                fingerprint: "fp_v1:aaaa".to_owned(),
+                count: 4
             }]
         );
     }

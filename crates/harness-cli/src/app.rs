@@ -1,10 +1,11 @@
 //! Per-invocation application context: workspace, effective config, and the services built from it.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
 use harness_core::config::{
-    Config, ConfigIssue, ConfigSources, Severity, discover_repo_config, load_layered,
+    Config, ConfigIssue, ConfigSources, Origin, Severity, discover_repo_config, load_layered,
     machine_config_path, validate,
 };
 use harness_core::identity;
@@ -17,6 +18,8 @@ pub struct App {
     pub config: Config,
     pub config_files: Vec<PathBuf>,
     pub issues: Vec<ConfigIssue>,
+    /// Which layer set each key (see `LoadedConfig::origins`); used by the TUI only.
+    pub origins: BTreeMap<String, Origin>,
 }
 
 impl App {
@@ -40,6 +43,7 @@ impl App {
             config: loaded.config,
             config_files: loaded.files,
             issues,
+            origins: loaded.origins,
         })
     }
 
@@ -80,8 +84,11 @@ impl App {
     }
 
     pub fn policy(&self) -> anyhow::Result<ToolPolicy> {
-        ToolPolicy::new(&self.workspace, &self.config.security)
-            .with_context(|| format!("building tool policy for {}", self.workspace.display()))
+        let policy = ToolPolicy::new(&self.workspace, &self.config.security)
+            .with_context(|| format!("building tool policy for {}", self.workspace.display()))?;
+        // The classes of the loaded plugin tools, so the policy can tell them apart from unknown tools (ADR-0013).
+        Ok(policy
+            .with_plugin_classes(harness_runtime::mcp::tools::plugins::load(&self.config).classes))
     }
 }
 

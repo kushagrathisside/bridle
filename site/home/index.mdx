@@ -1,0 +1,100 @@
+---
+title: Home
+description: A local-first harness for coding agents. The model proposes; the harness decides.
+template: splash
+hero:
+  title: Bridle
+  tagline: The model proposes. The harness decides.
+  actions:
+    - text: Get started
+      link: ./getting-started/
+      icon: right-arrow
+    - text: Read the examples
+      link: ./examples/
+      variant: minimal
+    - text: View the source
+      link: https://github.com/kushagrathisside/bridle
+      variant: minimal
+      icon: external
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+Bridle is a local-first harness for coding agents. It runs inside OpenCode and checks every tool call against a policy
+written in code. Secret files are denied, command output is redacted before the model reads it, and repeated failing
+calls are refused with the rule named. Everything runs on your machine, with the models you start yourself.
+
+## What it does
+
+<CardGrid>
+  <Card title="Decides every call" icon="terminal">
+    Each tool call is allowed, blocked or refused before it runs. The reason is returned to the agent and recorded.
+  </Card>
+  <Card title="Keeps secrets out of the model" icon="approve-check">
+    Secret files are denied to file tools and shell commands. Output is redacted before the model reads it.
+  </Card>
+  <Card title="Stops repeated failures" icon="warning">
+    Repeated edits and repeated commands are refused, and the agent is told which rule fired and what to try next.
+  </Card>
+  <Card title="Runs on your machine" icon="laptop">
+    Models are servers you start on loopback. The default configuration uses no external service.
+  </Card>
+</CardGrid>
+
+Bridle is a release candidate for native Windows. It is not a sandbox: an allowed test run executes code the model wrote,
+with your user's rights. Read the [status and limits](project/status/) before you rely on it.
+
+## First success
+
+You need the Windows build tools and Rust, which the [install guide](guides/install/) covers. Then, from the repository:
+
+```bat
+cargo build -p harness-cli --bin agent
+target\debug\agent.exe --version
+```
+
+```text
+agent 0.1.0
+```
+
+Set up a repository and validate its configuration:
+
+```bat
+agent init --profile local-only
+agent config validate
+```
+
+```text
+✓ wrote local-agent.toml (profile local-only)
+✓ configuration is valid (2 file(s))
+```
+
+A policy decision, made without a model. The file does not need to exist:
+
+```json
+{"action":"block","message":"blocked by policy (READ_ONLY, secret_file): config/.env may contain credentials and is never sent to a model","class":"READ_ONLY","verdict":"deny","rule":"secret_file"}
+```
+
+These outputs were produced by the commands on the tested machine. The [getting started](getting-started/) page covers
+the model step and the first agent run.
+
+## Where to go next
+
+<CardGrid>
+  <Card title="Getting started" icon="rocket">
+    The shortest path from a build to a first agent run, with what success looks like at each step.
+    [Start here](getting-started/).
+  </Card>
+  <Card title="Guides" icon="document">
+    Set up a repository, run your tests through Bridle, serve the models, run a task, and fix common problems.
+    [Browse the guides](guides/install/).
+  </Card>
+  <Card title="Reference" icon="setting">
+    Every command, every configuration key with its default, and every tool the agent can call.
+    [Open the reference](reference/cli/).
+  </Card>
+  <Card title="Contributing" icon="pencil">
+    How to build, test and change Bridle, and what a change must pass before it is merged.
+    [Read the guide](project/contributing/).
+  </Card>
+</CardGrid>

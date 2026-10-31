@@ -5,8 +5,7 @@ OpenCode tool calls and permission requests to host-neutral `ToolRequest`s, answ
 verdicts, and generates `opencode.json` from the harness config. The TypeScript shim forwards hooks to
 `agent hook <event>` and holds no policy logic.
 
-> **Status:** Built and tested in M1, pinned to OpenCode 1.19.3. Verified end to end on native Windows with
-> Qwen3.5-9B ([progress.md](../../status/progress.md)).
+> **Status:** Built and tested, pinned to OpenCode 1.19.3. Verified end to end on native Windows with Qwen3.5-9B.
 
 ## Responsibilities
 
@@ -17,7 +16,7 @@ verdicts, and generates `opencode.json` from the harness config. The TypeScript 
 | `opencode-plugin/package.json` | | Exact pins: `@opencode-ai/plugin` 1.19.3, `typescript` 5.6.3, `@types/node` 18.19.130 |
 | `crates/harness-cli/src/commands/hook.rs` | `run` | Process entry for hooks: stdin to `handle`, answer to stdout, event to the log |
 
-Pinned host: OpenCode 1.19.3 (ADR-0001, R-33.2). On Windows it runs bash-tool commands in PowerShell
+Pinned host: OpenCode 1.19.3 (ADR-0001). On Windows it runs bash-tool commands in PowerShell
 (`powershell -NoProfile -Command`) unless `SHELL` names another shell; the policy lexes commands the same way
 ([core-security.md](core-security.md)). A new OpenCode version means a new adapter module (`opencode_v2.rs`), not
 edits scattered across the code.
@@ -34,7 +33,7 @@ config. The shim never uses a filesystem root as the workspace; it falls back to
 |---|---|---|---|---|
 | `tool.execute.before` | `tool-before` | `tool_before` | `{action: allow\|block, message, class, verdict, rule}` | Blocked (the shim throws) |
 | `tool.execute.after` | `tool-after` | `tool_after` | `{output}` when redaction changed it | Output withheld |
-| `permission.ask` | `permission` | `permission` | `{status: allow\|deny, reason}` | `deny` (D3) |
+| `permission.ask` | `permission` | `permission` | `{status: allow\|deny, reason}` | `deny` |
 | `shell.env` | `shell-env` | `shell_env` | `{set: {NAME: ""}}` blanks secret variables | Environment unchanged; the call is still gated by `tool-before` |
 | `event` (6 lifecycle types) | `event` | `session_event` | `{}` | Ignored (telemetry only) |
 
@@ -77,7 +76,7 @@ Permission payloads: `bash` takes the command from metadata, then the pattern, t
    Deny with rule `allow_pattern_bypass`, and the model is told to run the risky step on its own.
 3. The reasons are redacted before they reach the model or the log (a blocked command can echo part of itself,
    such as `unrecognised program <word>`).
-4. Decision D3: only Allow passes. Ask is blocked, because under `--auto` OpenCode approves anything not denied.
+4. Only Allow passes. Ask is blocked, because under `--auto` OpenCode approves anything not denied.
 5. The event is logged with the command redacted.
 
 `BASH_ALLOW` (the generated auto-approve list) holds read-only and build/test prefixes such as `git status*`,
@@ -92,13 +91,13 @@ OpenCode's semantics: `*` matches any run of characters, `?` exactly one.
 - `tool_after` redacts the output when `security.secrets_redaction` is on and logs size, whether anything was
   redacted, and a 400-character preview of the redacted text. MCP results are already redacted by the server,
   because OpenCode does not show MCP output to this hook.
-- `permission` maps Allow to `allow`, and Ask or Deny to `deny` (D3).
+- `permission` maps Allow to `allow`, and Ask or Deny to `deny`.
 - `shell_env` returns every non-empty variable with a sensitive name (`is_sensitive_entry`), set to `""`. OpenCode
-  merges the answer over the inherited environment, so the secret is removed from the shell (R-27.2).
+  merges the answer over the inherited environment, so the secret is removed from the shell.
 
 ### `opencode.json` generation (`generate_opencode_config`)
 
-One source of truth: the harness config produces `opencode.json` (C-11).
+One source of truth: the harness config produces `opencode.json`.
 
 1. One provider per model slot (`provider_id`: `local-agent-<slot>`, for example `local-agent-main`,
    `local-agent-micro`, `local-agent-deep`), all OpenAI-compatible endpoints, which rule V4 keeps on loopback. `enabled_providers` lists only these, so OpenCode cannot fall back to a hosted model. `small_model` is
@@ -110,7 +109,7 @@ One source of truth: the harness config produces `opencode.json` (C-11).
      `max_iterations × 10`.
    - `explore`: read-only subagent (edit denied, read-only bash list, no web).
    - `review` and `deep`: generated when a slot has the `review` or `deep_reasoning` role; they analyse and
-     propose, and never edit (§18).
+     propose, and never edit.
 4. MCP: `local-agent` runs `<agent.exe> mcp` over stdio. OpenCode applies `timeout` to every MCP request, so it is
    the sum of the verification step timeouts (steps run in turn), at least the `git_diff` worst case (120 s,
    `MCP_GIT_WORST_CASE_MS`), plus 30 s (`MCP_TIMEOUT_MARGIN_MS`).
@@ -134,7 +133,7 @@ One source of truth: the harness config produces `opencode.json` (C-11).
   `failure_answers_fail_closed`, `blocked_message_and_event_do_not_echo_secrets`,
   `mcp_timeout_covers_every_verification_step_in_turn`, `generated_config_is_local_first`.
 - End to end on Windows with Qwen3.5-9B: the bug fix run, the `.env` read denial, and MCP `git_status`, `git_diff`
-  and `run_verification` calls ([progress.md](../../status/progress.md)).
+  and `run_verification` calls.
 
 ## Limits
 

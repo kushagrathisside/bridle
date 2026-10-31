@@ -6,9 +6,8 @@ OpenCode lists the tools as `local-agent_<tool>`, and every call still passes th
 ([cli-host-opencode.md](cli-host-opencode.md)). The tools never decide policy themselves; they ask `ToolPolicy`
 ([core-security.md](core-security.md)).
 
-> **Status:** Built and tested. M1 shipped `git_status`, `git_diff`, `run_verification` and `harness_info`; M2
-> (tagged `m2`, 2026-10-22) added the repository, verification, failure, code, dependency, artifact and command
-> tools and configured adapters.
+> **Status:** Built and tested. The server provides the repository, verification, failure, code, dependency, artifact and
+> command tools, and the configured adapters.
 
 ## Responsibilities
 
@@ -24,7 +23,7 @@ OpenCode lists the tools as `local-agent_<tool>`, and every call still passes th
 | `mcp/tools/deps.rs` | `DependencySearchTool` | `dependency_search` (parsing is `crate::code::deps`) |
 | `mcp/tools/artifacts.rs` | tool structs | `inspect_artifact`, `summarize_experiment`, `compare_experiments` (summaries are `crate::artifacts`) |
 | `mcp/tools/run.rs` | `RunCommandTool`, `InspectConfigTool` | `run_command`, `inspect_config` |
-| `mcp/tools/adapters.rs` | `AdapterTool`, `adapter_tools` | One `adapter_<name>` tool per `[[tools.adapters]]` entry (R-14.3, R-14.4) |
+| `mcp/tools/adapters.rs` | `AdapterTool`, `adapter_tools` | One `adapter_<name>` tool per `[[tools.adapters]]` entry |
 | `crates/harness-cli/src/commands/mcp.rs` | `run` | Requires a valid config, builds the `ToolContext` (workspace, config, verification, policy, redactor), adds adapter tools, and serves |
 
 `default_tools()` order, as `tools/list` reports it: `git_status`, `git_diff`, `git_history`, `git_log_range`,
@@ -78,7 +77,7 @@ named in the text).
 ### `run_verification`, `run_tests`, `run_linter`, `run_typechecker`
 
 `run_verification` runs the configured `verification.steps`, or the named subset, in order. `run_tests`,
-`run_linter` and `run_typechecker` run the declared steps of one `kind` (R-21.2, R-21.5). Each step:
+`run_linter` and `run_typechecker` run the declared steps of one `kind`. Each step:
 
 1. Is classified in the shell that runs it (`cmd /C` on Windows, `sh -c` elsewhere). A step whose verdict is not
    Allow is `blocked` and does not run.
@@ -108,7 +107,7 @@ workspace paths, command class), and only an Allow runs. Programs named by a pat
 most 10 minutes. Each `adapter_<name>` tool runs its configured program and fixed arguments, plus caller words when
 `accepts_args` is set, through the same path (`execute_plain`) and the same checks.
 
-### Read-only M2 tools
+### Read-only analysis tools
 
 | Tool | What it returns |
 |---|---|
@@ -163,9 +162,9 @@ the verification step timeouts (steps run in turn), never less than the `git_dif
 
 - The server is single-threaded; one slow tool call holds every other request until its bound expires.
 - Code tools are syntactic: `find_references` does not resolve scopes, overloads or imports.
-- Through OpenCode on Windows, `git_status`, `git_diff` and `run_verification` were run end to end on 2026-10-22
-  (M1), and `symbol_search`, `find_references` and `run_tests` with targets in the M2 end-to-end run. The other M2
-  tools are covered by unit tests only ([progress.md](../../status/progress.md)).
+- Through OpenCode on Windows, `git_status`, `git_diff` and `run_verification` were run end to end on 2026-10-22, and
+  `symbol_search`, `find_references` and `run_tests` with targets were run end to end in a later run. The other tools are
+  covered by unit tests only.
 
 ## Related
 
@@ -174,4 +173,3 @@ the verification step timeouts (steps run in turn), never less than the `git_dif
 - Concepts: [architecture.md](../../concepts/architecture.md), [security.md](../../concepts/security.md)
 - Decisions: [docs/decisions/](../../decisions/), in particular
   [ADR-0003](../../decisions/0003-tree-sitter-for-code-intelligence.md)
-- Milestone: [m2-tools.md](../../status/milestones/m2-tools.md)

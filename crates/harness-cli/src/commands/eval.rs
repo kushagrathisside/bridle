@@ -1,4 +1,4 @@
-//! `agent eval-decisions`: an A/B run of the rules and the micro model on recorded cases (M4).
+//! `agent eval-decisions`: an A/B run of the rules and the micro model on recorded cases.
 //!
 //! Each case is a task state and the loop signals it produced. The rules decide every case. The micro
 //! slot decides the stalled ones. The report shows whether each model answer is one the harness allows, how

@@ -25,6 +25,7 @@
 //!   precedence explicit > repo > machine, env override, unknown key is a parse error,
 //!   explicit-missing is NotFound, empty sources yields `Config::default()`.
 
+use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
 
@@ -73,6 +74,33 @@ pub struct ConfigSources {
     pub explicit: Option<PathBuf>,
 }
 
+/// Which layer supplied a configuration value. Values with no recorded origin are built-in defaults.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Origin {
+    /// The machine config (trusted).
+    Machine,
+    /// The repository config (untrusted, restricted by `config::trust`).
+    Repository,
+    /// An explicit `--config` file or `$LOCAL_AGENT_CONFIG` (trusted).
+    Explicit,
+    /// An environment override such as `LOCAL_AGENT_MODELS_DIR`.
+    Environment,
+}
+
+impl Origin {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Machine => "machine",
+            Self::Repository => "repo",
+            Self::Explicit => "--config",
+            Self::Environment => "env",
+        }
+    }
+}
+
+/// Deepest key path (`models.main.endpoint` has three parts) for which an origin is recorded.
+const ORIGIN_DEPTH: usize = 3;
+
 /// The effective config plus the files it was built from (shown by `agent config show`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoadedConfig {
@@ -80,6 +108,32 @@ pub struct LoadedConfig {
     pub config: Config,
     /// Layers that were read, lowest precedence first.
     pub files: Vec<PathBuf>,
+    /// For each dotted key path (up to [`ORIGIN_DEPTH`] parts) the highest-precedence layer that
+    /// set it. Informational only: nothing in the loader or the trust check reads it.
+    pub origins: BTreeMap<String, Origin>,
+}
+
+/// Records `origin` for every key of `table` down to [`ORIGIN_DEPTH`] parts.
+fn record_origins(
+    table: &toml::Table,
+    origin: Origin,
+    prefix: &str,
+    depth: usize,
+    out: &mut BTreeMap<String, Origin>,
+) {
+    for (key, value) in table {
+        let path = if prefix.is_empty() {
+            key.clone()
+        } else {
+            format!("{prefix}.{key}")
+        };
+        out.insert(path.clone(), origin);
+        if let toml::Value::Table(inner) = value
+            && depth < ORIGIN_DEPTH
+        {
+            record_origins(inner, origin, &path, depth + 1, out);
+        }
+    }
 }
 
 /// Parses a complete TOML document into a [`Config`]. Errors are reported against `<string>`.
@@ -128,20 +182,31 @@ pub fn load_layered(
 ) -> Result<LoadedConfig, ConfigError> {
     let mut merged = toml::Table::new();
     let mut files = Vec::new();
+    let mut origins = BTreeMap::new();
 
     // The repository layer is the only untrusted one: it arrives with the repository.
-    for (path, trusted) in [(&sources.machine, true), (&sources.repo, false)]
-        .into_iter()
-        .filter_map(|(path, trusted)| path.as_ref().map(|path| (path, trusted)))
-        .filter(|(path, _)| path.exists())
+    for (path, trusted, origin) in [
+        (&sources.machine, true, Origin::Machine),
+        (&sources.repo, false, Origin::Repository),
+    ]
+    .into_iter()
+    .filter_map(|(path, trusted, origin)| path.as_ref().map(|path| (path, trusted, origin)))
+    .filter(|(path, _, _)| path.exists())
     {
-        read_layer(path, trusted, &mut merged, &mut files)?;
+        read_layer(path, trusted, origin, &mut merged, &mut files, &mut origins)?;
     }
     if let Some(path) = &sources.explicit {
         if !path.exists() {
             return Err(ConfigError::NotFound(path.clone()));
         }
-        read_layer(path, true, &mut merged, &mut files)?;
+        read_layer(
+            path,
+            true,
+            Origin::Explicit,
+            &mut merged,
+            &mut files,
+            &mut origins,
+        )?;
     }
 
     let source_label = files
@@ -153,12 +218,18 @@ pub fn load_layered(
 
     if let Some(dir) = env_path(env, &identity::env_var("MODELS_DIR")) {
         config.paths.models_dir = Some(dir);
+        origins.insert("paths.models_dir".to_owned(), Origin::Environment);
     }
     if let Some(dir) = env_path(env, &identity::env_var("RUNTIMES_DIR")) {
         config.paths.runtimes_dir = Some(dir);
+        origins.insert("paths.runtimes_dir".to_owned(), Origin::Environment);
     }
 
-    Ok(LoadedConfig { config, files })
+    Ok(LoadedConfig {
+        config,
+        files,
+        origins,
+    })
 }
 
 /// Reads one layer, merges it into `merged` and records it in `files`. An untrusted layer is
@@ -166,8 +237,10 @@ pub fn load_layered(
 fn read_layer(
     path: &Path,
     trusted: bool,
+    origin: Origin,
     merged: &mut toml::Table,
     files: &mut Vec<PathBuf>,
+    origins: &mut BTreeMap<String, Origin>,
 ) -> Result<(), ConfigError> {
     let text = std::fs::read_to_string(path).map_err(|source| ConfigError::Io {
         path: path.to_path_buf(),
@@ -179,6 +252,7 @@ fn read_layer(
     if !trusted {
         super::trust::check_repo_layer(path, &table, merged)?;
     }
+    record_origins(&table, origin, "", 1, origins);
     merge_toml(merged, table);
     files.push(path.to_path_buf());
     Ok(())
@@ -325,6 +399,67 @@ mod tests {
         let loaded = load_layered(&without_explicit, &no_env).expect("layers load");
         assert_eq!(loaded.config.agent.max_iterations, 5);
         assert_eq!(loaded.files, vec![machine, repo]);
+    }
+
+    #[test]
+    fn origins_name_the_highest_precedence_layer_per_key() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let machine = write_file(
+            dir.path(),
+            "machine.toml",
+            "[agent]\nmax_iterations = 3\nmax_same_failure = 4\n\n[paths]\nmodels_dir = \"/m\"\n",
+        );
+        let repo = write_file(
+            dir.path(),
+            "local-agent.toml",
+            "[agent]\nmax_iterations = 5\n",
+        );
+        let explicit = write_file(dir.path(), "explicit.toml", "[agent]\nmax_iterations = 7\n");
+        let sources = ConfigSources {
+            machine: Some(machine),
+            repo: Some(repo),
+            explicit: Some(explicit),
+        };
+        let env = |name: &str| (name == "LOCAL_AGENT_MODELS_DIR").then(|| "/env".to_owned());
+        let loaded = load_layered(&sources, &env).expect("loads");
+        let o = &loaded.origins;
+        assert_eq!(o["agent.max_iterations"], Origin::Explicit);
+        assert_eq!(o["agent.max_same_failure"], Origin::Machine);
+        assert_eq!(o["paths.models_dir"], Origin::Environment);
+        assert_eq!(
+            o["agent"],
+            Origin::Explicit,
+            "the section names its last writer"
+        );
+        assert!(
+            !o.contains_key("agent.max_command_retries"),
+            "defaults have no origin"
+        );
+
+        let repo_only = ConfigSources {
+            repo: sources.repo.clone(),
+            ..Default::default()
+        };
+        let loaded = load_layered(&repo_only, &no_env).expect("loads");
+        assert_eq!(loaded.origins["agent.max_iterations"], Origin::Repository);
+    }
+
+    #[test]
+    fn origins_stop_at_three_key_parts() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let machine = write_file(
+            dir.path(),
+            "machine.toml",
+            "[models.main]\nprovider = \"mock\"\nid = \"m\"\nrole = \"engineer\"\nendpoint = \"http://127.0.0.1:1/v1\"\ncontext = 4096\nhardware = \"cpu\"\n[models.main.sampling]\ntemperature = 0.5\n",
+        );
+        let sources = ConfigSources {
+            machine: Some(machine),
+            ..Default::default()
+        };
+        let o = load_layered(&sources, &no_env).expect("loads").origins;
+        assert_eq!(o["models.main.endpoint"], Origin::Machine);
+        assert_eq!(o["models.main.sampling"], Origin::Machine);
+        assert!(!o.contains_key("models.main.sampling.temperature"));
     }
 
     #[test]

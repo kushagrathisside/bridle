@@ -6,7 +6,7 @@ members = ["crates/harness-core", "crates/harness-runtime", "crates/harness-cli"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
-# Apache-2.0 (LICENSE). Publication stays off until the maintainer approves it (M11).
+# Apache-2.0 (LICENSE). Publication stays off until the maintainer approves it.
 license = "Apache-2.0"
 publish = false
 repository = "https://github.com/kushagrathisside/bridle"
@@ -22,11 +22,12 @@ anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
 regex = "1.13.1"
 sha2 = "0.11.1"
-# Plain HTTP only in M1: every default endpoint is loopback. TLS is added behind a
-# feature when external providers arrive (M7/M8), so local-only builds cannot do HTTPS.
+# Loopback endpoints use plain HTTP. HTTPS (native-tls) is used only for external providers.
 ureq = { version = "3.4.2", default-features = false, features = ["json", "native-tls"] }
 sysinfo = { version = "0.39.6", default-features = false, features = ["system", "disk"] }
 dunce = "1.0.5"
+# Terminal UI (`agent tui`). Crossterm backend only; no async runtime.
+ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
 humantime = "2.4.0"
 tempfile = "3.27.0"
 # Code intelligence (ADR-0003). Exact pins: the grammars are versioned with tree-sitter.
@@ -36,7 +37,7 @@ tree-sitter-python = "=0.25.0"
 tree-sitter-cpp = "=0.23.4"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
 missing_debug_implementations = "warn"
 
 [workspace.lints.clippy]

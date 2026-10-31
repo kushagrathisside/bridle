@@ -8,7 +8,7 @@
 //! | V1 | Error | `models` is empty |
 //! | V2 | Error | `agent.default_model` is not a key of `models` |
 //! | V3 | Error | an endpoint does not start with `http://` or `https://`, or has an empty host |
-//! | V4 | Error | an endpoint host is not loopback (`127.0.0.0/8`, `localhost`, `[::1]`) unless `external.cloud_models.enabled` and the scheme is `https`; or `capabilities.local == false` while `external.cloud_models.enabled == false` (local-first, R-27.4) |
+//! | V4 | Error | an endpoint host is not loopback (`127.0.0.0/8`, `localhost`, `[::1]`) unless `external.cloud_models.enabled` and the scheme is `https`; or `capabilities.local == false` while `external.cloud_models.enabled == false` (local-first) |
 //! | V5 | Error | `context == 0`, or `max_output_tokens >= context` |
 //! | V6 | Error | `launch.runtime` is not a key of `runtimes` |
 //! | V7 | Error | provider `prism_bonsai` with a launch runtime whose kind is not `prism_llama_cpp`; or a ternary quantisation (`PTQ1_0`/`PQ2_0` in `source.quantization` or in the `launch.model_file` name, case-insensitive) launched with a `llama_cpp` runtime |
@@ -16,14 +16,14 @@
 //! | V9 | Error | `context.target_tokens > context.hard_limit` |
 //! | V10 | Error | `routing.escalation_threshold` outside `[0, 1]` |
 //! | V11 | Error | `decisions.provider` or `decisions.fallback` is `jev` while `external.jev.enabled == false` |
-//! | V12 | Error | `external.jev.enabled` or `external.cloud_models.enabled` while `profile == "local-only"` (R-36.2) |
+//! | V12 | Error | `external.jev.enabled` or `external.cloud_models.enabled` while `profile == "local-only"` |
 //! | V13 | Error | `sampling.temperature` outside `[0, 2]`, `top_p` outside `(0, 1]`, `min_p` outside `[0, 1]` |
 //! | V14 | Warning | `kv_cache` not one of `f16, bf16, q8_0, q4_0, q4_1, q5_0, q5_1, iq4_nl` |
 //! | V15 | Warning | `verification.enabled && required_for_done && steps.is_empty()` — DONE can never be verified |
 //! | V16 | Error | a launch `model_file` is relative and `paths.models_dir` is `None` (same for runtime `server_bin` / `paths.runtimes_dir`) |
 //! | V17 | Warning | two model slots share the same endpoint |
-//! | V18 | Warning | `paths.models_dir` is on the system drive (`env.system_drive`, compare case-insensitively on the drive prefix such as `C:`) — directive D-2 |
-//! | V19 | Warning | `decisions.fallback != rules` — the fallback should be deterministic (R-30) |
+//! | V18 | Warning | `paths.models_dir` is on the system drive (`env.system_drive`, compare case-insensitively on the drive prefix such as `C:`) |
+//! | V19 | Warning | `decisions.fallback != rules` — the fallback should be deterministic |
 //! | V20 | Error | provider `mock` in any profile other than `test` |
 //! | V21 | Error | `context.hard_limit > models[agent.default_model].context` (skipped when the default model is missing) |
 //! | V22 | Error | `launch.extra_args` contains a reserved flag ([`super::RESERVED_LAUNCH_FLAGS`]: listener, model, alias, context, key, served or written paths), as `--flag` or `--flag=value` |
@@ -44,6 +44,11 @@
 //! | V38 | Error | `subagents` limits out of range: `max_input_bytes` outside 256 to 65536, or `max_inputs` outside 1 to 8 |
 //! | V39 | Error | `routing.enable_deep_escalation` without a model whose role is `deep_reasoning` |
 //! | V40 | Warning | `decisions.provider = "local_lfm"` while `routing.enable_micro_decisions` is off |
+//! | V41 | Error | `memory.file` not a relative path inside the repository, or `memory.max_bytes` outside 256 to 16384 |
+//! | V42 | Error | `external.laya` enabled without an `endpoint`, or with one that is not `http://` to a loopback host |
+//! | V43 | Error | `external.laya.timeout_ms` outside 100 to 60000 |
+//! | V46 | Error | `plugins.manifests` names a path that is not absolute |
+//! | V44 | Warning | `routing.auto_slot` on while `external.laya` is off: requests the rules cannot place go to `main` |
 //! | V24 | Warning | a verification step sets `targets = true` but its `kind` is not `test` |
 //!
 //! Unit tests: one passing baseline config (no issues) and at least one failing case per rule.
@@ -132,6 +137,9 @@ pub fn validate_with(cfg: &Config, env: &ValidationEnv) -> Vec<ConfigIssue> {
     check_adapters(cfg, &mut report);
     check_workflow(cfg, &mut report);
     check_subagents(cfg, &mut report);
+    check_memory(cfg, &mut report);
+    check_laya(cfg, &mut report);
+    check_plugins(cfg, &mut report);
     check_paths(cfg, env, &mut report);
 
     report.0
@@ -193,6 +201,65 @@ fn check_subagents(cfg: &Config, report: &mut Report) {
             "V38",
             "subagents.max_inputs",
             "max_inputs must be between 1 and 8",
+        );
+    }
+}
+
+fn check_plugins(cfg: &Config, report: &mut Report) {
+    for (index, path) in cfg.plugins.manifests.iter().enumerate() {
+        if !std::path::Path::new(path).is_absolute() {
+            report.error(
+                "V46",
+                format!("plugins.manifests[{index}]"),
+                format!("the plugin manifest {path:?} must be an absolute path"),
+            );
+        }
+    }
+}
+
+fn check_laya(cfg: &Config, report: &mut Report) {
+    let laya = &cfg.external.laya;
+    if laya.enabled {
+        match laya.endpoint.as_deref() {
+            None => report.error("V42", "external.laya.endpoint", "external.laya is enabled but has no endpoint"),
+            Some(endpoint) if !(endpoint.starts_with("http://") && endpoint_is_loopback(endpoint)) => report.error(
+                "V42",
+                "external.laya.endpoint",
+                "the Laya endpoint must be http:// to a loopback host (127.0.0.1, localhost or ::1)",
+            ),
+            Some(_) => {}
+        }
+    }
+    if !(100..=60_000).contains(&laya.timeout_ms) {
+        report.error(
+            "V43",
+            "external.laya.timeout_ms",
+            "timeout_ms must be between 100 and 60000",
+        );
+    }
+    if cfg.routing.auto_slot && !laya.enabled {
+        report.warning(
+            "V44",
+            "routing.auto_slot",
+            "routing.auto_slot is on but external.laya is off; requests the rules cannot place go to main",
+        );
+    }
+}
+
+fn check_memory(cfg: &Config, report: &mut Report) {
+    let mem = &cfg.memory;
+    if let Err(reason) = crate::memory::check_file(&mem.file) {
+        report.error("V41", "memory.file", format!("memory.file {reason}"));
+    }
+    if !(crate::memory::MIN_MAX_BYTES..=crate::memory::MAX_MAX_BYTES).contains(&mem.max_bytes) {
+        report.error(
+            "V41",
+            "memory.max_bytes",
+            format!(
+                "memory.max_bytes must be between {} and {}",
+                crate::memory::MIN_MAX_BYTES,
+                crate::memory::MAX_MAX_BYTES
+            ),
         );
     }
 }
@@ -564,7 +631,7 @@ fn check_runtimes(cfg: &Config, report: &mut Report) {
     }
 }
 
-/// V12: the local-only profile forbids every external opt-in (R-36.2).
+/// V12: the local-only profile forbids every external opt-in.
 fn check_profile(cfg: &Config, report: &mut Report) {
     if cfg.profile != ProfileKind::LocalOnly {
         return;
@@ -680,7 +747,7 @@ fn check_decisions(cfg: &Config, report: &mut Report) {
         report.warning(
             "V19",
             "decisions.fallback",
-            "the fallback should be the deterministic `rules` engine (R-30)",
+            "the fallback should be the deterministic `rules` engine",
         );
     }
 }
@@ -827,7 +894,7 @@ fn check_adapters(cfg: &Config, report: &mut Report) {
     }
 }
 
-/// V18: the models directory should not sit on the system drive (D-2).
+/// V18: the models directory should not sit on the system drive.
 fn check_paths(cfg: &Config, env: &ValidationEnv, report: &mut Report) {
     if let Some(system_drive) = env.system_drive.as_deref()
         && let Some(models_dir) = cfg.paths.models_dir.as_deref()
@@ -836,7 +903,7 @@ fn check_paths(cfg: &Config, env: &ValidationEnv, report: &mut Report) {
         report.warning(
             "V18",
             "paths.models_dir",
-            "models_dir is on the system drive; keep weights on a data drive (D-2)",
+            "models_dir is on the system drive; keep weights on a data drive",
         );
     }
 }
@@ -1041,6 +1108,37 @@ mod tests {
         assert_issue(&cfg, "V38", Severity::Error, "subagents.max_inputs");
         cfg.subagents.max_inputs = 4;
         assert_no_rule(&cfg, "V38");
+    }
+
+    #[test]
+    fn v41_memory_file_and_limit_are_bounded() {
+        let mut cfg = Config::default();
+        cfg.memory.file = "../outside.md".to_owned();
+        assert_issue(&cfg, "V41", Severity::Error, "memory.file");
+        cfg.memory.file = "AGENTS.md".to_owned();
+        cfg.memory.max_bytes = 10;
+        assert_issue(&cfg, "V41", Severity::Error, "memory.max_bytes");
+        cfg.memory.max_bytes = 4_096;
+        assert_no_rule(&cfg, "V41");
+    }
+
+    #[test]
+    fn v42_to_v44_guard_the_laya_endpoint_and_the_routing_switch() {
+        let mut cfg = Config::default();
+        cfg.external.laya.enabled = true;
+        assert_issue(&cfg, "V42", Severity::Error, "external.laya.endpoint");
+        cfg.external.laya.endpoint = Some("https://127.0.0.1:8000".to_owned());
+        assert_issue(&cfg, "V42", Severity::Error, "external.laya.endpoint");
+        cfg.external.laya.endpoint = Some("http://10.0.0.5:8000".to_owned());
+        assert_issue(&cfg, "V42", Severity::Error, "external.laya.endpoint");
+        cfg.external.laya.endpoint = Some("http://127.0.0.1:8000".to_owned());
+        assert_no_rule(&cfg, "V42");
+        cfg.external.laya.timeout_ms = 10;
+        assert_issue(&cfg, "V43", Severity::Error, "external.laya.timeout_ms");
+        cfg.external.laya.timeout_ms = 5_000;
+        cfg.external.laya.enabled = false;
+        cfg.routing.auto_slot = true;
+        assert_issue(&cfg, "V44", Severity::Warning, "routing.auto_slot");
     }
 
     #[test]

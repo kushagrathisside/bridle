@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-//! Black-box tests of the orchestrator (M3 step 6 and 8): the real `agent` binary, a fresh repository,
+//! Black-box tests of the orchestrator: the real `agent` binary, a fresh repository,
 //! hook payloads on stdin, and the `task`, `trace` and `explain` commands.
 
 use std::io::Write;

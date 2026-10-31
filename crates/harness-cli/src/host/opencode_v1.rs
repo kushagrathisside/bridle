@@ -1,11 +1,11 @@
 //! OpenCode V1 host adapter (pinned 1.19.3). The ONLY Rust module that knows OpenCode's tool
-//! names, argument shapes, permission payloads and config format (ADR-0001, R-33.2).
+//! names, argument shapes, permission payloads and config format (ADR-0001).
 //!
 //! Three jobs:
 //! 1. translate OpenCode tool calls and permission requests into host-neutral
 //!    [`ToolRequest`]s for `harness-core`'s [`ToolPolicy`];
 //! 2. answer the plugin shim's hook calls (`agent hook <event>`) with JSON verdicts;
-//! 3. generate `opencode.json` from the harness config, so there is one source of truth (C-11).
+//! 3. generate `opencode.json` from the harness config, so there is one source of truth.
 
 use std::path::Path;
 
@@ -29,9 +29,9 @@ pub enum HookEvent {
     Permission,
     ShellEnv,
     Event,
-    /// `experimental.chat.messages.transform`: the per-request view of tool results (M6).
+    /// `experimental.chat.messages.transform`: the per-request view of tool results.
     MessagesTransform,
-    /// `experimental.chat.system.transform`: the task state for the system prompt (M6).
+    /// `experimental.chat.system.transform`: the task state for the system prompt.
     SystemTransform,
 }
 
@@ -72,7 +72,7 @@ pub fn map_tool_call(tool: &str, args: &Value) -> ToolRequest {
         req.paths.push(base);
     }
     // A glob pattern and a grep include filter are file-name globs, so the whole text is judged for secret names
-    // (`.env*`). A grep pattern is a regular expression, not a path, and is not judged as one (M9).
+    // (`.env*`). A grep pattern is a regular expression, not a path, and is not judged as one.
     let glob_key = match tool {
         "glob" => Some("pattern"),
         "grep" => Some("include"),
@@ -341,7 +341,7 @@ fn tool_before(input: &Value, ctx: &HookContext<'_>) -> (Value, Option<Event>) {
         *reason = redacted;
     }
 
-    // Decision D3: `Ask` is never allowed. Under `--auto` OpenCode approves anything we do not
+    // `Ask` is never allowed. Under `--auto` OpenCode approves anything we do not
     // deny, so only an explicit Allow gets through.
     let allow = decision.verdict == Verdict::Allow;
     let message = if allow {
@@ -405,7 +405,7 @@ fn permission(input: &Value, ctx: &HookContext<'_>) -> (Value, Option<Event>) {
     let perm = input.get("permission").cloned().unwrap_or(Value::Null);
     let req = map_permission(&perm);
     let decision = ctx.policy.evaluate(&req);
-    // Decision D3: `Ask` maps to deny, so `--auto` cannot approve a call we did not vet.
+    // `Ask` maps to deny, so `--auto` cannot approve a call we did not vet.
     let status = match decision.verdict {
         Verdict::Allow => "allow",
         Verdict::Ask | Verdict::Deny => "deny",
@@ -422,7 +422,7 @@ fn permission(input: &Value, ctx: &HookContext<'_>) -> (Value, Option<Event>) {
     )
 }
 
-/// Blanks every sensitive environment variable for shell tools (R-27.2). OpenCode merges the
+/// Blanks every sensitive environment variable for shell tools. OpenCode merges the
 /// returned values over the inherited environment, so an empty string removes the secret.
 pub fn shell_env(vars: impl Iterator<Item = (String, String)>) -> Value {
     let set: Map<String, Value> = vars
@@ -464,7 +464,7 @@ pub fn failure_answer(event: HookEvent, error: &str) -> Value {
             "action": "block",
             "message": format!("{} policy engine unavailable: {error}", identity::PRODUCT_ID),
         }),
-        // Decision D3: an unanswered permission is a deny, never a question `--auto` approves.
+        // an unanswered permission is a deny, never a question `--auto` approves.
         HookEvent::Permission => json!({ "status": "deny", "reason": error }),
         HookEvent::ShellEnv => shell_env(std::env::vars()),
         HookEvent::ToolAfter
@@ -625,7 +625,7 @@ pub fn generate_opencode_config(cfg: &Config, agent_bin: &Path) -> Value {
     build.insert("steps".into(), json!(cfg.agent.max_iterations.max(1) * 10));
     agents.insert("build".into(), Value::Object(build));
 
-    // explore: read-only evidence gathering (C-2: runs on the main model until M4 measures LFM).
+    // explore: read-only evidence gathering (runs on the main model until the micro model is measured).
     let mut explore = agent_entry(main_ref.clone(), main);
     explore.insert("mode".into(), json!("subagent"));
     explore.insert(
@@ -663,7 +663,7 @@ pub fn generate_opencode_config(cfg: &Config, agent_bin: &Path) -> Value {
         agents.insert("review".into(), Value::Object(review));
     }
     if let Some((slot, m)) = deep_slot {
-        // §18: the deep model analyses and proposes; it never edits code in the first stage.
+        // the deep model analyses and proposes; it never edits code in the first stage.
         let mut deep = agent_entry(Some(model_ref(slot, m)), Some(m));
         deep.insert("mode".into(), json!("subagent"));
         deep.insert(
@@ -717,7 +717,7 @@ number, \"recommendation\": str, \"files\": [str], \"commands\": [str], \"unreso
 Cite files as path:line. Never paste whole files.";
 
 // ---------------------------------------------------------------------------------------------
-// Context transform (M6): the per-request view of completed tool results
+// Context transform: the per-request view of completed tool results
 // ---------------------------------------------------------------------------------------------
 
 /// Built-in OpenCode tools that only read.
@@ -810,7 +810,7 @@ fn scan_request(messages: &[Value]) -> (Vec<ToolResult>, usize) {
     (results, total)
 }
 
-/// `experimental.chat.messages.transform` (M6): decides, for this request only, what each completed tool result
+/// `experimental.chat.messages.transform`: decides, for this request only, what each completed tool result
 /// looks like. Returns only the outputs that change, as `{message, part, output}`; the shim applies them to its
 /// copy of the messages. The stored session is not edited, so the next request starts from the full history.
 /// Compaction is not a security control: outputs are redacted in `tool.execute.after`, before they are stored.
@@ -1028,7 +1028,7 @@ mod tests {
 
     #[test]
     fn glob_patterns_that_escape_are_checked() {
-        // The literal base is checked as a path; the whole pattern is checked for secret names (M9).
+        // The literal base is checked as a path; the whole pattern is checked for secret names.
         let r = map_tool_call("glob", &json!({"pattern": "../../**/*.env"}));
         assert_eq!(r.paths, vec!["../..", "../../**/*.env"]);
         // No escaping base; the pattern itself is still judged for secret names.

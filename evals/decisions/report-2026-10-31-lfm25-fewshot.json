@@ -1,0 +1,215 @@
+{
+  "model": "lfm2.5-1.2b-thinking",
+  "summary": {
+    "cases": 20,
+    "stalled": 16,
+    "model_answers": 16,
+    "fallbacks": 0,
+    "answers_allowed": 16,
+    "agreements": 6,
+    "latency_p50_ms": 1174,
+    "latency_p95_ms": 1358
+  },
+  "rows": [
+    {
+      "name": "same failure, guard test, three runs",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure repeats; a stronger model should diagnose it.",
+      "agrees": true,
+      "latency_ms": 964
+    },
+    {
+      "name": "same failure, unit test after a fix",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure repeats; a stronger model should diagnose it.",
+      "agrees": true,
+      "latency_ms": 932
+    },
+    {
+      "name": "same failure, two failures per run",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure repeats; a stronger model should diagnose it.",
+      "agrees": true,
+      "latency_ms": 933
+    },
+    {
+      "name": "same failure, import error",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure repeats; a stronger model should diagnose it.",
+      "agrees": true,
+      "latency_ms": 915
+    },
+    {
+      "name": "same failure, lint finding",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure keeps coming back, and a stronger model should look at it.",
+      "agrees": true,
+      "latency_ms": 1041
+    },
+    {
+      "name": "same failure, after two edits",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure repeats; a stronger model should diagnose it.",
+      "agrees": true,
+      "latency_ms": 941
+    },
+    {
+      "name": "repeated command, unittest",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure repeats; a stronger model should diagnose it.",
+      "agrees": false,
+      "latency_ms": 1358
+    },
+    {
+      "name": "repeated command, build",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure repeats; a stronger model should diagnose it.",
+      "agrees": false,
+      "latency_ms": 1166
+    },
+    {
+      "name": "repeated command, install",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure repeats; a stronger model should diagnose it.",
+      "agrees": false,
+      "latency_ms": 1216
+    },
+    {
+      "name": "repeated command, make",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure repeats; a stronger model should diagnose it.",
+      "agrees": false,
+      "latency_ms": 1201
+    },
+    {
+      "name": "repeated command, formatter",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure repeats; a stronger model should diagnose it.",
+      "agrees": false,
+      "latency_ms": 1317
+    },
+    {
+      "name": "repeated edit, calc.py",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure repeats; a stronger model should diagnose it.",
+      "agrees": false,
+      "latency_ms": 1181
+    },
+    {
+      "name": "repeated edit, README",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure repeats; a stronger model should diagnose it.",
+      "agrees": false,
+      "latency_ms": 1323
+    },
+    {
+      "name": "repeated edit, test file",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure repeats; a stronger model should diagnose it.",
+      "agrees": false,
+      "latency_ms": 1174
+    },
+    {
+      "name": "repeated edit, module",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure repeats; a stronger model should diagnose it.",
+      "agrees": false,
+      "latency_ms": 1191
+    },
+    {
+      "name": "repeated edit, utilities",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The same failure repeats; a stronger model should diagnose it.",
+      "agrees": false,
+      "latency_ms": 1250
+    },
+    {
+      "name": "iteration limit reached",
+      "stalled": false,
+      "rules": "TaskBlocked",
+      "source": "rules",
+      "model": null,
+      "model_reason": null,
+      "agrees": null,
+      "latency_ms": 0
+    },
+    {
+      "name": "implementation retries exceeded",
+      "stalled": false,
+      "rules": "Escalate",
+      "source": "rules",
+      "model": null,
+      "model_reason": null,
+      "agrees": null,
+      "latency_ms": 0
+    },
+    {
+      "name": "iteration limit with a repeated command",
+      "stalled": false,
+      "rules": "TaskBlocked",
+      "source": "rules",
+      "model": null,
+      "model_reason": null,
+      "agrees": null,
+      "latency_ms": 0
+    },
+    {
+      "name": "retries exceeded with a same failure",
+      "stalled": false,
+      "rules": "Escalate",
+      "source": "rules",
+      "model": null,
+      "model_reason": null,
+      "agrees": null,
+      "latency_ms": 0
+    }
+  ]
+}

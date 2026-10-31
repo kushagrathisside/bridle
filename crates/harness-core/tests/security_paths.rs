@@ -1,4 +1,4 @@
-//! Integration tests for the workspace path guard (R-27.1). The check order is documented in
+//! Integration tests for the workspace path guard. The check order is documented in
 //! `security/path_guard.rs`.
 
 use std::fs;

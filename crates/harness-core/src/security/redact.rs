@@ -1,4 +1,4 @@
-//! Secret redaction (R-27.2, R-27.3): nothing that looks like a credential reaches telemetry or
+//! Secret redaction: nothing that looks like a credential reaches telemetry or
 //! model context.
 //!
 //! IMPLEMENTATION SPEC (delegated). Compile all regexes once in `Redactor::new()` (store them in

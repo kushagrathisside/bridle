@@ -1,0 +1,102 @@
+[
+  {
+    "name": "short typo fix",
+    "text": "fix the typo in README",
+    "expected": "MAIN"
+  },
+  {
+    "name": "short explanation",
+    "text": "explain what this function does",
+    "expected": "MAIN"
+  },
+  {
+    "name": "short test run",
+    "text": "run the unit tests and tell me which fail",
+    "expected": "MAIN"
+  },
+  {
+    "name": "short changelog",
+    "text": "update the changelog with the new flag",
+    "expected": "MAIN"
+  },
+  {
+    "name": "short rename",
+    "text": "rename the variable count to total in utils.py",
+    "expected": "MAIN"
+  },
+  {
+    "name": "short test case",
+    "text": "add a test for the empty input case in the parser",
+    "expected": "MAIN"
+  },
+  {
+    "name": "long docstring",
+    "text": "add a docstring to the load function that reads the config file and lists its keys and their defaults for the next developer",
+    "expected": "MAIN"
+  },
+  {
+    "name": "long config change",
+    "text": "change the default timeout from 30 seconds to 60 in the config and update the test that checks it",
+    "expected": "MAIN"
+  },
+  {
+    "name": "long help text",
+    "text": "make the help text mention the new image command and keep the existing lines unchanged",
+    "expected": "MAIN"
+  },
+  {
+    "name": "long formatting",
+    "text": "format the json output so each record is on its own line and keep the field order as it is now",
+    "expected": "MAIN"
+  },
+  {
+    "name": "long import fix",
+    "text": "add the missing import for Path in the sandbox module and rerun the build to confirm it compiles",
+    "expected": "MAIN"
+  },
+  {
+    "name": "long release notes",
+    "text": "write the release notes for version 0.2 from the changelog entries of this release",
+    "expected": "MAIN"
+  },
+  {
+    "name": "architecture",
+    "text": "design the storage architecture for multi-tenant isolation across the whole codebase",
+    "expected": "DEEP"
+  },
+  {
+    "name": "root cause",
+    "text": "find the root cause of the intermittent failure that only happens when the daemon and the CLI run together",
+    "expected": "DEEP"
+  },
+  {
+    "name": "investigate",
+    "text": "investigate why the orchestrator loses the task state after a worktree switch across the modules",
+    "expected": "DEEP"
+  },
+  {
+    "name": "migrate",
+    "text": "migrate the event log from JSON lines to a database and update every reader in the code",
+    "expected": "DEEP"
+  },
+  {
+    "name": "security review",
+    "text": "review the whole sandbox and policy design for security weaknesses across all the crates",
+    "expected": "DEEP"
+  },
+  {
+    "name": "refactor",
+    "text": "refactor the routing, the decision engine and the chat so that one function decides every model call",
+    "expected": "DEEP"
+  },
+  {
+    "name": "design plugins",
+    "text": "design a plugin system that supports code plugins with a sandbox and a manifest format",
+    "expected": "DEEP"
+  },
+  {
+    "name": "long cross-module",
+    "text": "explain why the policy and the sandbox disagree when a command reads a secret file, following the call path through the crates",
+    "expected": "DEEP"
+  }
+]

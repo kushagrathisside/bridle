@@ -1,4 +1,4 @@
-//! The Jev decision backend (M7, R-9.1, R-9.5): the strict check of an answer from the Jev service.
+//! The Jev decision backend: the strict check of an answer from the Jev service.
 //!
 //! Jev is an optional, external decision model. Like the micro model, it decides stalled loops only (ADR-0007).
 //! It answers with a decision and the probability it gives that decision. The host checks every field: an answer
@@ -23,7 +23,7 @@ const MAX_ECHO: usize = 40;
 #[derive(Debug, Clone, PartialEq)]
 pub struct JevChoice {
     pub decision: Decision,
-    /// The probability Jev gives this decision, from 0 to 1 (R-9.5: Jev's output is kept, not rounded).
+    /// The probability Jev gives this decision, from 0 to 1 (Jev's output is kept, not rounded).
     pub confidence: f32,
     /// A short reason, cleaned and capped. Optional.
     pub reason: Option<String>,

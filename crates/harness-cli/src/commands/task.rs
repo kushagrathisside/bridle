@@ -1,4 +1,4 @@
-//! `agent task`, `agent explain` and `agent trace` (M3 step 8, R-54.2, R-54.3).
+//! `agent task`, `agent explain` and `agent trace`.
 //!
 //! Output is plain text, one fact per line. Anything that came from the model or the host passes through
 //! [`clean`], so a control character cannot rewrite the terminal.
@@ -24,7 +24,7 @@ pub enum TaskAction {
         /// The task's objective. Stored redacted.
         #[arg(long, default_value = "")]
         prompt: String,
-        /// Run the task in its own Git worktree under `.worktrees/` (R-26.1).
+        /// Run the task in its own Git worktree under `.worktrees/`.
         #[arg(long)]
         worktree: bool,
     },
@@ -295,7 +295,17 @@ fn describe(record: &Record) -> String {
             fingerprints.len()
         ),
         Record::Refused { rule, .. } => format!("refused rule={}", clean(rule)),
+        Record::Escalated { call_id } => format!("escalated to deep at call={}", clean(call_id)),
         Record::Reset { reason } => format!("reset reason={}", clean(reason)),
+        Record::RoleRun {
+            role,
+            step,
+            outcome,
+        } => format!(
+            "role={} step={step} outcome={}",
+            clean(role),
+            clean(outcome)
+        ),
         Record::Worktree {
             branch,
             path,

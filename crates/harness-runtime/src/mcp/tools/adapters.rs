@@ -1,4 +1,4 @@
-//! Configured adapters (M2 step 8, R-14.3, R-14.4): a command declared in `[[tools.adapters]]`
+//! Configured adapters: a command declared in `[[tools.adapters]]`
 //! becomes an MCP tool named `adapter_<name>`. The harness core hard-codes no project. Every
 //! call goes through `run::execute_plain`, so it gets the same checks as `run_command`.
 

@@ -1,5 +1,5 @@
-//! The LFM decision engine (M4): on a stalled loop, asks the micro slot for one of the answers in
-//! `harness_core::lfm::CHOICES`. Every other case, and every error, is decided by the rules (R-30).
+//! The LFM decision engine: on a stalled loop, asks the micro slot for one of the answers in
+//! `harness_core::lfm::CHOICES`. Every other case, and every error, is decided by the rules.
 //!
 //! The model sees a bounded summary of the task: the phase, the counters, the last action and the names
 //! of the loop signals. It sees no prompt text, no command text and no tool output.
@@ -18,11 +18,12 @@ use crate::providers::{ChatMessage, ChatRequest, ModelProvider};
 /// The name recorded for decisions made by the model.
 pub const PROVIDER_NAME: &str = "local_lfm";
 /// The label of a decision that was escalated to the deep slot, whether the call succeeded or not. Counting the
-/// recorded decisions with this label counts the escalations a task has used (R-18.1).
+/// recorded decisions with this label counts the escalations a task has used.
 pub const ESCALATED_PREFIX: &str = "escalated to deep";
 /// The longest time a deep escalation may take. The hook that asks has a limit of its own (the shim gives up after
-/// 20 s and blocks the call), so the deep slot's own timeout is not used for this call.
-pub const ESCALATION_TIMEOUT_MS: u64 = 15_000;
+/// 150 s and blocks the call), so the deep slot's own timeout is not used for this call. A GPU swap takes about 20 s
+/// and the deep answer about 2 s (measured 2026-10-28); 30 s leaves room for a longer answer.
+pub const ESCALATION_TIMEOUT_MS: u64 = 30_000;
 /// The longest action text sent to the model.
 const MAX_ACTION: usize = 120;
 
@@ -56,10 +57,22 @@ impl LfmEngine {
             .take(MAX_ACTION)
             .collect::<String>();
         let signals: Vec<&str> = input.signals.iter().map(signal_name).collect();
+        // Worked examples, one per answer. Without them the model answered ASK_USER for every stalled case
+        // (measured 2026-10-31). The examples describe other situations than the recorded loop cases, so the
+        // measurement is not circular (progress.md, 2026-10-31 held-out run).
         let system = format!(
-            "You are the decision step of a coding-agent harness. A loop has stalled. Choose exactly one of: \
-             ESCALATE (stop and report the blocker), ASK_USER (ask the person for a decision), REPLAN (make a \
-             new plan from the current state). Reply with one JSON object and no other text: \
+            "You are the decision step of a coding-agent harness. A loop has stalled. Choose exactly one answer.\n\
+             - ESCALATE: the failure has a cause outside the code the agent is changing, so a stronger model must look further.\n\
+             - ASK_USER: the request asks for two things that cannot both hold, and only the person can choose.\n\
+             - REPLAN: the approach cannot work at all, so the plan must change before any more attempts.\n\
+             Examples:\n\
+             State: the build fails with the same linker error after each of three fixes in different files. -> {{\"decision\": \"ESCALATE\", \
+             \"reason\": \"The cause is probably outside the edited code; a stronger model should find it.\"}}\n\
+             State: the task calls a function that the project's library does not have, and the attempts keep calling it. -> {{\"decision\": \"REPLAN\", \
+             \"reason\": \"The approach cannot work; a new plan is needed.\"}}\n\
+             State: the request says keep the public API unchanged and also rename the function it exposes. -> {{\"decision\": \"ASK_USER\", \
+             \"reason\": \"Both cannot hold; the person must say which wins.\"}}\n\
+             Reply with one JSON object and no other text: \
              {{\"decision\": \"<one of {CHOICES:?}>\", \"reason\": \"<one short sentence>\"}}."
         );
         let user = format!(

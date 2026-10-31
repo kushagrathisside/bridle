@@ -1,0 +1,18 @@
+# Linux machine overrides, for a native Ubuntu install.
+#
+# The shipped profiles name the Windows binaries (llama-server.exe). A Linux machine sets its own binary names here.
+# Pass this file with the environment variable LOCAL_AGENT_CONFIG, or with --config. It sits above the repository
+# layer, so the repository stays unchanged. Relative server_bin paths resolve against the runtimes directory.
+#
+#   export LOCAL_AGENT_CONFIG="$HOME/bridle-linux.toml"
+#   export LOCAL_AGENT_MODELS_DIR="$HOME/models"
+#   export LOCAL_AGENT_RUNTIMES_DIR="$HOME/runtimes"
+#
+# Put the llama.cpp binaries at $HOME/runtimes/llama.cpp/llama-server (and the decision backend's build at
+# $HOME/runtimes/llama.cpp-prism/llama-server, if used).
+
+[runtimes.llama_cpp]
+server_bin = "llama.cpp/llama-server"
+
+[runtimes.prism]
+server_bin = "llama.cpp-prism/llama-server"
