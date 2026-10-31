@@ -239,6 +239,18 @@ fn run_chat(turn: Turn, args: &LoadArgs, tx: &Sender<JobMsg>) {
             }
         },
     };
+    // Routing: with `[routing] auto_slot`, a request sent to the default slot may be routed to another. The reason is
+    // shown in the transcript before the answer, so the person sees which model answers and why.
+    let slot = match crate::route::for_request(agent.app(), &slot, &text) {
+        Some(routed) => {
+            let notice = format!("routed to {}: {}", routed.slot, routed.reason);
+            let _ = tx.send(JobMsg::Chat(ChatMsg::Event(crate::chat::Event::Notice(
+                notice,
+            ))));
+            routed.slot
+        }
+        None => slot,
+    };
     let (provider, model) = match agent.provider(&slot) {
         Ok(pair) => pair,
         Err(error) => {

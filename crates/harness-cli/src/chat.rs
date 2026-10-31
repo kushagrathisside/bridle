@@ -120,6 +120,11 @@ impl std::fmt::Debug for Agent {
 }
 
 impl Agent {
+    /// The application this agent runs in: the configuration, the workspace and the policy.
+    pub fn app(&self) -> &App {
+        &self.app
+    }
+
     /// Builds the agent for a loaded application. Refuses a configuration with errors, as the hook and
     /// `agent mcp` do.
     pub fn new(app: App) -> Result<Self, String> {

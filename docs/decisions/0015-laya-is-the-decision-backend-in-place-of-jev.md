@@ -1,7 +1,8 @@
 # ADR-0015: Laya is the decision backend in place of Jev
 
-- **Status:** Accepted (2026-10-31) by the owner's choice. Installed and measured on 2026-10-31 (progress.md). The wire
-  contract is in `harness-runtime::laya`. The HTTP call, the configuration switch and the chat wiring are not yet built.
+- **Status:** Accepted (2026-10-31) by the owner's choice. Installed, measured and wired on 2026-10-31 (progress.md): the
+  client is in `harness-runtime::laya`, the configuration is `[external.laya]` and `[routing] auto_slot`, and the routing
+  is used by the chat and by `agent route`. Not yet shown on the terminal screen; the deep slot's serving is untested.
 - **Date:** 2026-10-31
 - **Deciders:** Kushagra Srivastava
 
