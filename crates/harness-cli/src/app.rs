@@ -84,8 +84,11 @@ impl App {
     }
 
     pub fn policy(&self) -> anyhow::Result<ToolPolicy> {
-        ToolPolicy::new(&self.workspace, &self.config.security)
-            .with_context(|| format!("building tool policy for {}", self.workspace.display()))
+        let policy = ToolPolicy::new(&self.workspace, &self.config.security)
+            .with_context(|| format!("building tool policy for {}", self.workspace.display()))?;
+        // The classes of the loaded plugin tools, so the policy can tell them apart from unknown tools (ADR-0013).
+        Ok(policy
+            .with_plugin_classes(harness_runtime::mcp::tools::plugins::load(&self.config).classes))
     }
 }
 

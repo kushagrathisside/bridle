@@ -23,6 +23,10 @@ The project has not been published; versions are for the repository only.
 - Subagent tier: a small model reads a few bounded, redacted files and answers with checked citations (M4b).
 - Repository memory: an `AGENTS.md` file (or the file `[memory]` names) is added to the system prompt, read through the
   tool policy, redacted and bounded (validation rule V41).
+- Plugins (ADR-0013): manifests in the machine config declare tools that run a fixed program. Each tool's class is the
+  stricter of its declared class and the command classifier's; only read-only and safe-execution tools are offered, and
+  `agent plugins` lists them.
+- Linux sandbox for commands (ADR-0016): Landlock on Linux, on by default there, refusing rather than running unconfined.
 - Team run in the chat (`/team <request>`): a planner, a worker for each step, and a verifier, in sequence, with each
   role's end recorded in the task journal (ADR-0011).
 - Routing: each chat request sent to the default slot is placed by rule, and the rest by the Laya decision model on this

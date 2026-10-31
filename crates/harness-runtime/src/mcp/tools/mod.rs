@@ -1242,6 +1242,7 @@ pub mod deps;
 pub mod failures;
 pub mod files;
 pub mod history;
+pub mod plugins;
 pub mod run;
 pub mod subagent;
 pub mod task;

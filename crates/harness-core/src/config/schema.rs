@@ -41,6 +41,8 @@ pub struct Config {
     pub memory: MemorySection,
     /// The sandbox for commands the harness runs (ADR-0016). See [`SandboxSection`].
     pub sandbox: SandboxSection,
+    /// Plugin manifests (ADR-0013). See [`PluginsSection`]. Machine config only.
+    pub plugins: PluginsSection,
 }
 
 impl Default for Config {
@@ -64,6 +66,7 @@ impl Default for Config {
             subagents: SubagentsSection::default(),
             memory: MemorySection::default(),
             sandbox: SandboxSection::default(),
+            plugins: PluginsSection::default(),
         }
     }
 }
@@ -120,6 +123,14 @@ impl Default for SubagentsSection {
             max_inputs: 4,
         }
     }
+}
+
+/// Plugins (ADR-0013): manifest files, each declaring tools that run a fixed program. Only the machine config may set
+/// this (`config::trust`); a repository cannot add tools. Each path must be absolute (V46).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct PluginsSection {
+    pub manifests: Vec<String>,
 }
 
 /// The sandbox for commands the harness runs: tests, verification steps and `run_command` (ADR-0016). On Linux it is
