@@ -28,6 +28,33 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-31: M4 plugins, first slice: manifests, the classification rule and the loader
+
+Built:
+- `harness-core::plugin`: the manifest format and its checks (names, a bare program, plain arguments, one to sixteen
+  tools, unique names, descriptions). The class a tool is offered under is the stricter of the declared class and the
+  classifier's class, so a plugin cannot make a tool more permissive than the classifier. Five tests.
+- `[plugins] manifests` in the machine config only (a repository is refused by the trust rule; V46 checks the paths).
+- `harness-runtime::mcp::tools::plugins`: loads the manifests, offers the read-only and safe-execution tools as
+  `plugin_<plugin>_<tool>`, and reports every tool or manifest it did not load. A call runs the fixed command through the
+  same checks as `run_command`, in the sandbox.
+- The policy learns the class of each loaded plugin tool; a plugin tool it does not know is an unknown tool and is blocked.
+- `agent plugins` lists the offered tools and the ones not offered, with the reason.
+
+Checked through the real binary, with a manifest of two tools (`ls -1`, declared read-only; `rm -rf build`, declared
+read-only):
+- `agent plugins` lists `plugin_files_list` as ReadOnly, and reports `plugin_files_wipe` as not offered (its command is
+  Destructive).
+- The policy hook allows `plugin_files_list` under the `plugin_tool` rule, and blocks `plugin_files_nope` as an unknown tool.
+- A call to the loaded read-only tool runs `ls` in the workspace and passes (a runtime test).
+
+Workspace: 907 passed, 0 failed, 5 ignored; clippy with warnings as errors clean.
+
+Not done, and said plainly: the owner decided the first plugin adds a new tool class. This slice does not add one. The
+classes offered are the two that exist (read-only and safe execution); a new class needs its own rule and policy entry, and
+is the next step. Code plugins are not built: a plugin runs only a fixed program from its manifest, which is the decision
+in ADR-0013 until the sandbox covers plugin code.
+
 ## 2026-10-31: M3 sandbox for commands on Linux (Landlock), built and tested on this kernel
 
 Decision: ADR-0016. Landlock, applied to each command before it starts, through `pre_exec`. The mechanism needs no new

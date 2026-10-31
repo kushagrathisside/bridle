@@ -15,6 +15,7 @@ use crate::app::App;
 pub(crate) fn tools_for(app: &App) -> Vec<Box<dyn McpTool>> {
     let mut tools = default_tools();
     tools.extend(adapter_tools(&app.config));
+    tools.extend(harness_runtime::mcp::tools::plugins::load(&app.config).tools);
     if app.config.subagents.enabled {
         tools.push(Box::new(
             harness_runtime::mcp::tools::subagent::SubagentTool,

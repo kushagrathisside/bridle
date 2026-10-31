@@ -5,6 +5,7 @@
 //! command it runs) and then ask [`ToolPolicy::evaluate`]. The policy inspects the real arguments;
 //! a model cannot talk its way past it.
 
+use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -128,6 +129,9 @@ pub struct ToolPolicy {
     guard: PathGuard,
     workspace: PathBuf,
     shell: ShellKind,
+    /// The class of each loaded plugin tool, by its name (`plugin_<plugin>_<tool>`). A plugin tool not listed here is an
+    /// unknown tool, and is blocked (ADR-0013).
+    plugin_classes: BTreeMap<String, ToolClass>,
 }
 
 impl ToolPolicy {
@@ -155,7 +159,15 @@ impl ToolPolicy {
             guard,
             workspace,
             shell: ShellKind::host_default(),
+            plugin_classes: BTreeMap::new(),
         })
+    }
+
+    /// Adds the classes of the loaded plugin tools. The loader computes each class from the manifest and the command
+    /// classifier; the policy trusts the table only for the names it lists.
+    pub fn with_plugin_classes(mut self, classes: BTreeMap<String, ToolClass>) -> Self {
+        self.plugin_classes = classes;
+        self
     }
 
     pub fn workspace(&self) -> &Path {
@@ -433,6 +445,20 @@ impl ToolPolicy {
                     ToolClass::ExecuteSafe,
                     "harness_tool",
                     "runs configured verification commands (each command is policy-checked)",
+                )
+            }
+            // Tools from loaded plugin manifests: the class the loader computed, and the command is checked inside the tool.
+            ToolKind::Harness(name) if self.plugin_classes.contains_key(name) => {
+                let class = self
+                    .plugin_classes
+                    .get(name)
+                    .copied()
+                    .unwrap_or(ToolClass::ExecuteRisky);
+                PolicyDecision::new(
+                    self.class_verdict(class),
+                    class,
+                    "plugin_tool",
+                    "tool from a loaded plugin manifest (its command is policy-checked inside the tool)",
                 )
             }
             // Configured adapters run their command through the same checks as run_command.

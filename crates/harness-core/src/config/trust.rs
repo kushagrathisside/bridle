@@ -50,6 +50,12 @@ pub(super) fn check_repo_layer(
             "the host executable is a machine setting",
         ));
     }
+    if table(repo, "plugins").is_some() {
+        return Err(deny(
+            "plugins".to_owned(),
+            "plugins are machine settings: a repository cannot add tools; only the machine config may name manifests",
+        ));
+    }
     if table(repo, "sandbox")
         .and_then(|sandbox| sandbox.get("enabled"))
         .and_then(Value::as_bool)

@@ -1,6 +1,9 @@
 # ADR-0013: Plugins are declared, sandboxed by ADR-0012 when they run code, and never grant a verdict
 
-- **Status:** Accepted (2026-10-31); the first plugin is decided below
+- **Status:** Accepted; first slice built 2026-10-31 (progress.md). Manifests, the classification rule and the loader
+  are in place; the class offered is the stricter of the declared and the assessed class, and only read-only and
+  safe-execution tools are offered.
+- **Status (original):** Accepted (2026-10-31); the first plugin is decided below
 - **Date:** 2026-10-31
 - **Deciders:** Kushagra Srivastava
 

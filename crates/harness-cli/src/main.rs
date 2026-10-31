@@ -96,6 +96,8 @@ enum Command {
     },
     /// List every outbound destination of this configuration, and the proxy state. Sends nothing.
     Egress,
+    /// List the plugin manifests and their tools, with the class each tool is offered under, and what was not loaded.
+    Plugins,
     /// Ask the subagent tier: a small local model reads a few bounded inputs and answers with cited evidence.
     Subagent {
         /// `explore` answers a task about the inputs; `summarise` condenses one text.
@@ -169,6 +171,7 @@ fn main() -> ExitCode {
                     text,
                 } => commands::subagent::run(&app, &role, &task, &paths, text.as_deref()),
                 Command::Route { text } => route::run(&app, &text),
+                Command::Plugins => commands::plugins::run(&app),
                 Command::EvalDecisions { cases, slot, out } => {
                     commands::eval::run(&app, &slot, &cases, out.as_deref())
                 }

@@ -226,6 +226,36 @@ Inputs go through the tool policy first, so a secret file is refused, and each f
 The answer is checked against a fixed shape; references it cannot verify are dropped and counted. Treat an answer as a
 reading, and check the cited lines.
 
+## Plugins: tools declared in a manifest
+
+A plugin is a manifest file that declares tools. Each tool runs a fixed program with fixed arguments, and it takes no
+arguments from the model (ADR-0013). Plugins are listed in the machine config only; a repository cannot add tools.
+
+```toml
+[plugins]
+manifests = ["/home/me/plugins/files/plugin.toml"]   # absolute paths (V46)
+```
+
+A manifest:
+
+```toml
+name = "files"
+version = "0.1.0"
+
+[[tools]]
+name = "list"
+description = "List the repository root"
+program = "ls"
+args = ["-1"]
+declared = "READ_ONLY"      # or EXECUTE_SAFE
+```
+
+Each tool is offered as `plugin_<plugin>_<tool>`. Its class is the stricter of the class the manifest declares and the
+class the command classifier gives its command. Only read-only and safe-execution tools are offered: a tool whose command
+the classifier calls a write, a network use, a destructive command or an interpreter is reported and not offered. A
+plugin tool runs through the same checks as `run_command`, in the sandbox. `agent plugins` lists what loaded and why any
+tool did not.
+
 ## Sandbox: commands run confined (Linux)
 
 Commands the harness runs (`run_command`, the verification steps, `run_tests`, `run_linter`, `run_typechecker`) run under

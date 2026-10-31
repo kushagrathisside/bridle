@@ -47,6 +47,7 @@
 //! | V41 | Error | `memory.file` not a relative path inside the repository, or `memory.max_bytes` outside 256 to 16384 |
 //! | V42 | Error | `external.laya` enabled without an `endpoint`, or with one that is not `http://` to a loopback host |
 //! | V43 | Error | `external.laya.timeout_ms` outside 100 to 60000 |
+//! | V46 | Error | `plugins.manifests` names a path that is not absolute |
 //! | V44 | Warning | `routing.auto_slot` on while `external.laya` is off: requests the rules cannot place go to `main` |
 //! | V24 | Warning | a verification step sets `targets = true` but its `kind` is not `test` |
 //!
@@ -138,6 +139,7 @@ pub fn validate_with(cfg: &Config, env: &ValidationEnv) -> Vec<ConfigIssue> {
     check_subagents(cfg, &mut report);
     check_memory(cfg, &mut report);
     check_laya(cfg, &mut report);
+    check_plugins(cfg, &mut report);
     check_paths(cfg, env, &mut report);
 
     report.0
@@ -200,6 +202,18 @@ fn check_subagents(cfg: &Config, report: &mut Report) {
             "subagents.max_inputs",
             "max_inputs must be between 1 and 8",
         );
+    }
+}
+
+fn check_plugins(cfg: &Config, report: &mut Report) {
+    for (index, path) in cfg.plugins.manifests.iter().enumerate() {
+        if !std::path::Path::new(path).is_absolute() {
+            report.error(
+                "V46",
+                format!("plugins.manifests[{index}]"),
+                format!("the plugin manifest {path:?} must be an absolute path"),
+            );
+        }
     }
 }
 
