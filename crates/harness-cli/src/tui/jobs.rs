@@ -239,9 +239,14 @@ fn run_chat(turn: Turn, args: &LoadArgs, tx: &Sender<JobMsg>) {
             }
         },
     };
+    // `/team <request>` runs a team (planner, workers, verifier) on the request; anything else is one turn.
+    let team_request = text
+        .strip_prefix("/team ")
+        .map(|rest| rest.trim().to_owned());
+    let request = team_request.clone().unwrap_or_else(|| text.clone());
     // Routing: with `[routing] auto_slot`, a request sent to the default slot may be routed to another. The reason is
     // shown in the transcript before the answer, so the person sees which model answers and why.
-    let slot = match crate::route::for_request(agent.app(), &slot, &text) {
+    let slot = match crate::route::for_request(agent.app(), &slot, &request) {
         Some(routed) => {
             let notice = format!("routed to {}: {}", routed.slot, routed.reason);
             let _ = tx.send(JobMsg::Chat(ChatMsg::Event(crate::chat::Event::Notice(
@@ -261,9 +266,13 @@ fn run_chat(turn: Turn, args: &LoadArgs, tx: &Sender<JobMsg>) {
             return;
         }
     };
-    let end = agent.run_turn(provider.as_ref(), &model, &text, &cancel, &mut |event| {
+    let mut emit = |event: crate::chat::Event| {
         let _ = tx.send(JobMsg::Chat(ChatMsg::Event(event)));
-    });
+    };
+    let end = match team_request {
+        Some(_) => agent.run_team(provider.as_ref(), &model, &request, &cancel, &mut emit),
+        None => agent.run_turn(provider.as_ref(), &model, &text, &cancel, &mut emit),
+    };
     let _ = tx.send(JobMsg::Chat(ChatMsg::Finished {
         agent: Some(agent),
         end,

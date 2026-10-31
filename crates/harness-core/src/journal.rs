@@ -44,6 +44,13 @@ pub enum Record {
     Escalated { call_id: String },
     /// A person ended the block with `agent task reset`. The loop counters start again.
     Reset { reason: String },
+    /// One role of a team run ended (ADR-0011): the planner, a worker for one step, or the verifier. `outcome` is how the
+    /// role ended. It is not a verdict on the task: the orchestrator's rules still decide whether the task is done.
+    RoleRun {
+        role: String,
+        step: u32,
+        outcome: String,
+    },
     /// The task runs in its own Git worktree. `base_commit` is where it starts; `dirty_files` counts the
     /// changes that were already in the repository, taken before the first mutation.
     Worktree {
@@ -191,6 +198,8 @@ impl Journal {
                 self.state.escalation_count = self.state.escalation_count.saturating_add(1);
                 self.state.escalation_open = true;
             }
+            // A role's end changes no loop counter: the rules decide the task, not the team.
+            Record::RoleRun { .. } => {}
             Record::Reset { .. } => {
                 self.state.status = TaskStatus::Active;
                 self.state.consecutive_refusals = 0;

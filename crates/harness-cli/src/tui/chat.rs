@@ -490,7 +490,11 @@ impl ChatState {
         if text.is_empty() {
             return Outcome::Handled;
         }
-        if let Some(command) = text.strip_prefix('/') {
+        // `/team <request>` is sent to the worker like a message; the job runs the team on it.
+        if let Some(command) = text
+            .strip_prefix('/')
+            .filter(|command| !command.trim_start().starts_with("team "))
+        {
             self.clear_input();
             return self.command(command.trim(), slots, default);
         }
@@ -557,7 +561,8 @@ impl ChatState {
             "help" | "?" => self.push(Item::Notice(
                 Sev::Info,
                 "Enter sends · Ctrl+J or Alt+Enter new line · Ctrl+C stops a turn · Ctrl+P next model · \
-                 /clear new chat · /model [slot] · PgUp/PgDn scroll · Tab menu · F1 help"
+                 /clear new chat · /model [slot] · /team <request> plans, works in steps and checks · PgUp/PgDn scroll · \
+                 Tab menu · F1 help"
                     .to_owned(),
             )),
             other => self.push(Item::Notice(

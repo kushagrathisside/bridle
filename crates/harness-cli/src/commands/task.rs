@@ -297,6 +297,15 @@ fn describe(record: &Record) -> String {
         Record::Refused { rule, .. } => format!("refused rule={}", clean(rule)),
         Record::Escalated { call_id } => format!("escalated to deep at call={}", clean(call_id)),
         Record::Reset { reason } => format!("reset reason={}", clean(reason)),
+        Record::RoleRun {
+            role,
+            step,
+            outcome,
+        } => format!(
+            "role={} step={step} outcome={}",
+            clean(role),
+            clean(outcome)
+        ),
         Record::Worktree {
             branch,
             path,

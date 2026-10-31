@@ -1,6 +1,7 @@
 # ADR-0011: Multi-agent orchestration: planner, worker and verifier in sequence first, on one task journal
 
-- **Status:** Accepted (2026-10-31); the two open questions are decided below
+- **Status:** Accepted (2026-10-31); the two open questions are decided below. First slice built 2026-10-31: `/team` in
+  the chat, with the planner, the workers and the verifier in sequence, each role's end recorded in the journal (progress.md)
 - **Date:** 2026-10-31
 - **Deciders:** Kushagra Srivastava
 

@@ -28,6 +28,9 @@ use crate::commands::hook;
 use crate::commands::mcp::tools_for;
 use crate::host::opencode_v1::HookEvent;
 use crate::tui::events::sanitize;
+use harness_core::journal::Record;
+use harness_core::team::{self, Role as TeamRole};
+use harness_runtime::state::StateDir;
 
 /// Model calls in one turn at most. A turn that needs more stops and says so.
 pub const MAX_STEPS: usize = 30;
@@ -123,6 +126,122 @@ impl Agent {
     /// The application this agent runs in: the configuration, the workspace and the policy.
     pub fn app(&self) -> &App {
         &self.app
+    }
+
+    /// A team run (ADR-0011): the planner splits the request into steps, a worker does each step through the same turn
+    /// loop, tools and policy as the main agent, and the verifier runs the checks and reports. Each role's end is recorded
+    /// in the task journal when the session belongs to a task. The verifier informs only: whether the task is done is
+    /// still decided by the orchestrator's rules.
+    pub fn run_team(
+        &mut self,
+        provider: &dyn ModelProvider,
+        model: &ModelConfig,
+        request: &str,
+        cancel: &AtomicBool,
+        emit: &mut dyn FnMut(Event),
+    ) -> TurnEnd {
+        self.bind_task();
+        let plan = match self.plan(provider, request) {
+            Ok(plan) => {
+                self.record_role(
+                    TeamRole::Planner,
+                    0,
+                    format!("plan of {} step(s)", plan.steps.len()),
+                );
+                plan
+            }
+            Err(reason) => {
+                self.record_role(TeamRole::Planner, 0, format!("plan not used: {reason}"));
+                emit(Event::Notice(format!(
+                    "the planner's plan was not used ({reason}); the request runs as one step"
+                )));
+                team::one_step(request)
+            }
+        };
+        let total = plan.steps.len();
+        emit(Event::Notice(format!("plan of {total} step(s)")));
+        for (index, step) in plan.steps.iter().enumerate() {
+            let number = index + 1;
+            emit(Event::Notice(format!("step {number} of {total}: {step}")));
+            let end = self.run_turn(
+                provider,
+                model,
+                &team::worker_text(number, total, step),
+                cancel,
+                emit,
+            );
+            self.record_role(TeamRole::Worker, number, Self::outcome_of(&end));
+            if !matches!(end, TurnEnd::Done) {
+                return end;
+            }
+        }
+        emit(Event::Notice("checking the work".to_owned()));
+        let end = self.run_turn(provider, model, team::verifier_text(), cancel, emit);
+        self.record_role(TeamRole::Verifier, 0, Self::outcome_of(&end));
+        end
+    }
+
+    /// The planner's answer: one model call with no tools, checked against the plan's limits.
+    fn plan(&self, provider: &dyn ModelProvider, request: &str) -> Result<team::Plan, String> {
+        let asked = ChatRequest {
+            messages: vec![
+                ChatMessage::system(team::planner_system()),
+                ChatMessage::user(request),
+            ],
+            response_format: Some(json!({"type": "json_object"})),
+            max_tokens: Some(team::PLANNER_MAX_TOKENS),
+            enable_thinking: Some(false),
+            ..ChatRequest::default()
+        };
+        let response = provider.chat(&asked).map_err(|error| error.to_string())?;
+        let content = response
+            .content
+            .ok_or_else(|| "the planner gave no answer".to_owned())?;
+        team::parse_plan(&content).map_err(|error| error.to_string())
+    }
+
+    /// Binds the chat session to a task before a team run, so the planner's outcome is journaled as well. The workflow binds
+    /// a session on its first tool call; this makes the same binding earlier. Nothing happens when the workflow is off.
+    fn bind_task(&self) {
+        if !self.app.config.workflow.enabled {
+            return;
+        }
+        let repository = self.app.workspace.display().to_string();
+        if let Ok(state) = StateDir::open(&self.app.workspace) {
+            let _ = state.bind_session(&self.session_id, &repository);
+        }
+    }
+
+    /// How a turn ended, as the journal records it.
+    fn outcome_of(end: &TurnEnd) -> String {
+        match end {
+            TurnEnd::Done => "done".to_owned(),
+            TurnEnd::Stopped => "stopped".to_owned(),
+            TurnEnd::StepLimit => "step limit reached".to_owned(),
+            TurnEnd::Failed(reason) => format!("failed: {reason}"),
+        }
+    }
+
+    /// Records how a role ended in the task journal. Nothing is recorded when the workflow is off, or when the session has
+    /// no task yet: a session becomes a task on its first tool call, so a team run that makes no tool call leaves no entry.
+    fn record_role(&self, role: TeamRole, step: usize, outcome: String) {
+        if !self.app.config.workflow.enabled {
+            return;
+        }
+        let Ok(state) = StateDir::open(&self.app.workspace) else {
+            return;
+        };
+        let Ok(Some(task_id)) = state.session_task(&self.session_id) else {
+            return;
+        };
+        let Ok(task) = state.task(&task_id) else {
+            return;
+        };
+        let _ = task.append(Record::RoleRun {
+            role: role.name().to_owned(),
+            step: u32::try_from(step).unwrap_or(u32::MAX),
+            outcome,
+        });
     }
 
     /// Builds the agent for a loaded application. Refuses a configuration with errors, as the hook and
@@ -870,6 +989,102 @@ hard_limit = 8000
             events.push(e)
         });
         (end, events, provider)
+    }
+
+    fn plan_answer(text: &str) -> ChatResponse {
+        answer(text)
+    }
+
+    #[test]
+    fn a_team_run_plans_works_each_step_and_verifies() {
+        let fx = Fixture::new("");
+        let mut agent = fx.agent();
+        let provider = MockProvider::scripted(
+            "mock-model",
+            vec![
+                Ok(plan_answer(
+                    r#"{"steps": ["read the parser", "add the test"]}"#,
+                )),
+                Ok(answer("parser read")),
+                Ok(answer("test added")),
+                Ok(answer("checks passed")),
+            ],
+        );
+        let mut events = Vec::new();
+        let cancel = AtomicBool::new(false);
+        let end = agent.run_team(
+            &provider,
+            &fx.model(),
+            "make the parser handle empty files",
+            &cancel,
+            &mut |e| events.push(e),
+        );
+        assert_eq!(end, TurnEnd::Done);
+        let notices: Vec<String> = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::Notice(text) => Some(text.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            notices.contains(&"plan of 2 step(s)".to_owned()),
+            "{notices:?}"
+        );
+        assert!(
+            notices.contains(&"step 2 of 2: add the test".to_owned()),
+            "{notices:?}"
+        );
+        let asked: Vec<String> = provider
+            .requests()
+            .iter()
+            .filter_map(|r| r.messages.last().and_then(|m| m.content.clone()))
+            .collect();
+        assert_eq!(asked[1], "Step 1 of 2: read the parser", "{asked:?}");
+        assert_eq!(asked[2], "Step 2 of 2: add the test", "{asked:?}");
+        assert!(
+            asked[3].starts_with("Check the work of this run"),
+            "{asked:?}"
+        );
+    }
+
+    #[test]
+    fn a_planner_answer_outside_the_limits_runs_the_request_as_one_step() {
+        let fx = Fixture::new("");
+        let mut agent = fx.agent();
+        let provider = MockProvider::scripted(
+            "mock-model",
+            vec![
+                Ok(plan_answer("I would start by reading the parser.")),
+                Ok(answer("done")),
+                Ok(answer("checks passed")),
+            ],
+        );
+        let mut events = Vec::new();
+        let cancel = AtomicBool::new(false);
+        let end = agent.run_team(
+            &provider,
+            &fx.model(),
+            "fix the parser",
+            &cancel,
+            &mut |e| events.push(e),
+        );
+        assert_eq!(end, TurnEnd::Done);
+        let notices: Vec<String> = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::Notice(text) => Some(text.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            notices.iter().any(|n| n.starts_with("the planner's plan was not used") && n.contains("one step")),
+            "{notices:?}"
+        );
+        assert!(
+            notices.contains(&"plan of 1 step(s)".to_owned()),
+            "{notices:?}"
+        );
     }
 
     fn roles(agent: &Agent) -> Vec<Role> {

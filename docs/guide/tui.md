@@ -43,6 +43,7 @@ and in `agent trace`, and the next request carries the task state block.
 | `Ctrl+C` | stop the running turn; with text in the input, clear it; otherwise quit |
 | `Ctrl+P`, `/model [slot]` | switch the model slot (when no turn is running) |
 | `/clear`, `Ctrl+L` | start a new conversation (a new session for the orchestrator) |
+| `/team <request>` | plan the request into at most five steps, work each step with the same tools and policy, then check the work; each role is recorded in the task journal when the workflow is on |
 | `PgUp`, `PgDn` | scroll the conversation |
 | `Up`, `Down` | earlier messages, when the input is empty |
 | `Tab` | leave the input for the menu; `F1` opens help from anywhere |

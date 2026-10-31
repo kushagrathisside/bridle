@@ -23,6 +23,8 @@ The project has not been published; versions are for the repository only.
 - Subagent tier: a small model reads a few bounded, redacted files and answers with checked citations (M4b).
 - Repository memory: an `AGENTS.md` file (or the file `[memory]` names) is added to the system prompt, read through the
   tool policy, redacted and bounded (validation rule V41).
+- Team run in the chat (`/team <request>`): a planner, a worker for each step, and a verifier, in sequence, with each
+  role's end recorded in the task journal (ADR-0011).
 - Routing: each chat request sent to the default slot is placed by rule, and the rest by the Laya decision model on this
   machine, with `main` as the fallback and `deep` used only when it is running. `agent route` shows the choice (V42 to
   V44; ADR-0010, ADR-0015).

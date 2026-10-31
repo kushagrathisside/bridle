@@ -22,6 +22,7 @@ pub mod routing;
 pub mod security;
 pub mod subagent;
 pub mod task;
+pub mod team;
 pub mod telemetry;
 
 pub use config::Config;
