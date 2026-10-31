@@ -39,6 +39,8 @@ pub struct Config {
     pub subagents: SubagentsSection,
     /// Repository memory: an instructions file added to the system prompt. See [`MemorySection`].
     pub memory: MemorySection,
+    /// The sandbox for commands the harness runs (ADR-0016). See [`SandboxSection`].
+    pub sandbox: SandboxSection,
 }
 
 impl Default for Config {
@@ -61,6 +63,7 @@ impl Default for Config {
             workflow: WorkflowSection::default(),
             subagents: SubagentsSection::default(),
             memory: MemorySection::default(),
+            sandbox: SandboxSection::default(),
         }
     }
 }
@@ -115,6 +118,27 @@ impl Default for SubagentsSection {
             slot: "micro".to_owned(),
             max_input_bytes: 4_096,
             max_inputs: 4,
+        }
+    }
+}
+
+/// The sandbox for commands the harness runs: tests, verification steps and `run_command` (ADR-0016). On Linux it is
+/// Landlock, applied before the command starts; it fails closed when the kernel cannot apply it. A repository may not turn
+/// it off (`config::trust`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SandboxSection {
+    /// Whether commands run under the sandbox. On by default on Linux; off on other systems, which have no sandbox yet.
+    pub enabled: bool,
+    /// Whether commands may open network connections. Off by default; allowing it needs no kernel feature.
+    pub network: bool,
+}
+
+impl Default for SandboxSection {
+    fn default() -> Self {
+        Self {
+            enabled: cfg!(target_os = "linux"),
+            network: false,
         }
     }
 }

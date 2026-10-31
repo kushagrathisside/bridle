@@ -150,6 +150,27 @@ pub(super) fn execute_plain(
     };
     let mut command = Command::new(program);
     command.args(words).current_dir(&dir);
+    // The sandbox (ADR-0016) confines the command before it starts. A command the sandbox cannot confine is refused.
+    let settings = crate::sandbox::Settings {
+        enabled: ctx.config.sandbox.enabled,
+        network: ctx.config.sandbox.network,
+    };
+    if let Err(reason) = crate::sandbox::confine(&mut command, &ctx.workspace, &settings) {
+        let text = ctx
+            .redactor
+            .redact(&format!("refused by the sandbox: {reason}"))
+            .into_owned();
+        return Ok(ToolOutput {
+            text: text.clone(),
+            structured: Some(json!({
+                "status": "blocked",
+                "command": ctx.redactor.redact(&line).into_owned(),
+                "rule": "sandbox",
+                "reason": text,
+            })),
+            is_error: false,
+        });
+    }
     let started = std::time::Instant::now();
     let run = run_child(
         command,

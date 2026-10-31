@@ -28,6 +28,34 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-31: M3 sandbox for commands on Linux (Landlock), built and tested on this kernel
+
+Decision: ADR-0016. Landlock, applied to each command before it starts, through `pre_exec`. The mechanism needs no new
+program and no root; this kernel supports Landlock ABI 7.
+
+Built:
+- `[sandbox]` configuration: `enabled` (on by default on Linux) and `network` (off by default). A repository cannot set
+  `enabled = false` (trust rule; tested).
+- `harness-runtime::sandbox`: computes the rules in the parent, applies them in the child. It fails closed: a kernel that
+  cannot apply the rules refuses the command. The one place unsafe code is allowed in the workspace is this module (the
+  workspace lint is now `deny`, with an allow here).
+- `run_command` and the verification tools confine the command before it starts; a refused command returns a `blocked`
+  result with the reason.
+
+Verified on this kernel with real confined commands (`harness-runtime/tests/sandbox_kernel.rs`, five tests): a command writes
+inside the workspace; it cannot write into the home directory; it cannot read a file in the home directory; it cannot
+connect to a local port by default; with `network = true` it can connect. The unit tests cover the rule set, including
+the ABI-4 requirement for denying the network.
+
+Found and fixed while running the existing command tests under the sandbox: git could not read its configuration, and its
+default ignore file, in the home directory. Confined commands now run git with `GIT_CONFIG_GLOBAL` and `XDG_CONFIG_HOME`
+set to `/dev/null`. The system git configuration still applies.
+
+Runtime tests: 316 passed, 0 failed, with the sandbox on by default. Core trust test: passes.
+
+Not verified yet: the full workspace suite after these changes; a real-model team run through the sandbox (the model server
+was not started after the WSL restart); the Ubuntu machine; the Windows path, where the sandbox is off.
+
 ## 2026-10-31: M2 team run with a real model on this machine (Qwen3.5-9B on the GPU)
 
 The real-model check the M2 record asked for, run on this machine as close as possible to the Ubuntu setup: the main model

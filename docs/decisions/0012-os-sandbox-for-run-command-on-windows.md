@@ -1,6 +1,7 @@
 # ADR-0012: An OS sandbox for commands the harness runs, on Windows first
 
-- **Status:** Deferred (2026-10-31): the spike waits until routing is measured
+- **Status:** Deferred (2026-10-31): the Windows spike waits until routing is measured. The Linux sandbox is decided and
+  built in [ADR-0016](0016-linux-sandbox-for-commands-with-landlock.md).
 - **Date:** 2026-10-31
 - **Deciders:** Kushagra Srivastava
 
