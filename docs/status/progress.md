@@ -28,6 +28,26 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-31: routing measured on a seed corpus; `agent eval-routing`
+
+Built: `agent eval-routing <cases> [--out]`. Each labelled request goes through the placement that the chat uses; the
+decision model answers the requests the rules cannot place, and the report gives the agreement by source. The
+deep slot is assumed to be serving, so the choice itself is measured.
+
+Seed corpus: `evals/routing/cases.json`, 20 requests, 12 expected MAIN and 8 expected DEEP. The labels were written by the
+assistant, not recorded from real use, and most of the long requests were written around the rule keywords. Treat the
+numbers as a check that the path works, not as evidence of how well the placement generalises.
+
+| Run | Agreement | By source |
+|---|---|---|
+| Rules, no decision model | 12 of 20 | rules 6 of 6; no decision model 6 of 14 |
+| Decision model (Laya, typed-decisions, CPU) | 19 of 20 | rules 6 of 6; decision model 13 of 14 |
+
+The one miss with the decision model was "migrate the event log ..." (expected DEEP, answered MAIN). The decision model
+answered in about 250 ms on CPU, and the first request in a run took about 2 s while the server warmed up.
+
+Reports: `evals/routing/report-2026-10-31-rules-only.json` and `evals/routing/report-2026-10-31-decision-model.json`.
+
 ## 2026-10-31: coding leftovers built: vision slot for images, private temporary directory per command
 
 - Image turns go to the `vision` slot when the configuration defines one (`[models.vision]`); otherwise the chosen slot,

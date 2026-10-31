@@ -90,6 +90,14 @@ enum Command {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Measure the routing choice on a labelled set of requests: the rules, then the decision model (ADR-0010).
+    EvalRouting {
+        /// A JSON file of cases: name, text and the slot expected (MAIN or DEEP).
+        cases: PathBuf,
+        /// Also write the per-case results to this file.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
     /// Show which slot a request would go to, and why: the rules first, then the decision model (ADR-0010).
     Route {
         /// The request text.
@@ -172,6 +180,7 @@ fn main() -> ExitCode {
                     text,
                 } => commands::subagent::run(&app, &role, &task, &paths, text.as_deref()),
                 Command::Route { text } => route::run(&app, &text),
+                Command::EvalRouting { cases, out } => route::eval(&app, &cases, out.as_deref()),
                 Command::Plugins => commands::plugins::run(&app),
                 Command::EvalDecisions { cases, slot, out } => {
                     commands::eval::run(&app, &slot, &cases, out.as_deref())
