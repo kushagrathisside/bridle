@@ -1,0 +1,215 @@
+{
+  "model": "lfm2.5-1.2b-thinking",
+  "summary": {
+    "cases": 20,
+    "stalled": 16,
+    "model_answers": 16,
+    "fallbacks": 0,
+    "answers_allowed": 16,
+    "agreements": 5,
+    "latency_p50_ms": 828,
+    "latency_p95_ms": 1162
+  },
+  "rows": [
+    {
+      "name": "same failure, guard test, three runs",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "Stalled loop indicates unresolved issues requiring intervention.",
+      "agrees": true,
+      "latency_ms": 1123
+    },
+    {
+      "name": "same failure, unit test after a fix",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "Stalled loop indicates persistent failures requiring intervention.",
+      "agrees": true,
+      "latency_ms": 726
+    },
+    {
+      "name": "same failure, two failures per run",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "The stalled loop indicates unresolved issues requiring intervention.",
+      "agrees": true,
+      "latency_ms": 774
+    },
+    {
+      "name": "same failure, import error",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "Stalled loop indicates unresolved issues requiring intervention.",
+      "agrees": true,
+      "latency_ms": 758
+    },
+    {
+      "name": "same failure, lint finding",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "Stalled loop indicates unresolved issues requiring intervention.",
+      "agrees": true,
+      "latency_ms": 765
+    },
+    {
+      "name": "same failure, after two edits",
+      "stalled": true,
+      "rules": "Escalate",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "To address the stalled loop by analyzing previous iterations and considering alternative approaches.",
+      "agrees": false,
+      "latency_ms": 996
+    },
+    {
+      "name": "repeated command, unittest",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "Stalled loop indicates unresolved issue requiring intervention.",
+      "agrees": false,
+      "latency_ms": 763
+    },
+    {
+      "name": "repeated command, build",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "Stalled loop indicates unresolved issue requiring intervention.",
+      "agrees": false,
+      "latency_ms": 815
+    },
+    {
+      "name": "repeated command, install",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "Stalled loop indicates unresolved issue requiring intervention.",
+      "agrees": false,
+      "latency_ms": 910
+    },
+    {
+      "name": "repeated command, make",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "Stalled loop indicates unresolved issue requiring intervention.",
+      "agrees": false,
+      "latency_ms": 826
+    },
+    {
+      "name": "repeated command, formatter",
+      "stalled": true,
+      "rules": "Next { action: Diagnose }",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "Stalled loop indicates unresolved issue requiring intervention.",
+      "agrees": false,
+      "latency_ms": 828
+    },
+    {
+      "name": "repeated edit, calc.py",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "The stalled loop indicates a need to adjust the current approach rather than escalating or asking for user input.",
+      "agrees": false,
+      "latency_ms": 1103
+    },
+    {
+      "name": "repeated edit, README",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "The stalled loop indicates a need to adjust the current approach rather than escalating or asking for user input.",
+      "agrees": false,
+      "latency_ms": 1162
+    },
+    {
+      "name": "repeated edit, test file",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "Stalled loop indicates unresolved issues requiring intervention.",
+      "agrees": false,
+      "latency_ms": 839
+    },
+    {
+      "name": "repeated edit, module",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "Escalate",
+      "model_reason": "Stalled loop indicates unresolved blockage requiring intervention.",
+      "agrees": false,
+      "latency_ms": 968
+    },
+    {
+      "name": "repeated edit, utilities",
+      "stalled": true,
+      "rules": "AskUser",
+      "source": "model",
+      "model": "Replan",
+      "model_reason": "The stalled loop indicates a need to adjust the current approach rather than escalating or asking for user input.",
+      "agrees": false,
+      "latency_ms": 1097
+    },
+    {
+      "name": "iteration limit reached",
+      "stalled": false,
+      "rules": "TaskBlocked",
+      "source": "rules",
+      "model": null,
+      "model_reason": null,
+      "agrees": null,
+      "latency_ms": 0
+    },
+    {
+      "name": "implementation retries exceeded",
+      "stalled": false,
+      "rules": "Escalate",
+      "source": "rules",
+      "model": null,
+      "model_reason": null,
+      "agrees": null,
+      "latency_ms": 0
+    },
+    {
+      "name": "iteration limit with a repeated command",
+      "stalled": false,
+      "rules": "TaskBlocked",
+      "source": "rules",
+      "model": null,
+      "model_reason": null,
+      "agrees": null,
+      "latency_ms": 0
+    },
+    {
+      "name": "retries exceeded with a same failure",
+      "stalled": false,
+      "rules": "Escalate",
+      "source": "rules",
+      "model": null,
+      "model_reason": null,
+      "agrees": null,
+      "latency_ms": 0
+    }
+  ]
+}

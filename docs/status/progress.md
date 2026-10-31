@@ -28,6 +28,80 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-31: repository memory (`AGENTS.md`) in the system prompt; built and tested on Linux
+
+What was built. A `[memory]` section (`enabled`, `file`, `max_bytes`). `harness_core::memory` holds the path rule and the
+framing: a header that says the text is guidance, not a permission; control characters removed; a cut on a character
+boundary with a note. `harness_runtime::memory` reads the file through `ToolPolicy::evaluate` and redacts it before it is
+framed. `prompt::extras` (CLI) joins the memory block and the task block, and both the `system-transform` hook and the
+chat request call it. Validation rule V41 checks the file name and the limit.
+
+Verified:
+
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`: clean.
+- `cargo test --workspace --locked`: 854 passed, 0 failed, 5 ignored, with the proxy variables cleared. The first run
+  showed three `jev` failures. The shell had `HTTP_PROXY` and `HTTPS_PROXY` set, so the loopback mock was sent through
+  the proxy and answered 403. With them cleared the Jev tests pass, and the full run passes.
+- End to end with the real binary: `agent hook system-transform` in a scratch repository.
+  - `AGENTS.md` present: the block is returned with its header, and `api_key = supersecret123` appears as `[REDACTED]`.
+  - `memory.file = ".env"`: refused by the policy (`secret_file`); the output is `{}` and the refusal is in the event log.
+  - No file: `{}`.
+
+- The chat's request carries the memory block: a real `agent tui` run against a capture stub recorded the request, and
+  its system message contains the repository-instructions header and the `AGENTS.md` line.
+- The chat and the hook now share one path for the system prompt (`hook::answer_with`), so a refused memory file is
+  logged the same way from both.
+- The event log label was wrong and is fixed: a refused memory file is now logged as `prompt_degraded` (the workflow
+  hooks keep `workflow_degraded`). Verified by a unit test and the orchestrator integration tests.
+
+Not verified: the Windows gate was not run.
+
+Not built in this entry: multi-agent orchestration, routing between slots, an OS sandbox, a plugin interface, an LFM3
+slot, multimodal input. Each has a record under `docs/decisions/` (ADR-0010 to ADR-0013).
+
+Decisions taken by the owner on 2026-10-31 (the open questions in the ADRs):
+
+- Multi-agent workers may edit files, through the policy and the loop rules (ADR-0011).
+- The verifier only informs; the orchestrator's rules decide whether a task is done (ADR-0011).
+- The Windows sandbox spike waits until routing is measured (ADR-0012).
+- The first plugin adds a new tool class, with its classification rule written and reviewed first (ADR-0013).
+
+Still open: the routing measurement and the LFM3 comparison (ADR-0010).
+
+- Done: LFM3-1.7B Q4_K_M downloaded to `/home/kushagra/bridle/models/lfm3/LFM3-1.7B-Q4_K_M.gguf`. Size 1,099,627,808
+  bytes and SHA-256 match the Hugging Face record.
+- Not usable: `/home/kushagra/bridle/bridle-demo/bin/llama-server` is the scripted fake server from the demo, not
+  llama.cpp. The Windows runtime `b11756-cuda12.4` is below the b11960 (v0.8.0) minimum for LFM3.
+- Done: llama.cpp v0.8.0 built from the ggml-org tag (commit `8642541`), with CUDA 12.0 for compute capability 8.9 (RTX
+  4060 Laptop, 8 GB). Source and build live in `/home/kushagra/bridle/runtimes/llama.cpp-v0.8.0`. The build was first
+  attempted CPU-only and then stopped in favour of CUDA; the CUDA build finished with exit code 0.
+- Done: LFM3-1.7B loads on the GPU (`-ngl 99`, 4096 context). The health endpoint answers, and a chat request returns a
+  reply. GPU memory was 1,285 MiB with the model loaded. Reasoning is on by default, so a short `max_tokens` is spent on
+  reasoning first; the comparison must allow more tokens or turn reasoning off.
+- Done: the 20-case comparison, `agent eval-decisions evals/decisions/cases.json --slot micro`, on the same CPU settings
+  (8 threads, 8192 context, one server at a time, port 8002, the micro slot's sampling). Reports:
+  [report-2026-10-31-lfm25.json](../../evals/decisions/report-2026-10-31-lfm25.json) and
+  [report-2026-10-31-lfm3.json](../../evals/decisions/report-2026-10-31-lfm3.json).
+
+| Measure | LFM2.5-1.2B (Thinking) | LFM3-1.7B |
+|---|---|---|
+| Valid answers, stalled cases | 16 of 16 | 16 of 16 |
+| Fallbacks to the rules | 0 | 0 |
+| Agreement with the rules, stalled cases | 5 of 16 | 5 of 16 |
+| Latency per stalled decision, p50 / p95 | 828 ms / 1,162 ms | 1,571 ms / 2,426 ms |
+
+The two models agree with the rules on different cases. LFM2.5 agrees on the five same-failure cases, and its other
+answers are a mix of REPLAN and ESCALATE. LFM3 answers ASK_USER for all 16 stalled cases, which matches the rules only on
+the five repeated-edit cases where the rules also say ASK_USER. So LFM3's five agreements come from always answering the
+same thing. The run does not show LFM3 choosing well; it shows it not varying.
+
+Reading the result: LFM3 does not replace the micro model for this decision. LFM2.5 stays in the micro slot. The run
+used the same llama.cpp build for both, on CPU; the 2026-10-26 baseline used another build on Windows, so latencies are
+compared only within this run.
+
+Licence: both checkpoints are under the LFM Open License v1.0. The M4 note records the research-use limit; LFM3's
+terms should be read before any use beyond personal experiments.
+
 ## 2026-10-31: Control Center and chat (`agent tui`), built and tested on Linux; not run on Windows
 
 - What it is: `agent tui` opens a terminal application. The home screen is a chat with one model slot. The model calls the
