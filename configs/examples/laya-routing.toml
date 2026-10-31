@@ -1,0 +1,8 @@
+# Explicit machine overlay for the routing check: auto routing on, Laya on loopback.
+[routing]
+auto_slot = true
+
+[external.laya]
+enabled = true
+endpoint = "http://127.0.0.1:8000"
+timeout_ms = 5000

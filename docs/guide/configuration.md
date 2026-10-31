@@ -151,6 +151,9 @@ The shipped profiles satisfy these rules, so `agent init` output loads as a proj
 | V28 | the refusal cap is below 1 |
 | V29 | `[agent].max_iterations` below 2, or a retry bound below 1: the first step would already block or escalate |
 | V41 | `memory.file` is not a relative path inside the repository, or `memory.max_bytes` is outside 256 to 16384 |
+| V42 | `external.laya` is enabled without an `endpoint`, or the endpoint is not `http://` to a loopback host |
+| V43 | `external.laya.timeout_ms` is outside 100 to 60000 |
+| V44 | warning: `routing.auto_slot` is on while `external.laya` is off, so requests the rules cannot place go to `main` |
 
 ## Workflow and loop limits
 
@@ -222,6 +225,29 @@ evidence. It is off by default. The design is in [ADR-0009](../decisions/0009-su
 Inputs go through the tool policy first, so a secret file is refused, and each file is redacted before the model sees it.
 The answer is checked against a fixed shape; references it cannot verify are dropped and counted. Treat an answer as a
 reading, and check the cited lines.
+
+## Routing: which model answers a request
+
+With `[routing] auto_slot = true`, each chat request sent to the default slot is routed before the turn. The rules place
+the request first: an explicit `/deep` or `/main` at the start; a short request with no hard word goes to `main`. A
+request the rules cannot place goes to the decision model, Laya, which answers `MAIN` or `DEEP`. `deep` is used only when
+Bridle reports the deep slot running; otherwise the request goes to `main`, and the transcript says why.
+
+Laya is a local decision server (ADR-0015). Start it on this machine, then enable it in an explicit config file (external
+providers are machine settings, so the repository cannot set them):
+
+```toml
+[routing]
+auto_slot = true
+
+[external.laya]
+enabled = true
+endpoint = "http://127.0.0.1:8000"
+timeout_ms = 5000
+```
+
+`agent route "<text>"` shows where a request would go and why, without starting a turn. If the decision server cannot be
+reached or answers outside its choices, the request goes to `main` and the reason says so.
 
 ## Repository memory: AGENTS.md
 

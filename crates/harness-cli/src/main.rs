@@ -7,6 +7,7 @@ mod commands;
 mod host;
 mod output;
 mod prompt;
+mod route;
 mod tui;
 mod workflow;
 
@@ -88,6 +89,11 @@ enum Command {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Show which slot a request would go to, and why: the rules first, then the decision model (ADR-0010).
+    Route {
+        /// The request text.
+        text: String,
+    },
     /// List every outbound destination of this configuration, and the proxy state. Sends nothing.
     Egress,
     /// Ask the subagent tier: a small local model reads a few bounded inputs and answers with cited evidence.
@@ -162,6 +168,7 @@ fn main() -> ExitCode {
                     paths,
                     text,
                 } => commands::subagent::run(&app, &role, &task, &paths, text.as_deref()),
+                Command::Route { text } => route::run(&app, &text),
                 Command::EvalDecisions { cases, slot, out } => {
                     commands::eval::run(&app, &slot, &cases, out.as_deref())
                 }

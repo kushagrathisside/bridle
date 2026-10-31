@@ -45,6 +45,9 @@
 //! | V39 | Error | `routing.enable_deep_escalation` without a model whose role is `deep_reasoning` |
 //! | V40 | Warning | `decisions.provider = "local_lfm"` while `routing.enable_micro_decisions` is off |
 //! | V41 | Error | `memory.file` not a relative path inside the repository, or `memory.max_bytes` outside 256 to 16384 |
+//! | V42 | Error | `external.laya` enabled without an `endpoint`, or with one that is not `http://` to a loopback host |
+//! | V43 | Error | `external.laya.timeout_ms` outside 100 to 60000 |
+//! | V44 | Warning | `routing.auto_slot` on while `external.laya` is off: requests the rules cannot place go to `main` |
 //! | V24 | Warning | a verification step sets `targets = true` but its `kind` is not `test` |
 //!
 //! Unit tests: one passing baseline config (no issues) and at least one failing case per rule.
@@ -134,6 +137,7 @@ pub fn validate_with(cfg: &Config, env: &ValidationEnv) -> Vec<ConfigIssue> {
     check_workflow(cfg, &mut report);
     check_subagents(cfg, &mut report);
     check_memory(cfg, &mut report);
+    check_laya(cfg, &mut report);
     check_paths(cfg, env, &mut report);
 
     report.0
@@ -195,6 +199,35 @@ fn check_subagents(cfg: &Config, report: &mut Report) {
             "V38",
             "subagents.max_inputs",
             "max_inputs must be between 1 and 8",
+        );
+    }
+}
+
+fn check_laya(cfg: &Config, report: &mut Report) {
+    let laya = &cfg.external.laya;
+    if laya.enabled {
+        match laya.endpoint.as_deref() {
+            None => report.error("V42", "external.laya.endpoint", "external.laya is enabled but has no endpoint"),
+            Some(endpoint) if !(endpoint.starts_with("http://") && endpoint_is_loopback(endpoint)) => report.error(
+                "V42",
+                "external.laya.endpoint",
+                "the Laya endpoint must be http:// to a loopback host (127.0.0.1, localhost or ::1)",
+            ),
+            Some(_) => {}
+        }
+    }
+    if !(100..=60_000).contains(&laya.timeout_ms) {
+        report.error(
+            "V43",
+            "external.laya.timeout_ms",
+            "timeout_ms must be between 100 and 60000",
+        );
+    }
+    if cfg.routing.auto_slot && !laya.enabled {
+        report.warning(
+            "V44",
+            "routing.auto_slot",
+            "routing.auto_slot is on but external.laya is off; requests the rules cannot place go to main",
         );
     }
 }
@@ -1073,6 +1106,25 @@ mod tests {
         assert_issue(&cfg, "V41", Severity::Error, "memory.max_bytes");
         cfg.memory.max_bytes = 4_096;
         assert_no_rule(&cfg, "V41");
+    }
+
+    #[test]
+    fn v42_to_v44_guard_the_laya_endpoint_and_the_routing_switch() {
+        let mut cfg = Config::default();
+        cfg.external.laya.enabled = true;
+        assert_issue(&cfg, "V42", Severity::Error, "external.laya.endpoint");
+        cfg.external.laya.endpoint = Some("https://127.0.0.1:8000".to_owned());
+        assert_issue(&cfg, "V42", Severity::Error, "external.laya.endpoint");
+        cfg.external.laya.endpoint = Some("http://10.0.0.5:8000".to_owned());
+        assert_issue(&cfg, "V42", Severity::Error, "external.laya.endpoint");
+        cfg.external.laya.endpoint = Some("http://127.0.0.1:8000".to_owned());
+        assert_no_rule(&cfg, "V42");
+        cfg.external.laya.timeout_ms = 10;
+        assert_issue(&cfg, "V43", Severity::Error, "external.laya.timeout_ms");
+        cfg.external.laya.timeout_ms = 5_000;
+        cfg.external.laya.enabled = false;
+        cfg.routing.auto_slot = true;
+        assert_issue(&cfg, "V44", Severity::Warning, "routing.auto_slot");
     }
 
     #[test]

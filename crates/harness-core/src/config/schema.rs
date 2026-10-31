@@ -467,6 +467,9 @@ pub struct RoutingSection {
     /// 0.75 at the third identical failure (the default threshold), 0.875 at the fourth and 0.9375 at the fifth. A
     /// model's answer has no confidence and always goes to the deep slot.
     pub escalation_threshold: f32,
+    /// Route each chat request to `main` or `deep` by the rules, and by the decision model for the rest (ADR-0010).
+    /// Off by default. A request sent to a slot other than `agent.default_model` is never re-routed.
+    pub auto_slot: bool,
 }
 
 impl Default for RoutingSection {
@@ -475,6 +478,7 @@ impl Default for RoutingSection {
             enable_micro_decisions: false,
             enable_deep_escalation: false,
             escalation_threshold: 0.75,
+            auto_slot: false,
         }
     }
 }
@@ -724,6 +728,30 @@ pub struct AdapterConfig {
 pub struct ExternalSection {
     pub jev: JevSection,
     pub cloud_models: CloudModelsSection,
+    /// The Laya decision server on this machine. See [`LayaSection`].
+    pub laya: LayaSection,
+}
+
+/// The Laya decision server (ADR-0015), run on this machine by `laya-serve`. Off by default. It must answer on a
+/// loopback address: the client refuses any other host (V42), so no decision leaves the machine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LayaSection {
+    pub enabled: bool,
+    /// `http://` to a loopback host, for example `http://127.0.0.1:8000` (V42).
+    pub endpoint: Option<String>,
+    /// Whole-request timeout for one decision, in milliseconds (V43: 100 to 60000).
+    pub timeout_ms: u64,
+}
+
+impl Default for LayaSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            endpoint: None,
+            timeout_ms: 5_000,
+        }
+    }
 }
 
 /// Optional hosted decision engine. Off by default; never required.

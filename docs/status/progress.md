@@ -28,6 +28,37 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-10-31: routing wired end to end, with Laya as the decision model (through the real binary)
+
+Built: the Laya HTTP client (`harness-runtime::laya`), loopback HTTP only, using the shared transport helpers; the
+configuration (`[external.laya]` with `enabled`, `endpoint`, `timeout_ms`; `[routing] auto_slot`); validation V42 to
+V44; the routing module in the CLI (`harness-cli::route`); the `agent route <text>` command; and the chat job, which
+routes a request sent to the default slot before the turn and shows the reason as a notice in the transcript. A
+request sent to any other slot is kept as the person chose it.
+
+Two findings that shaped the client:
+- The server picks a checkpoint by the language of the text. An English request went to the `multilingual` checkpoint,
+  which was not on disk, and the request timed out while it downloaded. The request now names `typed-decisions` (the
+  server accepts a `model` field), and the same request then returns in about 0.5 seconds.
+- The server's loopback check and the client's share one rule. External providers are machine settings, so the
+  repository cannot enable Laya or switch routing; the check is a test of an explicit `--config` overlay.
+
+Checked through the binary, with Laya running on loopback (`agent --config <overlay> route <text>`):
+
+| Request | Result |
+|---|---|
+| "fix the typo in README" | `main`, by rule (short, no hard word) |
+| "Redesign the storage architecture across the whole codebase ..." | the decision model chose DEEP at 75%; the deep slot is not serving, so `main`, with the reason |
+| "Add a unit test for the parser ..." (long, no hard word) | the decision model chose MAIN at 69% |
+| "/deep summarise the design of the policy module" | `deep` by rule; not serving, so `main`, with the reason |
+| The same hard request with Laya's port closed | `main`; the reason says the endpoint was unreachable |
+
+Not verified: the deep slot serving (it needs the GPU and the 27B model, which this machine does not run, so the choice
+is tested in the core unit tests only), and the chat's transcript notice on screen (the chat calls the same function as
+`agent route`, but the terminal screen was not driven in this session).
+
+Tests: 880 passed, 0 failed, 5 ignored across the workspace; clippy with warnings as errors clean.
+
 ## 2026-10-31: Laya installed and measured; routing and Laya client built in core and runtime
 
 Routing contract (`harness-core::routing`): rules place a request first (an explicit `/deep` or `/main` at the start;
