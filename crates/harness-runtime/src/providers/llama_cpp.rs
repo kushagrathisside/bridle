@@ -134,6 +134,56 @@ pub fn props_build(props: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// Whether speculative decoding (a draft model) is enabled, read from the server's `/props`.
+///
+/// Looks at every value under a key whose name mentions `speculative` or `draft`, at any depth. Returns `Some(true)` if any
+/// such value is truthy, `Some(false)` if there are such values and all are off, and `None` when the server reports no such
+/// key at all.
+pub fn props_speculative(props: &Value) -> Option<bool> {
+    let mut found = None;
+    speculative_scan(props, false, &mut found);
+    found
+}
+
+fn speculative_scan(value: &Value, under_draft_key: bool, found: &mut Option<bool>) {
+    match value {
+        Value::Object(map) if !map.is_empty() => {
+            for (key, child) in map {
+                let lowered = key.to_ascii_lowercase();
+                let hit =
+                    under_draft_key || lowered.contains("speculative") || lowered.contains("draft");
+                speculative_scan(child, hit, found);
+            }
+        }
+        Value::Array(items) if !items.is_empty() => {
+            for item in items {
+                speculative_scan(item, under_draft_key, found);
+            }
+        }
+        leaf if under_draft_key => {
+            *found = Some(found.unwrap_or(false) || is_truthy(leaf));
+        }
+        _ => {}
+    }
+}
+
+/// Scalars are truthy when non-zero, non-empty or `true`. Containers are truthy when any value is. Strings that name an off
+/// state are falsy: llama.cpp reports `"types": "none"` when no speculative decoding is configured (checked against b11756
+/// `/props`).
+fn is_truthy(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(flag) => *flag,
+        Value::Number(number) => number.as_f64().is_some_and(|x| x != 0.0),
+        Value::String(text) => !matches!(
+            text.trim().to_ascii_lowercase().as_str(),
+            "" | "none" | "off" | "false" | "disabled" | "0"
+        ),
+        Value::Array(items) => !items.is_empty(),
+        Value::Object(map) => !map.is_empty(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -178,5 +228,47 @@ mod tests {
         let props = json!({"build_info": "b11756-abc"});
         assert_eq!(props_build(&props).as_deref(), Some("b11756-abc"));
         assert_eq!(props_build(&json!({"build_info": 7})), None);
+    }
+
+    #[test]
+    fn props_speculative_is_none_without_such_keys() {
+        assert_eq!(props_speculative(&json!({"n_ctx": 4096})), None);
+        assert_eq!(props_speculative(&json!({})), None);
+    }
+
+    #[test]
+    fn props_speculative_reports_truthy_and_falsy_settings() {
+        assert_eq!(
+            props_speculative(&json!({"speculative": {"n_max": 0}})),
+            Some(false)
+        );
+        assert_eq!(
+            props_speculative(&json!({"speculative": {"n_max": 16}})),
+            Some(true)
+        );
+        assert_eq!(
+            props_speculative(&json!({"draft_model": "small.gguf"})),
+            Some(true)
+        );
+        assert_eq!(
+            props_speculative(&json!({"draft_model": null})),
+            Some(false)
+        );
+        assert_eq!(
+            props_speculative(&json!({"speculative": false, "draft": {"n": 0}})),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn off_state_strings_are_not_speculative_decoding() {
+        // The shape llama.cpp b11756 reports when MTP is not configured.
+        let props =
+            json!({"default_generation_settings": {"params": {"speculative": {"types": "none"}}}});
+        assert_eq!(props_speculative(&props), Some(false));
+        assert_eq!(
+            props_speculative(&json!({"speculative": {"types": "draft-mtp"}})),
+            Some(true)
+        );
     }
 }
