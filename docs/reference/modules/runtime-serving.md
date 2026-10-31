@@ -134,7 +134,7 @@ Telemetry must not break the agent: I/O errors are returned for the caller to ig
 ## Limits
 
 - With `secrets_redaction = false`, event fields are written raw (config-gated; flagged by the redaction review).
-- Deferred to release 2: starting the server in its own process group on Unix. That would stop Ctrl+C from
+- Deferred to a later release: starting the server in its own process group on Unix. That would stop Ctrl+C from
   reaching an attached `serve`; on Windows the server has no console.
 - The launcher argv matches llama.cpp b11756; another build may need different flags.
 

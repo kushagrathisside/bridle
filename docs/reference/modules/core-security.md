@@ -33,7 +33,7 @@ the class of its worst segment, so the order matters.
 | DESTRUCTIVE | `security.destructive_commands` (Ask) | `rm -rf`, `git reset --hard`, `git push +main` |
 | PRIVILEGED | `security.privileged_commands` (Deny) | `sudo`, `systemctl`, `reg add HKLM`, encoded PowerShell |
 
-The host adapter blocks Ask, so in release 1 only Allow runs.
+The host adapter blocks Ask, so in this release only Allow runs.
 
 ### Evaluation order (`ToolPolicy::evaluate`)
 
@@ -79,7 +79,7 @@ plant a `core.fsmonitor` command that the next `git status` runs. Reading these 
 4. Canonicalise the longest existing ancestor (resolving symlinks and junctions) and check containment again, so a
    symlink inside the workspace cannot point out of it.
 
-Bases must be spelled like the canonical root. A Windows 8.3 short path (`C:\Users\KUSHAG~1\...`) is refused
+Bases must be spelled like the canonical root. A Windows 8.3 short path (`C:\Users\USERNA~1\...`) is refused
 lexically; the policy always passes canonical bases.
 
 ### Command classifier (`command_risk.rs`)

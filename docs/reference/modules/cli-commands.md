@@ -5,7 +5,7 @@ only. Logic lives in `harness-core` and `harness-runtime`, and everything OpenCo
 `src/host/opencode_v1.rs` ([cli-host-opencode.md](cli-host-opencode.md)). Commands must not hold policy rules of
 their own.
 
-> **Status:** Built and tested. `agent mcp` serves the analysis, verification and adapter tools. Release 1 runs on native
+> **Status:** Built and tested. `agent mcp` serves the analysis, verification and adapter tools. This release runs on native
 > Windows.
 
 ## Responsibilities
@@ -29,7 +29,7 @@ Global options: `--config <file>` (or `LOCAL_AGENT_CONFIG`) adds the highest-pre
 | `agent egress` | Lists every outbound destination of the configuration and the proxy state; sends nothing | Always succeeds |
 | `agent config paths` | Machine config, repository config, state directory | |
 | `agent init [--profile local-only\|development] [--force]` | Writes `local-agent.toml` (never overwritten), `opencode.json`, `.opencode/plugins/local-agent.ts`, and a `.gitignore` entry | |
-| `agent init --machine --models-dir D:\models --runtimes-dir D:\runtimes --opencode-bin <exe>` | Writes the machine config | |
+| `agent init --machine --models-dir <models-dir> --runtimes-dir <runtimes-dir> --opencode-bin <exe>` | Writes the machine config | |
 | `agent models list` | Configured slots | |
 | `agent models serve <slot> [--detach] [--wait-secs 300]` | Starts the slot's server; logs to `.local-agent/logs/<slot>.log`, PID to `.local-agent/servers/<slot>.pid` | The server's exit code when attached |
 | `agent models stop <slot>` | Stops a detached server | |

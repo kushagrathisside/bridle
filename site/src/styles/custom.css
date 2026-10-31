@@ -1,0 +1,19 @@
+/* Accent colours as tokens for both themes. Starlight reads these custom properties, so the rest of the
+   layout keeps its defaults. The contrast of each accent text colour against its background is at least 4.5:1. */
+:root[data-theme='light'] {
+  --sl-color-accent-low: #dbeef8;
+  --sl-color-accent: #1d5f8c;
+  --sl-color-accent-high: #123f5e;
+}
+
+:root[data-theme='dark'] {
+  --sl-color-accent-low: #143a50;
+  --sl-color-accent: #7fcbee;
+  --sl-color-accent-high: #c4e8f8;
+}
+
+/* A visible focus ring for keyboard users on every interactive element. */
+:focus-visible {
+  outline: 2px solid var(--sl-color-accent);
+  outline-offset: 2px;
+}
