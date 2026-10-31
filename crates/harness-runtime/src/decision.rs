@@ -58,19 +58,20 @@ impl LfmEngine {
             .collect::<String>();
         let signals: Vec<&str> = input.signals.iter().map(signal_name).collect();
         // Worked examples, one per answer. Without them the model answered ASK_USER for every stalled case
-        // (measured 2026-10-31); with them it tells the cases apart. See progress.md.
+        // (measured 2026-10-31). The examples describe other situations than the recorded loop cases, so the
+        // measurement is not circular (progress.md, 2026-10-31 held-out run).
         let system = format!(
             "You are the decision step of a coding-agent harness. A loop has stalled. Choose exactly one answer.\n\
-             - ESCALATE: the same failure keeps coming back, and a stronger model should look at it.\n\
-             - ASK_USER: the person must decide something the code cannot decide, such as a choice between two goals.\n\
-             - REPLAN: the plan is wrong, and the next step should be a new plan, not another attempt.\n\
+             - ESCALATE: the failure has a cause outside the code the agent is changing, so a stronger model must look further.\n\
+             - ASK_USER: the request asks for two things that cannot both hold, and only the person can choose.\n\
+             - REPLAN: the approach cannot work at all, so the plan must change before any more attempts.\n\
              Examples:\n\
-             State: same test failure three times in a row, last action run_tests. -> {{\"decision\": \"ESCALATE\", \
-             \"reason\": \"The same failure repeats; a stronger model should diagnose it.\"}}\n\
-             State: the same file edited four times with no test change, refusals 0. -> {{\"decision\": \"REPLAN\", \
-             \"reason\": \"The edits go nowhere; the plan needs a new approach.\"}}\n\
-             State: the request asks for two incompatible behaviours, failures 0. -> {{\"decision\": \"ASK_USER\", \
-             \"reason\": \"Two goals conflict; the person must choose.\"}}\n\
+             State: the build fails with the same linker error after each of three fixes in different files. -> {{\"decision\": \"ESCALATE\", \
+             \"reason\": \"The cause is probably outside the edited code; a stronger model should find it.\"}}\n\
+             State: the task calls a function that the project's library does not have, and the attempts keep calling it. -> {{\"decision\": \"REPLAN\", \
+             \"reason\": \"The approach cannot work; a new plan is needed.\"}}\n\
+             State: the request says keep the public API unchanged and also rename the function it exposes. -> {{\"decision\": \"ASK_USER\", \
+             \"reason\": \"Both cannot hold; the person must say which wins.\"}}\n\
              Reply with one JSON object and no other text: \
              {{\"decision\": \"<one of {CHOICES:?}>\", \"reason\": \"<one short sentence>\"}}."
         );
