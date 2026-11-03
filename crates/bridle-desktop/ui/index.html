@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bridle</title>
+  <link rel="stylesheet" href="vendor/xterm/xterm.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <div class="brand"><span class="logo"></span></div>
+      <span class="spacer"></span>
+      <div class="project">
+        <button id="project-btn" class="project-btn" title="Change project (Ctrl+O)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h6l2 2h10v10H3z"/></svg><span id="workspace" class="workspace-name">no folder</span><span class="chev">▾</span></button>
+        <div id="project-menu" class="menu" hidden></div>
+      </div>
+      <span class="workspace-path" id="workspace-path"></span>
+      <span class="spacer"></span>
+      <button id="toggle-bottom" class="icon-btn" title="Show or hide the terminal panel (Ctrl+`)" aria-label="Terminal"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l6 6-6 6M12 18h8"/></svg></button>
+      <button id="toggle-chat" class="icon-btn" title="Show or hide the chat (Ctrl+J)" aria-label="Chat"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg></button>
+    </header>
+
+    <div id="body">
+      <nav id="activity" aria-label="Views">
+        <button data-view="explorer" class="active" title="Explorer (Ctrl+Shift+E)" aria-label="Explorer"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg></button>
+        <button data-view="search" title="Search (Ctrl+Shift+F)" aria-label="Search"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg></button>
+        <button data-view="changes" title="Changes (Ctrl+Shift+G)" aria-label="Changes"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="9" r="2"/><path d="M7 8v8M17 11c0 4-6 3-10 5"/></svg><span class="count" id="changes-count"></span></button>
+        <button data-view="models" title="Models and checks" aria-label="Models"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg></button>
+        <button data-view="settings" title="Settings and policy" aria-label="Info"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg></button>
+      </nav>
+
+      <aside id="sidebar">
+        <section id="view-explorer" class="view active">
+          <div class="side-head"><span>Explorer</span>
+            <span class="head-actions">
+              <button id="new-file" class="icon" title="New file">+ File</button>
+              <button id="new-folder" class="icon" title="New folder">+ Folder</button>
+              <button id="tree-refresh" class="icon" title="Refresh">↻</button>
+            </span>
+          </div>
+          <div id="tree" class="tree"></div>
+        </section>
+
+        <section id="view-search" class="view">
+          <div class="side-head"><span>Search</span></div>
+          <div class="search-box">
+            <input id="search-input" type="text" placeholder="Search in files" autocomplete="off" spellcheck="false">
+            <div class="search-opts">
+              <label title="Match case"><input type="checkbox" id="search-case"> Aa</label>
+              <label title="Regular expression"><input type="checkbox" id="search-regex"> .*</label>
+              <span class="muted" id="search-count"></span>
+            </div>
+          </div>
+          <div id="search-results" class="tree"></div>
+        </section>
+
+        <section id="view-changes" class="view">
+          <div class="side-head"><span id="changes-branch">Changes</span><button id="changes-refresh" class="icon" title="Refresh">↻</button></div>
+          <div id="changes-files" class="tree"></div>
+        </section>
+
+        <section id="view-models" class="view">
+          <div class="side-head"><span>Models</span><button id="run-doctor" class="icon" title="Test runtimes, files and endpoints">Run checks</button></div>
+          <div class="view-scroll">
+            <div id="slots"></div>
+            <h3>Checks</h3>
+            <div id="doctor" class="muted">Press “Run checks” to test the runtimes, the model files and the endpoints.</div>
+          </div>
+        </section>
+
+        <section id="view-settings" class="view">
+          <div class="side-head"><span>Info</span></div>
+          <div class="view-scroll">
+            <div class="card" id="network-card">
+              <h4>Network</h4>
+              <p class="muted note">How Bridle reaches the internet: cloud models and web tools. Your local model servers never use a proxy.</p>
+              <label class="field-label" for="net-mode">Proxy</label>
+              <select id="net-mode">
+                <option value="environment">Use the system proxy (environment)</option>
+                <option value="custom">Use this proxy</option>
+                <option value="none">No proxy (connect directly)</option>
+              </select>
+              <input id="net-proxy" type="text" placeholder="http://host:port" autocomplete="off" spellcheck="false">
+              <label class="field-label" for="net-url">Test address</label>
+              <input id="net-url" type="text" value="https://example.com" autocomplete="off" spellcheck="false">
+              <div class="row mt"><button id="net-save" class="small primary">Save</button><button id="net-test" class="small">Test</button></div>
+              <p id="net-result" class="note"></p>
+              <p id="net-effective" class="muted note"></p>
+            </div>
+            <div id="settings"></div>
+          </div>
+        </section>
+      </aside>
+      <div class="split split-h" id="split-sidebar" title="Drag to resize"></div>
+
+      <section id="center">
+        <div id="tabs" class="tabs"></div>
+        <div id="breadcrumbs" class="breadcrumbs" hidden></div>
+        <div id="editor-area">
+          <div id="welcome" class="welcome">
+            <div>
+              <h1>Bridle</h1>
+              <p>Open a file from the Explorer, search the folder, or ask the chat to change something and watch the diff appear.</p>
+              <p class="muted">Ctrl+P go to file · Ctrl+Shift+F search · Ctrl+S save · Ctrl+J chat · Ctrl+` terminal · Ctrl+O change project</p>
+            </div>
+          </div>
+          <div id="monaco" class="monaco-host" hidden></div>
+          <div id="diff-monaco" class="monaco-host" hidden></div>
+          <div id="image-view" class="image-view" hidden></div>
+        </div>
+        <div class="split split-v" id="split-bottom" title="Drag to resize"></div>
+        <div id="bottom">
+          <div class="bottom-tabs">
+            <button data-panel="terminal" class="active">Terminal</button>
+            <button data-panel="activity">Activity</button>
+            <button data-panel="tasks">Tasks</button>
+            <span class="spacer"></span>
+            <select id="term-profile" class="term-select" title="Shell"></select>
+            <button id="term-restart" class="icon" title="Restart the terminal in this folder">Restart</button>
+            <button id="term-clear" class="icon" title="Clear the output">Clear</button>
+            <button id="close-bottom" class="icon" title="Hide the panel">✕</button>
+          </div>
+          <div id="panel-terminal" class="panel active">
+            <div id="xterm" class="xterm-host" title="Your own terminal: what you type here is not checked by the model's policy"></div>
+          </div>
+          <div id="panel-activity" class="panel"><div class="panel-note muted">Every tool call and the policy's verdict, newest first.</div><div id="events"></div></div>
+          <div id="panel-tasks" class="panel"><div id="tasks"></div></div>
+        </div>
+      </section>
+      <div class="split split-h" id="split-chat" title="Drag to resize"></div>
+
+      <aside id="chat">
+        <div class="chat-head">
+          <select id="slot-select" title="Model slot"></select>
+          <span class="slot-line"><span id="slot-dot" class="dot"></span><span id="slot-state">no model</span></span>
+          <span class="head-actions">
+            <button id="slot-start" class="small">Start</button>
+            <button id="slot-stop" class="small">Stop</button>
+            <button id="new-chat" class="small" title="New chat (Ctrl+L)">New</button>
+          </span>
+        </div>
+        <div id="transcript" class="transcript" aria-live="polite"></div>
+        <form id="composer" class="composer">
+          <div id="palette" class="palette" hidden></div>
+          <div id="attachment" class="attachment" hidden></div>
+          <textarea id="input" rows="2" placeholder="Ask Bridle to look at or change this folder.  Type / for commands and tools, or paste an image."></textarea>
+          <div class="composer-buttons">
+            <span id="status" class="status"></span>
+            <span id="context" class="context" hidden title="How much of the model's context window the conversation uses"><span id="context-text"></span><span class="meter"><span id="context-bar"></span></span></span>
+            <button type="button" id="attach" class="small" title="Attach an image (/image)">Image</button>
+            <button type="button" id="compact" class="small" title="Summarise the conversation to free context (/compact)">Compact</button>
+            <button type="button" id="stop" class="danger" hidden>Stop</button>
+            <button type="submit" id="send" class="primary">Send</button>
+          </div>
+        </form>
+      </aside>
+    </div>
+
+    <footer id="statusbar" class="statusbar">
+      <span class="sb-item" id="sb-branch" title="Git branch"></span>
+      <span class="sb-item" id="sb-model" title="Model slot"><span id="sb-dot" class="dot"></span><span id="sb-model-text">no model</span></span>
+      <span class="sb-item" id="sb-context" title="Context used" hidden></span>
+      <span class="spacer"></span>
+      <span class="sb-item" id="sb-updated" title="When the folder's state was last read"></span>
+      <span class="sb-item" id="sb-cursor"></span>
+      <span class="sb-item" id="sb-lang"></span>
+      <span class="sb-item" id="sb-encoding" hidden>UTF-8</span>
+    </footer>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div id="ctx" class="menu ctx" hidden></div>
+  <div id="overlay" class="overlay" hidden>
+    <div class="dialog" id="dialog"></div>
+  </div>
+
+  <!-- xterm first: Monaco's loader defines an AMD define(), which would make xterm register as a module instead of a global. -->
+  <script src="vendor/xterm/xterm.js"></script>
+  <script src="vendor/xterm/addon-fit.js"></script>
+  <script src="vendor/monaco/vs/loader.js"></script>
+  <script src="core.js"></script>
+  <script src="chat.js"></script>
+  <script src="editor.js"></script>
+  <script src="panels.js"></script>
+  <script src="boot.js"></script>
+</body>
+</html>
