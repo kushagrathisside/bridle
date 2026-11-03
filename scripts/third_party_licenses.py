@@ -4,7 +4,7 @@
 The licence expression of each crate is the one its manifest declares. The script does not read licence texts and does
 not decide compatibility: a person reviews the list at each release.
 
-Run from the repository root:  python3 scripts/third_party_licenses.py
+Run from the repository root:  python3 scripts/third_party_licenses.py [metadata.json]
 """
 
 import json
@@ -17,13 +17,17 @@ OUT = ROOT / "THIRD_PARTY_LICENSES.md"
 
 
 def main() -> int:
-    raw = subprocess.run(
-        ["cargo", "metadata", "--format-version", "1", "--locked"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
+    if len(sys.argv) > 1:
+        # A saved `cargo metadata --format-version 1 --locked` output, for a machine where cargo cannot reach a registry.
+        raw = Path(sys.argv[1]).read_text(encoding="utf-8")
+    else:
+        raw = subprocess.run(
+            ["cargo", "metadata", "--format-version", "1", "--locked"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
     meta = json.loads(raw)
     members = set(meta["workspace_members"])
     rows = sorted(
