@@ -1,7 +1,7 @@
 # MCP tools
 
-Bridle serves its own tools to the agent over the Model Context Protocol. OpenCode starts `agent mcp` from its generated
-configuration, and each tool appears to the agent as `local-agent_<name>`. Each tool call still passes the policy first,
+Bridle serves its own tools to the agent over the Model Context Protocol. OpenCode starts `bridle mcp` from its generated
+configuration, and each tool appears to the agent as `bridle_<name>`. Each tool call still passes the policy first,
 like any other call.
 
 The table lists the tools in the order the server reports them. The class is the policy class the tool is judged by.

@@ -13,9 +13,9 @@ pages describe code; they do not set policy. The system view is in [architecture
 | [runtime-providers.md](runtime-providers.md) | `harness-runtime` | `providers` (trait, OpenAI-compatible, llama.cpp, mock) and `http` |
 | [runtime-serving.md](runtime-serving.md) | `harness-runtime` | `launcher`, `health`, `manifest`, `sysprobe`, `event_log` |
 | [runtime-mcp.md](runtime-mcp.md) | `harness-runtime` | `mcp`: JSON-RPC protocol and the MCP tools |
-| [cli-commands.md](cli-commands.md) | `harness-cli` | The `agent` commands and the `App` context |
+| [cli-commands.md](cli-commands.md) | `harness-cli` | The `bridle` commands and the `App` context |
 | [cli-host-opencode.md](cli-host-opencode.md) | `harness-cli` | OpenCode adapter, hook protocol, `opencode.json` generation, the TypeScript shim |
-| [orchestrator.md](orchestrator.md) | `harness-core`, `harness-runtime`, `harness-cli` | Task, journal, loops, decisions, state store, hook and `agent task` glue |
+| [orchestrator.md](orchestrator.md) | `harness-core`, `harness-runtime`, `harness-cli` | Task, journal, loops, decisions, state store, hook and `bridle task` glue |
 | [context.md](context.md) | `harness-core`, `harness-cli` | Context policy, the per-request transforms and the task block for the system prompt |
 
 ## Behaviour
@@ -26,15 +26,15 @@ Crates and dependency direction:
 harness-cli  ──▶  harness-runtime  ──▶  harness-core
    (agent)          (I/O: HTTP,           (pure logic: config,
                      processes, files)     policy, redaction)
-opencode-plugin/local-agent.ts  ──spawns──▶  agent hook <event>
-OpenCode  ──stdio MCP──▶  agent mcp
+opencode-plugin/bridle.ts  ──spawns──▶  bridle hook <event>
+OpenCode  ──stdio MCP──▶  bridle mcp
 ```
 
 - `harness-core` depends on no other workspace crate. It reads config files and canonicalises paths, and does
   nothing else that touches the system: no network, no processes.
 - `harness-runtime` depends on `harness-core`. It never decides policy; it asks `harness-core`.
 - `harness-cli` depends on both. Only `src/host/opencode_v1.rs` knows OpenCode payloads and config.
-- The TypeScript shim `opencode-plugin/local-agent.ts` holds no policy logic.
+- The TypeScript shim `opencode-plugin/bridle.ts` holds no policy logic.
 
 Conventions the code follows:
 

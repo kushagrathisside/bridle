@@ -20,8 +20,8 @@ slots (R-29.1) and the other LFM roles (classification, summarising, subagent ro
 | `Decision::Replan` and `model_reason` on the decision result | `harness-core/src/decision.rs` | the existing decision tests |
 | `LfmEngine`: stalled loops only; compact request; strict check; fallback to the rules on any error | `harness-runtime/src/decision.rs` | 5 unit tests with a scripted provider |
 | `decide_for`: `decisions.provider = "local_lfm"` selects the micro slot; a failure to build it falls back | `harness-cli/src/workflow.rs` | the black-box fallback test |
-| The refusal message shows the model's reason; `agent explain` shows the provider and reason | `harness-cli/src/workflow.rs`, `commands/task.rs` | black-box tests |
-| `agent eval-decisions <cases.json> [--out report.json]`: the A/B run | `harness-cli/src/commands/eval.rs` | run live, below |
+| The refusal message shows the model's reason; `bridle explain` shows the provider and reason | `harness-cli/src/workflow.rs`, `commands/task.rs` | black-box tests |
+| `bridle eval-decisions <cases.json> [--out report.json]`: the A/B run | `harness-cli/src/commands/eval.rs` | run live, below |
 | 20 recorded cases: 16 stalled loops, 4 limit cases | `evals/decisions/cases.json` | the A/B run |
 
 Black-box tests: 9 in `tests/orchestrator.rs`, including one with the micro endpoint on a closed port, which checks that
@@ -49,10 +49,10 @@ better; it shows that the answers are valid and fast enough to use.
 
 ### Live runs
 
-- **Health (8 of 8 checks)** on the micro slot, through `agent health micro`.
+- **Health (8 of 8 checks)** on the micro slot, through `bridle health micro`.
 - **Hook run with the model** (`task-0011`): four identical `touch note.txt` calls through the real hook. The fourth was
   refused by the repeated-command rule with the model's reason ("Stalled loop indicates unresolved issue requiring
-  intervention."), and `agent explain` shows `Escalate because RepeatedCommand (provider local_lfm)`.
+  intervention."), and `bridle explain` shows `Escalate because RepeatedCommand (provider local_lfm)`.
 - **Edit and re-test cycle with the model in the path** (`task-0008`, `task-0010`): the model did not stall in these
   two runs and no decision was made. The earlier stall in M3 (`task-0007`) showed the rules path. The model's own
   behaviour differs between runs, so this is not a repeatable live test of the whole loop.

@@ -14,7 +14,7 @@ task. It spans three places: the pure rules in `harness-core`, the request trans
 | `harness-core/src/telemetry.rs` | `EventKind::Context` | The kind of the per-request record, written to `events.jsonl`. |
 | `harness-cli/src/host/opencode_v1.rs` | `messages_transform`, `scan_request`, `is_read_only` | Reads the message parts of a request, applies the policy, and returns the changed outputs with one `context` record. |
 | `harness-cli/src/workflow.rs` | `system_block`, `state_block`, `short` | The task block for the system prompt. Cleaned and cut short; nothing is created. |
-| `opencode-plugin/local-agent.ts` | `applyContextChanges`, two hooks | Forwards both hooks, applies the changes to a copy of each changed message, and fails open. |
+| `opencode-plugin/bridle.ts` | `applyContextChanges`, two hooks | Forwards both hooks, applies the changes to a copy of each changed message, and fails open. |
 
 ## Hook protocol
 

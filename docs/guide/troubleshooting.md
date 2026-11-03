@@ -5,16 +5,16 @@ entry gives the message you will see, so you can search for it.
 
 ## The model server is not running
 
-**Message:** `health: endpoint unreachable: ... (os error 10061)`, or `endpoint unreachable` from `agent doctor`.
+**Message:** `health: endpoint unreachable: ... (os error 10061)`, or `endpoint unreachable` from `bridle doctor`.
 
 **Cause:** nothing is listening on the model's address. The server has not been started, or it has stopped.
 
 **Fix:** check the state, then start the slot.
 
 ```bat
-agent models status
-agent models serve main --detach
-agent health main
+bridle models status
+bridle models serve main --detach
+bridle health main
 ```
 
 `models status` shows `unloaded` when no server is running. `health main` ends with `result: pass` once the server answers.
@@ -28,10 +28,10 @@ agent health main
 **Fix:** read the server's log, which is written beside the project's state:
 
 ```text
-.local-agent\logs\main.log
+.bridle\logs\main.log
 ```
 
-Check the file name in the configuration with `agent config show`, and check the folder with `agent config paths`.
+Check the file name in the configuration with `bridle config show`, and check the folder with `bridle config paths`.
 
 ## `config validate` prints a warning about verification
 
@@ -132,3 +132,15 @@ path as `D:/dir` there.
 If OpenCode's interactive window does not work on your machine, the non-interactive commands run the same plugin, the same
 policy and the same tools. Use `opencode run` for a single task, or `opencode serve` with `opencode run --attach` for a
 server you keep running.
+
+## Windows reports "Out of memory", PowerShell will not start, or `nvidia-smi` cannot reach the driver
+
+Seen on 2026-11-03. The commit limit (RAM plus pagefile, 32.4 GB on the tested machine) was used up, so programs could no
+longer allocate. Check, in this order:
+
+1. The System event log for event 2004 from `Microsoft-Windows-Resource-Exhaustion-Detector`: it names the programs that used
+   the most virtual memory. `wevtutil qe System /c:200 /rd:true /f:text` and look for 2004.
+2. The Application log for `RADAR_PRE_LEAK_64`, which names a program Windows saw leaking.
+3. Leftover helper processes: `tasklist | findstr /i "powershell python llama-server"`. Stop a model server with
+   `bridle models stop <slot>`, never with a task killer, so its record is cleaned up.
+4. `.wslconfig`: `memory=` is what WSL may take from Windows. On a 16 GB machine, 11 GB leaves little for the model.

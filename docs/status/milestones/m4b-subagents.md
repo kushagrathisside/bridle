@@ -22,7 +22,7 @@ run showed.
   point for both the tool and the command, so they cannot drift.
 - **Tool**: `subagent` (`harness-runtime/src/mcp/tools/subagent.rs`), offered to the model only when
   `[subagents] enabled = true`. Its answer is labelled as a reading, not a fact.
-- **Command**: `agent subagent --role explore --task "..." --path file`, the same path, for manual checks.
+- **Command**: `bridle subagent --role explore --task "..." --path file`, the same path, for manual checks.
 - **Config**: `[subagents]` with `enabled` (false by default), `slot` (`micro`), `max_input_bytes` (4096) and `max_inputs`
   (4). Validation V37 (the slot must be defined) and V38 (the limits are in range).
 
@@ -59,7 +59,7 @@ Two changes were tried and reverted, and the reasons are recorded here:
 
 ## Quality over the eval set (2026-10-27)
 
-`evals/subagent/run.py` runs `agent subagent` for each case in `evals/subagent/cases.json`, three times, and scores the
+`evals/subagent/run.py` runs `bridle subagent` for each case in `evals/subagent/cases.json`, three times, and scores the
 answer body (the summary, the findings and the recommendation) against the case's expected patterns. The raw result
 is in `evals/subagent/results/2026-10-27-micro.json`.
 

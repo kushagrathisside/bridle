@@ -26,24 +26,24 @@ The open question was how much.
    |---|---|---|---|
    | `harness-core` | lib | Pure, deterministic domain logic. No network, no process spawning, no OpenCode knowledge. | serde, regex, sha2 |
    | `harness-runtime` | lib | I/O: model providers (HTTP), health checks, manifests, process launcher, event log, MCP server, tools | `harness-core`, HTTP client |
-   | `harness-cli` | bin `agent` | Entry points (`doctor`, `health`, `init`, `models`, `mcp`, `hook`, `explain`, `trace`). Owns the **only** OpenCode-specific Rust module, `host/opencode_v1.rs`. | both libs, clap |
+   | `harness-cli` | bin `bridle` | Entry points (`doctor`, `health`, `init`, `models`, `mcp`, `hook`, `explain`, `trace`). Owns the **only** OpenCode-specific Rust module, `host/opencode_v1.rs`. | both libs, clap |
 
-   The crate names are neutral on purpose. The temporary product identifier (`local-agent`, binary `agent`,
-   state directory `.local-agent/`, environment prefix `LOCAL_AGENT_`) lives in `harness-core::identity` and
+   The crate names are neutral on purpose. The temporary product identifier (`bridle`, binary `bridle`,
+   state directory `.bridle/`, environment prefix `BRIDLE_`) lives in `harness-core::identity` and
    in the `[[bin]]` and plugin package names. A rename then touches only those places.
 
-2. **Tools are exposed to OpenCode over MCP (stdio), not as TypeScript custom tools.** `agent mcp` is a
+2. **Tools are exposed to OpenCode over MCP (stdio), not as TypeScript custom tools.** `bridle mcp` is a
    small, hand-written MCP server (JSON-RPC 2.0, newline-delimited). OpenCode loads it through its stable
    `mcp` config key (`type: "local"`, `command: ["agent", "mcp"]`). This does not depend on the host: any
    MCP-capable harness can use the same tools if OpenCode changes (the design is meant to survive OpenCode changes).
 
 3. **The OpenCode plugin is a thin TypeScript shim, with a target of under 200 lines and no logic.** It
    forwards the `tool.execute.before`, `tool.execute.after`, `permission.ask`, `shell.env` and `event`
-   payloads as JSON to `agent hook <event>` (stdin to stdout). It then applies the returned verdict: it
+   payloads as JSON to `bridle hook <event>` (stdin to stdout). It then applies the returned verdict: it
    throws to block, sets the permission status, or changes the environment or output. It has no runtime npm
    dependencies. The `@opencode-ai/plugin` import is type-only, and Bun erases it.
 
-4. **Configuration is TOML** (`local-agent.toml`, with profiles in `configs/*.toml`). The original design treats the
+4. **Configuration is TOML** (`bridle.toml`, with profiles in `configs/*.toml`). The original design treats the
    format as negotiable. TOML is native to Rust, and the de facto YAML crate (`serde_yaml`) is archived
    and unmaintained.
 
@@ -61,7 +61,7 @@ The open question was how much.
   bridge loses nothing.
 - OpenCode's MCP config (`McpLocalConfig`: `type`, `command[]`, `environment`, `enabled`, `timeout`) is part
   of the stable config schema. MCP tool names are prefixed `<server>_`, so OpenCode's existing permission
-  globs (`"local-agent_*"`) can govern them.
+  globs (`"bridle_*"`) can govern them.
 - Both the Windows host (VS 2022 Build Tools 14.44, Windows SDK 10.0.26100, rustup 1.95.0-msvc) and WSL
   (1.95.0 and 1.99.0 stable) can build the workspace without new installs.
 

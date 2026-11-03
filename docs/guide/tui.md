@@ -1,19 +1,19 @@
-# Control Center (`agent tui`)
+# Control Center (`bridle tui`)
 
 A terminal application with two parts: a **chat** with one of your model slots, and a set of **views** that show what Bridle
 is doing around it: configuration, slots, tasks, the event log and the policy decisions.
 
 ```bash
-agent tui
+bridle tui
 ```
 
-It uses the same `--config`, `--workspace` and `LOCAL_AGENT_CONFIG` as every command. It needs a terminal on both stdin and
+It uses the same `--config`, `--workspace` and `BRIDLE_CONFIG` as every command. It needs a terminal on both stdin and
 stdout and exits with an error otherwise. No other command changes.
 
 ## Chat
 
 The chat is the home screen. You write what you want; the model answers, and calls tools when it needs to look at or change
-the repository. The tools are the ones `agent mcp` offers to OpenCode (git, tests and lint, code navigation, `run_command`,
+the repository. The tools are the ones `bridle mcp` offers to OpenCode (git, tests and lint, code navigation, `run_command`,
 the declared adapters, and the optional subagent and task-status tools), plus five file tools that OpenCode brings itself:
 
 | Tool | What it does |
@@ -30,11 +30,11 @@ call, and the redaction and task record after it. The tools run through the MCP 
 results are recorded and outputs are redacted as they are for OpenCode. A blocked call is answered to the model with the rule
 that blocked it, shown in the transcript and logged. `ask` counts as blocked. There is no way to approve a blocked call from
 the chat. The file tools act on the path the policy resolved, so a symlink out of the workspace, a path with `..`, a secret
-file such as `.env`, and the control files (`local-agent.toml`, `.git`, `.opencode`) are refused for the model like for
+file such as `.env`, and the control files (`bridle.toml`, `.git`, `.opencode`) are refused for the model like for
 OpenCode.
 
-With `[workflow] enabled = true` each chat becomes a task of the orchestrator: it appears in the Tasks view, in `agent task`
-and in `agent trace`, and the next request carries the task state block.
+With `[workflow] enabled = true` each chat becomes a task of the orchestrator: it appears in the Tasks view, in `bridle task`
+and in `bridle trace`, and the next request carries the task state block.
 
 | Key | Action |
 |---|---|
@@ -56,17 +56,17 @@ Limits, stated plainly:
 - A turn makes at most 30 model calls. The history is shortened to fit the slot's context window: older tool results first, then
   the oldest exchanges, never a call without its result.
 - The server of the slot must be running. The chat does not start it; the Models view does (key `s`, with a confirmation).
-- A slot that names `api_key_env` reads its key from that environment variable, as `agent health` does.
+- A slot that names `api_key_env` reads its key from that environment variable, as `bridle health` does.
 
 ## Using the chat with your models
 
 The chat talks to the slot named by `agent.default_model` (`main` in the shipped profiles). `Ctrl+P` or `/model <slot>`
 switches to another slot.
 
-1. Set Bridle up once, as in [installation.md](installation.md): `agent init --machine ...`, and `agent init --profile local-only`
+1. Set Bridle up once, as in [installation.md](installation.md): `bridle init --machine ...`, and `bridle init --profile local-only`
    in the repository.
-2. Start the slot's server: `agent models serve main --detach`, or key `6` and then `s` in the TUI (it asks first).
-3. Run `agent tui` in the repository and write your message.
+2. Start the slot's server: `bridle models serve main --detach`, or key `6` and then `s` in the TUI (it asks first).
+3. Run `bridle tui` in the repository and write your message.
 
 What a request costs. Every request starts with the instructions and the descriptions of the tools. With the default tools
 and the five file tools that is about 3,600 tokens (measured on Qwen3.5-9B). On the shipped 16K slot that leaves about 12K
@@ -86,18 +86,18 @@ Jump with `1`-`9` (from the menu, or from any view that is not the chat input), 
 | 1 Chat | the conversation | the model slot |
 | 2 Overview | readiness, one line per check, what to do next, recent decisions | all below |
 | 3 Tasks | the orchestrator's tasks with status, phase and loop counters; sessions without a task | task journal, event logs |
-| 4 Activity | every logged event, newest first, with search and filters | `.local-agent/tool-events.jsonl`, `events.jsonl` |
+| 4 Activity | every logged event, newest first, with search and filters | `.bridle/tool-events.jsonl`, `events.jsonl` |
 | 5 Policy | effective security settings, known limits, every allow, ask and deny with its rule and reason | config, event logs |
-| 6 Models | slots, file and runtime presence, managed-server state, last health result | config, `.local-agent/servers/*.pid` |
-| 7 Diagnostics | `agent doctor` and health findings, each with cause, impact and next step | doctor, health checks |
+| 6 Models | slots, file and runtime presence, managed-server state, last health result | config, `.bridle/servers/*.pid` |
+| 7 Diagnostics | `bridle doctor` and health findings, each with cause, impact and next step | doctor, health checks |
 | 8 Configuration | loaded files and their trust layer, validation, the effective config (redacted) with the layer each value comes from | config loader |
-| 9 Network | the destinations `agent egress` lists, local or remote, and whether proxy variables are set | config only |
+| 9 Network | the destinations `bridle egress` lists, local or remote, and whether proxy variables are set | config only |
 
 Readiness is derived, not assumed. `Ready` needs a valid config, the model file and runtime present for every launchable slot,
 and a passing health check for every slot; until a health check has run the state is `Not checked`.
 
 The Tasks view reads the task journal without taking a lock or writing anything. The sessions of the event logs are folded into
-their task through the session index; a session with no task is listed as a session. `agent trace` and `agent explain` give
+their task through the session index; a session with no task is listed as a session. `bridle trace` and `bridle explain` give
 the full record of one task.
 
 ## Keys outside the chat input
@@ -128,7 +128,7 @@ the full record of one task.
 - **Read-only configuration.** There is no editor. Values are shown after redaction, with the layer that last set each key
   (`machine`, `repo`, `--config`, `env`, or `default` when no file sets it). The loader records this next to the merge; the
   merge and the trust check do not read it.
-- **Start and stop** run the code behind `agent models serve --detach` and `agent models stop`, after a confirmation screen that
+- **Start and stop** run the code behind `bridle models serve --detach` and `bridle models stop`, after a confirmation screen that
   names the slot, file, runtime and endpoint. Only `y` confirms. Start waits up to 5 minutes for health and is refused when the
   config has errors, the slot has no launch section, another GPU slot runs, a managed server already runs, or the endpoint is
   not on this machine. Stop signals a process only when it still runs the recorded server binary; a stale or reused PID is
@@ -145,7 +145,7 @@ the full record of one task.
   arrives together with more input is read as a line break inside a paste, not as "send".
 - The input counts every character as one column. Wide characters (CJK, some emoji) take two, so the cursor can sit a
   cell off in a line that contains them.
-- `NO_COLOR=1` gives a monochrome theme and `LOCAL_AGENT_TUI_ASCII=1` replaces Unicode symbols. Status is always a symbol plus a
+- `NO_COLOR=1` gives a monochrome theme and `BRIDLE_TUI_ASCII=1` replaces Unicode symbols. Status is always a symbol plus a
   word.
 - Verified on Linux (WSL2) in a pseudo-terminal, with the real binary, the real hook path and a scripted OpenAI-compatible
   server. Not yet run on native Windows.

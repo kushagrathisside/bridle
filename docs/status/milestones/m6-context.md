@@ -46,7 +46,7 @@ Nothing is summarised, and no model is consulted.
 - `harness-cli/src/workflow.rs`: `system_block` returns the state of the session's task: phase, iteration, last action,
   last test, counters and objective. Control characters are replaced and long fields are cut short, and the block says
   it is information, not an instruction. Nothing is created: a session without a task gets no block.
-- `opencode-plugin/local-agent.ts`: forwards both hooks and applies the returned outputs to a copy of each changed
+- `opencode-plugin/bridle.ts`: forwards both hooks and applies the returned outputs to a copy of each changed
   message. Failure is fail-open: the request keeps its full history, and the system prompt is sent without the block.
   Compaction is not a security control. Outputs are redacted in `tool.execute.after`, before they are stored.
 - Configuration: `context.compact_tool_outputs = false` turns compaction and dropping off. Requests are still measured.
@@ -69,9 +69,9 @@ Run B has no context or template error in the OpenCode log. Its one tool error c
 with the step name `run_tests`, which is not a configured step (`unit tests`, `guard`). That is a model mistake, not a
 harness one.
 
-The measurements are the `context` records in `.local-agent/events.jsonl`: `tool_results`, `changed`, `bytes_before`,
+The measurements are the `context` records in `.bridle/events.jsonl`: `tool_results`, `changed`, `bytes_before`,
 `bytes_after`, `target_bytes` and `hard_bytes`. Two checks were run by hand with the same payloads.
-`agent hook system-transform` returned the task block for the session, and `agent hook messages-transform` returned no
+`bridle hook system-transform` returned the task block for the session, and `bridle hook messages-transform` returned no
 changes for a small request.
 
 Not observed live: rule 1 (an old verification result compacted to its failure lines). It is covered by a unit test

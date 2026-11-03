@@ -21,10 +21,10 @@ For the architecture behind these rules, see [architecture](architecture.md).
 - **`ask` is a denial.** The permission hook reports `ask` to OpenCode as `deny`, so OpenCode's `--auto` mode cannot approve
   a call the policy did not allow.
 - **Failures close.** A program the policy does not recognise is EXECUTE_RISKY, which is denied by default. A command that
-  cannot be parsed is denied. If `agent hook` cannot answer, the shim blocks the call. If redaction cannot run, the shim
+  cannot be parsed is denied. If `bridle hook` cannot answer, the shim blocks the call. If redaction cannot run, the shim
   withholds the tool output.
-- **The agent cannot change the harness.** Writes to these are refused: `local-agent.toml`, `opencode.json`,
-  `opencode.jsonc`, `.opencode/`, `.local-agent/`, `.worktrees/` and `.git` at any depth.
+- **The agent cannot change the harness.** Writes to these are refused: `bridle.toml`, `opencode.json`,
+  `opencode.jsonc`, `.opencode/`, `.bridle/`, `.worktrees/` and `.git` at any depth.
 - **A repository cannot loosen the policy.** A repository's own configuration may only make the policy stricter. Which
   settings it may set is listed in the [configuration reference](../guide/configuration.md#what-a-repository-file-cannot-set).
 - **Verification steps come from configuration.** Each step is classified by the same command rules before it runs.
@@ -59,7 +59,7 @@ Two further rules apply:
 | File tools | `read`, `grep` and `glob` paths are checked against secret file names. The list includes environment files, private keys and certificates, `.netrc`, `.npmrc` and credential files. A match is denied. |
 | Shell | Every word of a command is checked the same way, so a glob pattern that could match a secret file name is denied. |
 | Tool output | `tool.execute.after` redacts known secret shapes and `KEY=value` assignments before the model sees the output. The MCP server redacts the text it returns. |
-| Logs | The event log and `agent config show` apply the same redaction. |
+| Logs | The event log and `bridle config show` apply the same redaction. |
 | Environment | The `shell.env` hook sets secret-looking variables to empty values for shell tools. Their names contain words such as `KEY`, `TOKEN`, `PASSWORD` and `SECRET`. |
 
 ## Paths
