@@ -15,8 +15,8 @@ a log. The model is not trusted to decide what is allowed.
 | Component | Location | Responsibility |
 |---|---|---|
 | OpenCode 1.19.3 | External program (`opencode.exe`) | Sessions, the agent loop, the interface and the model requests. |
-| Shim | `opencode-plugin/local-agent.ts`, copied to `.opencode/plugins/` | Forwards OpenCode hook payloads to `agent hook` and applies the answer. It holds no policy logic. |
-| CLI | `crates/harness-cli`, binary `agent` | Commands, hook entry points, the OpenCode adapter (`host/opencode_v1.rs`) and the MCP entry point. |
+| Shim | `opencode-plugin/bridle.ts`, copied to `.opencode/plugins/` | Forwards OpenCode hook payloads to `bridle hook` and applies the answer. It holds no policy logic. |
+| CLI | `crates/harness-cli`, binary `bridle` | Commands, hook entry points, the OpenCode adapter (`host/opencode_v1.rs`) and the MCP entry point. |
 | Runtime | `crates/harness-runtime` | Model providers and health checks, the server launcher, the MCP server and its tools, the task state store and the event log. |
 | Core | `crates/harness-core` | Configuration and validation, the policy, command classification, redaction, loop detection, the decision rules and the task model. |
 | Model servers | llama.cpp `llama-server` | OpenAI-compatible endpoints on `127.0.0.1`, one per model slot. |
@@ -40,17 +40,17 @@ Only one GPU model runs at a time. See [serve the models](../guide/models.md).
 ## A tool call, step by step
 
 1. The model asks OpenCode to run a tool: a built-in tool such as `bash`, `read` or `edit`, or an MCP tool named
-   `local-agent_<name>`.
-2. OpenCode calls the shim's `tool.execute.before` hook. The shim sends the call to `agent hook tool-before`.
+   `bridle_<name>`.
+2. OpenCode calls the shim's `tool.execute.before` hook. The shim sends the call to `bridle hook tool-before`.
 3. The CLI turns the call into a request and asks the policy for a verdict. The policy checks the paths, the secret
    files, the shell arguments and the command class.
 4. The shim throws unless the verdict is `allow`. OpenCode returns the message to the model. If the hook cannot answer,
    the call is blocked. The hook fails closed.
 5. With the workflow enabled, the call is recorded in the task journal, and the loop rules can refuse it. See
    [tasks and loops](tasks-and-loops.md).
-6. After the tool runs, `tool.execute.after` sends the output to `agent hook tool-after`, which redacts secret values.
+6. After the tool runs, `tool.execute.after` sends the output to `bridle hook tool-after`, which redacts secret values.
    If redaction cannot run, the shim replaces the output with a notice and withholds it.
-7. Every decision is written to `.local-agent/tool-events.jsonl`, with secret values left out.
+7. Every decision is written to `.bridle/tool-events.jsonl`, with secret values left out.
 
 Three other hooks run outside a tool call:
 
@@ -67,18 +67,18 @@ hook forwards lifecycle events for telemetry only.
 
 | Location | Contents |
 |---|---|
-| The repository | `local-agent.toml` (project configuration), `opencode.json` (generated), `.opencode/plugins/local-agent.ts` (the shim) and a `.gitignore`. All are written by `agent init`. |
-| `.local-agent/` in the repository, ignored by git | `tool-events.jsonl` (tool decisions), `events.jsonl` (the event log), `generated.json` (a record of the generated files), `logs/` (server logs), `servers/` (process records) and `state.json` (the index of sessions, tasks and worktrees). |
-| `.local-agent/mcp-results.jsonl` | Verification results recorded by the MCP server. |
-| `.local-agent/tasks/<task_id>/` | `task-events.jsonl` (the journal, which is the source of truth), `task.json` (a cache of the state folded from the journal), `decisions.jsonl` and `lock`. |
-| `.worktrees/agent-task-NNN/` | The worktree of a task started with `agent task start --worktree`. |
-| The machine | `%APPDATA%\local-agent\config.toml`, written by `agent init --machine`. It records the model and runtime folders. |
+| The repository | `bridle.toml` (project configuration), `opencode.json` (generated), `.opencode/plugins/bridle.ts` (the shim) and a `.gitignore`. All are written by `bridle init`. |
+| `.bridle/` in the repository, ignored by git | `tool-events.jsonl` (tool decisions), `events.jsonl` (the event log), `generated.json` (a record of the generated files), `logs/` (server logs), `servers/` (process records) and `state.json` (the index of sessions, tasks and worktrees). |
+| `.bridle/mcp-results.jsonl` | Verification results recorded by the MCP server. |
+| `.bridle/tasks/<task_id>/` | `task-events.jsonl` (the journal, which is the source of truth), `task.json` (a cache of the state folded from the journal), `decisions.jsonl` and `lock`. |
+| `.worktrees/agent-task-NNN/` | The worktree of a task started with `bridle task start --worktree`. |
+| The machine | `%APPDATA%\bridle\config.toml`, written by `bridle init --machine`. It records the model and runtime folders. |
 
 The model and runtime folders are outside the repository, and the machine configuration sets them.
 
 ## MCP tools
 
-`agent mcp` serves JSON-RPC over standard input and output. OpenCode registers each tool as `local-agent_<name>`. The
+`bridle mcp` serves JSON-RPC over standard input and output. OpenCode registers each tool as `bridle_<name>`. The
 policy classes each tool by name. A tool name the policy does not recognise is treated as EXECUTE_RISKY and is refused
 under the default settings.
 

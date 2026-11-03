@@ -42,8 +42,8 @@ the ADR is linked.
 
 | ID | Date | Type | Directive | Effect | Status |
 |---|---|---|---|---|---|
-| D-1 | 2026-10-21 | STRAT | **Rust is the primary implementation language.** | [ADR-0001](../decisions/0001-rust-core-thin-host-adapter.md): Rust workspace (`harness-core`, `harness-runtime`, `harness-cli` → binary `agent`), tools over MCP, and a thin TS shim only where OpenCode requires JS. Supersedes R-50.2. Narrows R-31.1 and R-50.3. | active |
-| D-2 | 2026-10-21 | CON | **Download models to the D: drive only.** C: has about 60 GB free, and WSL's virtual disk also lives on C:. | Weights go to `D:\models\<model>\` (existing convention on this machine). llama.cpp runtimes go to `D:\runtimes\`. `paths.models_dir` in config defaults to `D:\models` on this host, and `agent doctor` warns when the models dir is on the system drive. Weights are never written under the repo or the WSL filesystem. | active |
+| D-1 | 2026-10-21 | STRAT | **Rust is the primary implementation language.** | [ADR-0001](../decisions/0001-rust-core-thin-host-adapter.md): Rust workspace (`harness-core`, `harness-runtime`, `harness-cli` → binary `bridle`), tools over MCP, and a thin TS shim only where OpenCode requires JS. Supersedes R-50.2. Narrows R-31.1 and R-50.3. | active |
+| D-2 | 2026-10-21 | CON | **Download models to the D: drive only.** C: has about 60 GB free, and WSL's virtual disk also lives on C:. | Weights go to `D:\models\<model>\` (existing convention on this machine). llama.cpp runtimes go to `D:\runtimes\`. `paths.models_dir` in config defaults to `D:\models` on this host, and `bridle doctor` warns when the models dir is on the system drive. Weights are never written under the repo or the WSL filesystem. | active |
 | D-3 | 2026-10-21 | process | **Use delegated workers to implement low-level coding tasks.** | The lead designs interfaces, writes the specs and acceptance tests, reviews and integrates. Delegated workers implement well-specified modules against those specs. Every delegated change is reviewed and must pass `fmt`, `clippy` and tests before it is committed. | active |
 | D-4 | 2026-10-21 | process | Keep working until the current usage quota is exhausted. **Do not restart automatically** after the quota ends, even if an automatic or system prompt arrives. | Session-level operating rule for the implementing agent. | active |
 | D-5 | 2026-10-21 | process | Save the brief verbatim and track every point in a markdown list. | [`master-development-plan.md`](../spec/master-development-plan.md) (verbatim) and this matrix. | done |
@@ -82,7 +82,7 @@ the ADR is linked.
 | R-2.3 | CLAIM | Qwen3.5-9B: 9B multimodal, 262K native context, MTP training, LiveCodeBench v6 65.6, BFCL-V4 66.1, DeepPlanning 18.0 | M0 | verified |
 | R-2.4 | REQ | Main model duties: implementation, substantial debugging, moderate architecture reasoning, test interpretation, code review, repo modification, tool calling, multi-step implementation | M1 | in-progress (implementation, debugging, tests and tool calls shown on the toy repo; architecture reasoning and review are measured in M10) |
 | R-2.5 | STRAT | Optimisation target is capability × iteration speed × verification, not parameter count | all | open |
-| R-2.6 | REQ | The serving adapter exposes: OpenAI-compatible chat, model identity, streaming, tool calls, usage metadata, prompt/completion token counts, latency, health checks, and configurable context and generation parameters | M1 | done (`providers`: OpenAI-compatible chat, streaming, tool calls, usage, timings; `agent health` checks; docs/modules/runtime-providers.md) |
+| R-2.6 | REQ | The serving adapter exposes: OpenAI-compatible chat, model identity, streaming, tool calls, usage metadata, prompt/completion token counts, latency, health checks, and configurable context and generation parameters | M1 | done (`providers`: OpenAI-compatible chat, streaming, tool calls, usage, timings; `bridle health` checks; docs/modules/runtime-providers.md) |
 | R-2.7 | REQ | MTP/speculative decoding is an optional capability, detected at install/health-check time and exposed via config. It is never a hard dependency. | M1 (detect), M5 (bench) | open |
 
 ## §3 Deep reasoning model: Ternary Bonsai 2 27B
@@ -209,9 +209,9 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-16.1 | REQ | Local state, separate from OpenCode's, under `.local-agent/`: state.json, task.json, plan.json, repo-map.json, decisions.jsonl, failures.jsonl, tool-events.jsonl, summaries/, benchmarks/ | M3 | partial: state.json, task.json, task-events.jsonl, decisions.jsonl, mcp-results.jsonl written; plan.json and summaries/ not yet (M3 step 1 to 6) |
-| R-16.2 | REQ | `.local-agent/` is gitignored by default | M1 | done (`.local-agent/` added by `agent init`; checked in toy repo) |
-| R-16.3 | REQ | State can be reconstructed from Git and logs where possible | M3 | done: `agent task repair` rebuilds the caches from the journal; a missing cache is rebuilt in a test (M3 step 6) |
+| R-16.1 | REQ | Local state, separate from OpenCode's, under `.bridle/`: state.json, task.json, plan.json, repo-map.json, decisions.jsonl, failures.jsonl, tool-events.jsonl, summaries/, benchmarks/ | M3 | partial: state.json, task.json, task-events.jsonl, decisions.jsonl, mcp-results.jsonl written; plan.json and summaries/ not yet (M3 step 1 to 6) |
+| R-16.2 | REQ | `.bridle/` is gitignored by default | M1 | done (`.bridle/` added by `bridle init`; checked in toy repo) |
+| R-16.3 | REQ | State can be reconstructed from Git and logs where possible | M3 | done: `bridle task repair` rebuilds the caches from the journal; a missing cache is rebuilt in a test (M3 step 6) |
 | R-16.4 | REQ | `TaskState` holds task_id, repository, branch/worktree, original_prompt, current_objective, phase, iteration, active_model, last_action, last_test, failure_class, failure_count, escalation_count, context_version, status | M3 | done: TaskState carries the listed fields (`harness-core/src/task.rs`, M3 step 2) |
 
 ## §17 Agent state machine
@@ -290,7 +290,7 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-26.1 | REQ | Autonomous work happens in a Git worktree (`.worktrees/agent-task-NNN/`) | M3 (see audit C-4), M9 | partial: `agent task start --worktree` creates `.worktrees/agent-task-NNN`; OpenCode is started in it by the user |
+| R-26.1 | REQ | Autonomous work happens in a Git worktree (`.worktrees/agent-task-NNN/`) | M3 (see audit C-4), M9 | partial: `bridle task start --worktree` creates `.worktrees/agent-task-NNN`; OpenCode is started in it by the user |
 | R-26.2 | REQ | The agent never needs permission to destroy the user's primary working tree | M3, M9 | partial: `.worktrees` is a protected root entry; the primary tree is unchanged by a worktree task (test) |
 | R-26.3 | REQ | Flow: create worktree → agent works → tests → review → user accepts/merges | M3, M9 | partial: create and record are done; the accept and merge steps stay with the user's Git |
 | R-26.4 | REQ | Interactive tasks may explicitly allow direct modification. Autonomous tasks default to isolated worktrees. | M3 | partial: `--worktree` is explicit; autonomous tasks do not default to a worktree yet |
@@ -302,7 +302,7 @@ the ADR is linked.
 | R-27.1 | REQ | Path protection: confine operations to the authorised workspace. Block `../` traversal, absolute-path escape, symlink escape, and junction/reparse-point escape. | M1 (baseline), M9 | done: the path guard, the shell argument checks, short names and escaped words are judged; tests in the security module and the adversarial suite (M9). |
 | R-27.2 | REQ | Never inject API keys, SSH private keys, `.env` secrets, cloud credentials, browser cookies, or Windows credential stores into model context | M1, M9 | partial: the redactor and the hook keep secret values out of the model's context; a recursive grep can still read a secret file (residual risk 1). |
 | R-27.3 | REQ | Redact API_KEY, TOKEN, PASSWORD, SECRET, AUTHORIZATION, and PRIVATE KEY patterns from telemetry | M1, M9 | done: telemetry redaction covers PEM blocks, authorization headers, bearer tokens, URL passwords and the event log (existing tests). |
-| R-27.4 | REQ | Local-first mode never sends repo content to the network unexpectedly. External providers require explicit configuration. | M1 | done: endpoints must be loopback unless the cloud opt-in and https are set (V4); `agent egress` lists every destination (M9). |
+| R-27.4 | REQ | Local-first mode never sends repo content to the network unexpectedly. External providers require explicit configuration. | M1 | done: endpoints must be loopback unless the cloud opt-in and https are set (V4); `bridle egress` lists every destination (M9). |
 | R-27.5 | ASM | Optional external/cloud models are supported. The default install is local-only and transmits no repo content. | M1, M8 | partial: optional external models are opt-in: a remote gateway needs cloud_models and a key name (V4, V36). The default install sends nothing. |
 
 ## §28 Observability
@@ -311,7 +311,7 @@ the ADR is linked.
 |---|---|---|---|---|
 | R-28.1 | REQ | One structured event per agent action (timestamp, task_id, phase, actor, model, tool, duration_ms, status, failure_fingerprint, tokens_in/out) | M1 (basic), M3 | open |
 | R-28.2 | REQ | Track task success, time to completion, turns, model used, escalations, subagent use, tool errors, test failures, same-failure loops, human interventions, prompt/completion tokens, latency, GPU VRAM, RAM, CPU | M3, M10 | open |
-| R-28.3 | CON | Telemetry is local by default. No analytics endpoint by default. | M1 | done (telemetry has one destination, `local`: JSONL under `.local-agent/`) |
+| R-28.3 | CON | Telemetry is local by default. No analytics endpoint by default. | M1 | done (telemetry has one destination, `local`: JSONL under `.bridle/`) |
 
 ## §29 Model selection policy
 
@@ -385,7 +385,7 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-38.1 | REQ | Distinguish model identity, version, quantization, runtime version, runtime build, hardware, configuration | M1 | done (`agent models manifest`: model id, revision, quantisation, sha256, runtime kind/build/commit, GPU, driver, CUDA, OS) |
+| R-38.1 | REQ | Distinguish model identity, version, quantization, runtime version, runtime build, hardware, configuration | M1 | done (`bridle models manifest`: model id, revision, quantisation, sha256, runtime kind/build/commit, GPU, driver, CUDA, OS) |
 | R-38.2 | REQ | Persist a model manifest `{model, quantization, source, revision, sha256, runtime, runtime_revision, cuda, driver}` for Qwen, LFM, and Bonsai | M1, M4, M5 | in-progress (manifest code and tests exist; not run end to end) |
 
 ## §39 System benchmark
@@ -421,18 +421,18 @@ the ADR is linked.
 | R-42.2 | REQ | Install flow: install → detect platform/GPU/CUDA → install OpenCode integration → configure endpoints → health checks → benchmark micro and main → optionally install Bonsai | M1 (partial), M11 | open |
 | R-42.3 | CON | No unconditional multi-gigabyte download | all | open |
 
-## §43 `agent doctor`
+## §43 `bridle doctor`
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-43.1 | REQ | `agent doctor` reports OS, CPU, RAM, GPU, VRAM, NVIDIA driver, CUDA compatibility, OpenCode version, llama.cpp version, model endpoints, model health, configured context, tool support, MTP support, Bonsai runtime support, with ✓/⚠ output | M1 | done (`agent doctor`: OS, CPU, RAM, GPU, VRAM, driver, CUDA, OpenCode version, llama.cpp builds, model files, endpoint quick health, busy or reserved ports, config issues; tool, context and MTP support via `agent health`) |
+| R-43.1 | REQ | `bridle doctor` reports OS, CPU, RAM, GPU, VRAM, NVIDIA driver, CUDA compatibility, OpenCode version, llama.cpp version, model endpoints, model health, configured context, tool support, MTP support, Bonsai runtime support, with ✓/⚠ output | M1 | done (`bridle doctor`: OS, CPU, RAM, GPU, VRAM, driver, CUDA, OpenCode version, llama.cpp builds, model files, endpoint quick health, busy or reserved ports, config issues; tool, context and MTP support via `bridle health`) |
 | R-43.2 | REQ | The system still functions when optional components are unavailable | all | open |
 
 ## §44 Health checks
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-44.1 | REQ | Each provider has `GET /health` or equivalent, plus functional tests: simple completion, tool capability, streaming, context, structured output, latency | M1 | done (`agent health`: health, models, completion, streaming, tool call, structured output, context, MTP; all pass for Qwen on Windows) |
+| R-44.1 | REQ | Each provider has `GET /health` or equivalent, plus functional tests: simple completion, tool capability, streaming, context, structured output, latency | M1 | done (`bridle health`: health, models, completion, streaming, tool call, structured output, context, MTP; all pass for Qwen on Windows) |
 | R-44.2 | REQ | Model-specific checks: Qwen tool call. LFM classification and structured JSON. Bonsai reasoning and tool call. | M1, M4, M5 | partial: Bonsai reasoning and tool call checks pass (8 of 8); LFM structured output checked in the A/B |
 | R-44.3 | CON | HTTP 200 does not imply compatibility | M1 | done (health runs functional checks; HTTP 200 alone never passes) |
 
@@ -440,8 +440,8 @@ the ADR is linked.
 
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
-| R-45.1 | CON | Do not assume Qwen 9B and Bonsai 27B coexist in VRAM | M5 | done: `agent models serve` refuses a second GPU server while one runs (live refusal) |
-| R-45.2 | REQ | Lifecycle states: loaded, warming, ready, idle, unloading, unloaded, error | M5 | partial: `agent models status` reports unloaded, warming, ready or error (PID record and health probe); loaded, idle and unloading are not reported |
+| R-45.1 | CON | Do not assume Qwen 9B and Bonsai 27B coexist in VRAM | M5 | done: `bridle models serve` refuses a second GPU server while one runs (live refusal) |
+| R-45.2 | REQ | Lifecycle states: loaded, warming, ready, idle, unloading, unloaded, error | M5 | partial: `bridle models status` reports unloaded, warming, ready or error (PID record and health probe); loaded, idle and unloading are not reported |
 | R-45.3 | REQ | Configurable lifecycle (keep Qwen loaded, LFM CPU-resident, Bonsai on demand; unload Qwen before Bonsai if needed) | M5 | partial: the deep slot loads and unloads on demand; keeping Qwen loaded and unloading it automatically are not built |
 
 ## §46 CPU-resident LFM
@@ -510,8 +510,8 @@ the ADR is linked.
 | ID | Type | Requirement | Milestone | Status |
 |---|---|---|---|---|
 | R-54.1 | REQ | Every routing decision is inspectable | M3+ | open |
-| R-54.2 | REQ | `agent explain` shows the task class, main model, micro decision, decision, reason, confidence | M3, M4 | partial: `agent explain` shows the decision, reason, confidence, provider and the model's reason; the main model name is not shown |
-| R-54.3 | REQ | `agent trace` shows the ordered actor/tool/decision trace | M3 | done: `agent trace` prints the ordered journal |
+| R-54.2 | REQ | `bridle explain` shows the task class, main model, micro decision, decision, reason, confidence | M3, M4 | partial: `bridle explain` shows the decision, reason, confidence, provider and the model's reason; the main model name is not shown |
+| R-54.3 | REQ | `bridle trace` shows the ordered actor/tool/decision trace | M3 | done: `bridle trace` prints the ordered journal |
 
 ## §55 Capabilities over names
 
@@ -534,7 +534,7 @@ the ADR is linked.
 | R-57.0 | M0 Audit | Repo inspection report: architecture, reuse, risks, dependency constraints, order | Report delivered; no code | **done** (see `docs/audit/m0-architecture-repository-audit.md`) |
 | R-57.1 | M1 OpenCode integration | OpenCode config, build agent, explore agent, custom tools, local model connectivity, health check, basic logging. No Jev, no Bonsai, no complex routing. | OpenCode → Qwen → inspect repo → edit file → run test → result | open |
 | R-57.2 | M2 Tools | repo_map, symbol_search, git tools, test runner, failure parser, experiment adapter | Main model uses deterministic tools instead of reconstructing repo info | open |
-| R-57.3 | M3 State | Task state, plan, event log, failure fingerprints | Session resumes after interruption without transcript reconstruction | done: resume by task id (`agent task resume`); status by `agent task status` and the `task_status` tool, without the transcript |
+| R-57.3 | M3 State | Task state, plan, event log, failure fingerprints | Session resumes after interruption without transcript reconstruction | done: resume by task id (`bridle task resume`); status by `bridle task status` and the `task_status` tool, without the transcript |
 | R-57.4 | M4 LFM | Failure classification, loop detection, next-action decision, context relevance | Measured reduction in latency/tokens/failed actions (not assumed) | open |
 | R-57.5 | M5 Bonsai | Stalled-task escalation, deep reasoning, senior review (PTQ1_0) | Benchmark of Qwen alone vs Qwen + Bonsai escalation | open |
 | R-57.6 | M6 Context | History filtering, tool-result compaction, repo retrieval, state injection, token budgeting | Measured task success, prompt tokens, latency, memory | partial: bytes before and after each request are recorded in `events.jsonl` (live run, 2026-10-26). Prompt tokens, latency and task success are not measured by M6. |
@@ -566,11 +566,11 @@ the ADR is linked.
 | ID | Area | Criterion | Milestone | Status |
 |---|---|---|---|---|
 | AC-B1 | Basic | OpenCode loads the extension | M1 | done (OpenCode 1.19.3 loads the shim and the MCP server; every tool call is logged by the hooks; Windows run 2026-10-22) |
-| AC-B2 | Basic | Qwen works locally | M1 | done (Qwen3.5-9B serves locally on the RTX 4060; `agent health` passes; Windows runs 2026-10-21 and 2026-10-22) |
+| AC-B2 | Basic | Qwen works locally | M1 | done (Qwen3.5-9B serves locally on the RTX 4060; `bridle health` passes; Windows runs 2026-10-21 and 2026-10-22) |
 | AC-B3 | Basic | LFM works locally | M4 | done: LFM served and used locally (health 8 of 8; live refusal decided by the model) |
 | AC-B4 | Basic | Bonsai works locally | M5 | done: Bonsai works locally (health 8 of 8; the A/B run) |
-| AC-B5 | Basic | Models are independently testable | M1, M4, M5 | partial: each slot is checked with `agent health` and measured with the A/B command |
-| AC-B6 | Basic | Configuration is declarative | M1 | done (TOML config with validation V1-V23 and `agent config validate`) |
+| AC-B5 | Basic | Models are independently testable | M1, M4, M5 | partial: each slot is checked with `bridle health` and measured with the A/B command |
+| AC-B6 | Basic | Configuration is declarative | M1 | done (TOML config with validation V1-V23 and `bridle config validate`) |
 | AC-A1 | Agent | Main coding loop works | M1 | done (toy repo: read, edit, test, verify through OpenCode with the policy on every call; Windows run 2026-10-22) |
 | AC-A2 | Agent | Subagent invocation works | M1, M4 | open |
 | AC-A3 | Agent | Subagent results can be summarised | M4 | open |

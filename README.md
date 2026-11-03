@@ -6,7 +6,7 @@
 code. The policy decides what runs, what is read, and what the model is allowed to see. A secret value never reaches
 the model, and no shell command runs without a verdict.
 
-Bridle runs inside [OpenCode](https://opencode.ai), which owns the agent loop and the interface. `agent tui` is a second,
+Bridle runs inside [OpenCode](https://opencode.ai), which owns the agent loop and the interface. `bridle tui` is a second,
 smaller host: a terminal chat that sends every tool call through the same policy, loop rules and event log
 ([docs/guide/tui.md](docs/guide/tui.md)). Bridle is built for one developer's daily work first. It is designed to grow into a local-first application: several agents working on one
 repository, under one policy and one event log, on the developer's own hardware, with no required cloud service.
@@ -23,7 +23,7 @@ machine. Verified results are dated in the documentation pages linked below.
 
 ## What a decision looks like
 
-Five calls run through the real hook, `agent hook tool-before`, on Windows 11 against the example repository. Each line
+Five calls run through the real hook, `bridle hook tool-before`, on Windows 11 against the example repository. Each line
 is the verdict that OpenCode receives:
 
 ```text
@@ -43,7 +43,7 @@ The rules are in [docs/concepts/security.md](docs/concepts/security.md).
 flowchart LR
     M[Model] -->|tool call| O[OpenCode]
     O -->|tool.execute.before| S[Plugin shim]
-    S -->|agent hook tool-before| P{Policy}
+    S -->|bridle hook tool-before| P{Policy}
     P -->|Allow| T[Tool runs]
     P -->|Ask or Deny| B[Blocked; reason goes to the model]
     T -->|tool.execute.after| R[Redact secret values]
@@ -80,6 +80,12 @@ The model, running through OpenCode on a toy project with one planted bug, used 
 
 Two errors in the first run were configuration mistakes, and the tool messages named the fix.
 
+## Desktop app
+
+`bridle` opens a window on the current folder: the chat, an editable code editor with diffs, search, a real terminal (Git Bash,
+PowerShell, Command Prompt or WSL), image input, and a project switcher, all under the same policy and event log. It is built
+from `crates/bridle-desktop` and described in [docs/guide/desktop.md](docs/guide/desktop.md). Windows only; no installer yet.
+
 ## Quick start (Windows)
 
 **You need:** Windows 11, Visual Studio 2022 with the C++ workload, an NVIDIA GPU with a current driver, OpenCode 1.19.3,
@@ -94,22 +100,22 @@ set CARGO_TARGET_DIR=D:\cargo-target\harness
 cargo build -p harness-cli --bin agent
 
 :: 2. Tell Bridle where the models and runtimes are (once per machine)
-D:\cargo-target\harness\debug\agent.exe init --machine --models-dir D:\models --runtimes-dir D:\runtimes --opencode-bin D:\runtimes\opencode\1.19.3\opencode.exe
+D:\cargo-target\harness\debug\bridle-cli.exe init --machine --models-dir D:\models --runtimes-dir D:\runtimes --opencode-bin D:\runtimes\opencode\1.19.3\opencode.exe
 
 :: 3. Set up a repository
 cd /d path\to\your\repo
-D:\cargo-target\harness\debug\agent.exe init --profile local-only
-D:\cargo-target\harness\debug\agent.exe config validate
+D:\cargo-target\harness\debug\bridle-cli.exe init --profile local-only
+D:\cargo-target\harness\debug\bridle-cli.exe config validate
 
 :: 4. Start the model and check it
-D:\cargo-target\harness\debug\agent.exe models serve main --detach
-D:\cargo-target\harness\debug\agent.exe health main
+D:\cargo-target\harness\debug\bridle-cli.exe models serve main --detach
+D:\cargo-target\harness\debug\bridle-cli.exe health main
 
 :: 5. Run a task (or run opencode with no arguments for the interactive interface)
 D:\runtimes\opencode\1.19.3\opencode.exe run "your task here"
 
 :: Check the installation at any time
-D:\cargo-target\harness\debug\agent.exe doctor
+D:\cargo-target\harness\debug\bridle-cli.exe doctor
 ```
 
 The CLI has these commands: `doctor`, `health`, `config`, `init`, `models`, `mcp` and `help`. If `HTTP_PROXY` or
@@ -117,7 +123,7 @@ The CLI has these commands: `doctor`, `health`, `config`, `init`, `models`, `mcp
 
 ## Tools the model can call
 
-OpenCode registers each tool as `local-agent_<name>`. Every path a tool reads passes the read policy, and every output is
+OpenCode registers each tool as `bridle_<name>`. Every path a tool reads passes the read policy, and every output is
 bounded and redacted.
 
 | Group | Tools |
@@ -178,7 +184,7 @@ The full index is [docs/README.md](docs/README.md). The main pages:
 | [Installation](docs/guide/installation.md) | Prerequisites, folder layout, build, first run |
 | [Configuration](docs/guide/configuration.md) | Machine and project config, profiles, verification steps, validation rules |
 | [Troubleshooting](docs/guide/troubleshooting.md) | Problems seen on the tested machine and their fixes |
-| [Control Center](docs/guide/tui.md) | `agent tui`: a chat with a model slot, and views of tasks, events, decisions, slots and configuration |
+| [Control Center](docs/guide/tui.md) | `bridle tui`: a chat with a model slot, and views of tasks, events, decisions, slots and configuration |
 | [Architecture](docs/concepts/architecture.md) | Layers, request flow, where state lives |
 | [Security](docs/concepts/security.md) | Policy decisions, command classes, secret handling, residual risks |
 | [Module reference](docs/reference/modules/README.md) | One page per module of the three crates |
@@ -189,8 +195,8 @@ The full index is [docs/README.md](docs/README.md). The main pages:
 ```text
 crates/harness-core      config, security policy, command classifier, redaction (no network)
 crates/harness-runtime   model providers, health checks, server launcher, event log, MCP server and tools
-crates/harness-cli       the `agent` binary, its commands, and the OpenCode adapter
-opencode-plugin/         thin TypeScript shim that forwards hooks to `agent hook`
+crates/harness-cli       the `bridle` binary, its commands, and the OpenCode adapter
+opencode-plugin/         thin TypeScript shim that forwards hooks to `bridle hook`
 configs/                 shipped profiles: local-only.toml, development.toml
 examples/                example project used for the end-to-end runs
 evals/                   the adversarial cases (evals/security), the benchmark corpus (evals/tasks) and conditions
@@ -199,8 +205,8 @@ site/                    the documentation site (Astro Starlight), built from do
 docs/                    guides, concepts, status, reference, decisions, specification
 ```
 
-Some names still use the earlier working identifier `local-agent`, for example `local-agent.toml`, the `.local-agent/`
-state directory and the `local-agent_` tool prefix. The binary is `agent`.
+Some names still use the earlier working identifier `bridle`, for example `bridle.toml`, the `.bridle/`
+state directory and the `bridle_` tool prefix. The binary is `bridle`.
 
 ## Development
 

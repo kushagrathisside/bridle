@@ -34,7 +34,7 @@ SMOKE="$(mktemp -d)"
 trap 'rm -rf "$SMOKE"' EXIT
 mkdir -p "$SMOKE/repo" "$SMOKE/home" "$SMOKE/models" "$SMOKE/runtimes"
 git -C "$SMOKE/repo" init -q
-export LOCAL_AGENT_HOME="$SMOKE/home" LOCAL_AGENT_MODELS_DIR="$SMOKE/models" LOCAL_AGENT_RUNTIMES_DIR="$SMOKE/runtimes"
+export BRIDLE_HOME="$SMOKE/home" BRIDLE_MODELS_DIR="$SMOKE/models" BRIDLE_RUNTIMES_DIR="$SMOKE/runtimes"
 
 step "smoke: version" "$AGENT" --version
 step "smoke: init" "$AGENT" --workspace "$SMOKE/repo" init --profile local-only

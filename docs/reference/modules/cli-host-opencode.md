@@ -3,7 +3,7 @@
 The OpenCode adapter and the plugin shim. `opencode_v1.rs` is the only Rust code that knows OpenCode: it maps
 OpenCode tool calls and permission requests to host-neutral `ToolRequest`s, answers the shim's hook calls with JSON
 verdicts, and generates `opencode.json` from the harness config. The TypeScript shim forwards hooks to
-`agent hook <event>` and holds no policy logic.
+`bridle hook <event>` and holds no policy logic.
 
 > **Status:** Built and tested, pinned to OpenCode 1.19.3. Verified end to end on native Windows with Qwen3.5-9B.
 
@@ -12,7 +12,7 @@ verdicts, and generates `opencode.json` from the harness config. The TypeScript 
 | File | Public items | What they do |
 |---|---|---|
 | `crates/harness-cli/src/host/opencode_v1.rs` | `HookEvent`, `HookContext`, `handle`, `map_tool_call`, `map_permission`, `BASH_ALLOW`, `BASH_EXPLORE_ALLOW`, `wildcard_match`, `build_allow_patterns`, `shell_env`, `failure_answer`, `provider_id`, `model_ref`, `generate_opencode_config` | Tool mapping, hook answers, `opencode.json` generation |
-| `opencode-plugin/local-agent.ts` | `LocalAgentPlugin` | The TypeScript shim OpenCode loads; forwards hooks to `agent hook <event>` |
+| `opencode-plugin/bridle.ts` | `LocalAgentPlugin` | The TypeScript shim OpenCode loads; forwards hooks to `bridle hook <event>` |
 | `opencode-plugin/package.json` | | Exact pins: `@opencode-ai/plugin` 1.19.3, `typescript` 5.6.3, `@types/node` 18.19.130 |
 | `crates/harness-cli/src/commands/hook.rs` | `run` | Process entry for hooks: stdin to `handle`, answer to stdout, event to the log |
 
@@ -25,7 +25,7 @@ edits scattered across the code.
 
 ### Hook protocol
 
-The shim spawns `agent hook <event> --workspace <dir>`, writes one JSON payload to stdin, and reads one JSON answer
+The shim spawns `bridle hook <event> --workspace <dir>`, writes one JSON payload to stdin, and reads one JSON answer
 from stdout (20 s timeout, `HOOK_TIMEOUT_MS`). The command always exits 0 and always answers, even with a broken
 config. The shim never uses a filesystem root as the workspace; it falls back to the session directory.
 
@@ -40,7 +40,7 @@ config. The shim never uses a filesystem root as the workspace; it falls back to
 Only six low-frequency events are forwarded (`session.created`, `session.idle`, `session.error`,
 `session.compacted`, `file.edited`, `permission.replied`). Streaming events would spawn a process per token.
 
-When `agent hook` itself cannot build its context (bad config, bad workspace, unreadable payload),
+When `bridle hook` itself cannot build its context (bad config, bad workspace, unreadable payload),
 `failure_answer(event, error)` answers: `tool-before` blocks, `permission` denies, `shell-env` still blanks
 sensitive variables from its own environment, and `tool-after` and `event` return `{}`.
 
@@ -60,7 +60,7 @@ OpenCode tool names become host-neutral `ToolRequest`s for `harness-core`:
 | `webfetch`, `websearch` | WebFetch, WebSearch |
 | `task` | Subagent |
 | `todowrite`, `todoread`, `question`, `skill` | Todo |
-| `local-agent_<tool>` (MCP) | `Harness(<tool>)`, classed by name in `ToolPolicy`: `git_status`, `git_diff`, `harness_info` and the other read-only tools are READ_ONLY; `run_verification` and the other executing tools are EXECUTE_SAFE (each step is checked inside the tool); `adapter_*` is EXECUTE_SAFE ([core-security.md](core-security.md)) |
+| `bridle_<tool>` (MCP) | `Harness(<tool>)`, classed by name in `ToolPolicy`: `git_status`, `git_diff`, `harness_info` and the other read-only tools are READ_ONLY; `run_verification` and the other executing tools are EXECUTE_SAFE (each step is checked inside the tool); `adapter_*` is EXECUTE_SAFE ([core-security.md](core-security.md)) |
 | anything else | `Other(name)`: EXECUTE_RISKY, so blocked under the default verdicts |
 
 File paths are collected from every argument name OpenCode uses (`filePath`, `file_path`, `path`, `filepath`).
@@ -99,8 +99,8 @@ OpenCode's semantics: `*` matches any run of characters, `?` exactly one.
 
 One source of truth: the harness config produces `opencode.json`.
 
-1. One provider per model slot (`provider_id`: `local-agent-<slot>`, for example `local-agent-main`,
-   `local-agent-micro`, `local-agent-deep`), all OpenAI-compatible endpoints, which rule V4 keeps on loopback. `enabled_providers` lists only these, so OpenCode cannot fall back to a hosted model. `small_model` is
+1. One provider per model slot (`provider_id`: `bridle-<slot>`, for example `bridle-main`,
+   `bridle-micro`, `bridle-deep`), all OpenAI-compatible endpoints, which rule V4 keeps on loopback. `enabled_providers` lists only these, so OpenCode cannot fall back to a hosted model. `small_model` is
    the main model too, so titles and summaries also stay local.
 2. `share: disabled`, `autoupdate: false`.
 3. Agents:
@@ -110,15 +110,15 @@ One source of truth: the harness config produces `opencode.json`.
    - `explore`: read-only subagent (edit denied, read-only bash list, no web).
    - `review` and `deep`: generated when a slot has the `review` or `deep_reasoning` role; they analyse and
      propose, and never edit.
-4. MCP: `local-agent` runs `<agent.exe> mcp` over stdio. OpenCode applies `timeout` to every MCP request, so it is
+4. MCP: `bridle` runs `<bridle-cli.exe> mcp` over stdio. OpenCode applies `timeout` to every MCP request, so it is
    the sum of the verification step timeouts (steps run in turn), at least the `git_diff` worst case (120 s,
    `MCP_GIT_WORST_CASE_MS`), plus 30 s (`MCP_TIMEOUT_MARGIN_MS`).
 
-### The shim (`local-agent.ts`)
+### The shim (`bridle.ts`)
 
 - No policy logic: it forwards payloads and applies answers.
-- `agent init` copies it to `.opencode/plugins/local-agent.ts` and replaces `__AGENT_BIN__` with the absolute path
-  of `agent.exe`. `LOCAL_AGENT_BIN` overrides that at run time.
+- `bridle init` copies it to `.opencode/plugins/bridle.ts` and replaces `__AGENT_BIN__` with the absolute path
+  of `bridle-cli.exe`. `BRIDLE_BIN` overrides that at run time.
 - The type import from `@opencode-ai/plugin` is erased at run time. `npm run typecheck` checks the shim against the
   pinned 1.19.3 types.
 

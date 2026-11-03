@@ -50,7 +50,7 @@ The first rule that fires decides. The rule name is in the `PolicyDecision` and 
 | 3 | `command_risk` | the command's class, mapped to its verdict |
 | 3 | `unresolved_path` | an otherwise allowed command with an argument resolved only at run time |
 | 3 | `tool_kind` | non-shell tools by family: Read, List, Search, Subagent and Todo are READ_ONLY; Edit, Write and Patch are WRITE; WebFetch and WebSearch are NETWORK |
-| 3 | `harness_tool`, `unknown_tool` | `local-agent_*` MCP tools by name (below); any other tool is EXECUTE_RISKY |
+| 3 | `harness_tool`, `unknown_tool` | `bridle_*` MCP tools by name (below); any other tool is EXECUTE_RISKY |
 
 Harness tool classes (`ToolKind::Harness(name)`):
 
@@ -63,8 +63,8 @@ Harness tool classes (`ToolKind::Harness(name)`):
 - Any other harness name: `unknown_tool`, EXECUTE_RISKY.
 
 Protected control files (`PROTECTED_ROOT_ENTRIES`, relative to the workspace root, case-insensitive under Windows
-rules): `local-agent.toml`, `opencode.json`, `opencode.jsonc`, `.opencode/`, `.local-agent/`, and `.git` at any
-depth. Every hook process re-reads `local-agent.toml`, so without this the model could loosen its own policy, or
+rules): `bridle.toml`, `opencode.json`, `opencode.jsonc`, `.opencode/`, `.bridle/`, and `.git` at any
+depth. Every hook process re-reads `bridle.toml`, so without this the model could loosen its own policy, or
 plant a `core.fsmonitor` command that the next `git status` runs. Reading these files stays allowed.
 
 ### Path guard (`path_guard.rs`)
@@ -141,7 +141,7 @@ SSH files (anything under `.ssh/` except `*.pub`, `known_hosts` and `config`).
 - `redact.rs`: each rule positive and negative, idempotence, JSON walking, name and file classification.
 - `tests/security_commands.rs` (43 tests): black-box classification cases.
 - `mod.rs`: `ordering_is_by_risk`, `serialises_screaming_snake`.
-- `crates/harness-cli/tests/hook_fixtures.rs`: 34 OpenCode payloads through the real `agent hook` binary
+- `crates/harness-cli/tests/hook_fixtures.rs`: 34 OpenCode payloads through the real `bridle hook` binary
   (`every_hook_fixture_row_matches_the_policy`).
 
 ## Limits

@@ -2,7 +2,7 @@
 
 The modules that start and check local model servers and record what ran: the launcher, functional health checks,
 model manifests, host probes, and the append-only event log. They own process spawning for `llama-server`, the
-hash cache, and the JSONL files under `.local-agent/`. They make no policy decisions; reserved launch flags and
+hash cache, and the JSONL files under `.bridle/`. They make no policy decisions; reserved launch flags and
 redaction rules come from `harness-core`.
 
 > **Status:** Built and tested. Verified on Windows with Qwen3.5-9B and llama.cpp b11756.
@@ -11,10 +11,10 @@ redaction rules come from `harness-core`.
 
 | File | Public items | What they do | Used by |
 |---|---|---|---|
-| `src/launcher.rs` | `server_args`, `parse_endpoint`, `spawn_server`, `wait_until_healthy`, `LaunchError` | Builds the `llama-server` argv, spawns the server, waits for health | `agent models serve` |
-| `src/health.rs` | `run_checks`, `summarize`, `CheckKind`, `CheckResult`, `CheckOptions`, `Status` | Functional health checks (8 checks) | `agent health` |
-| `src/manifest.rs` | `sha256_file`, `cached_sha256`, `hash_cache_path`, `parse_llama_version`, `build_manifest`, `write_manifest`, `ModelManifest` | Model manifests: hash, revision, runtime build, hardware | `agent models manifest`, `agent doctor` |
-| `src/sysprobe.rs` | `probe_system`, `probe_nvidia`, `probe_wsl`, `free_space`, `command_version`, `command_output`, `process_image`, parsers | OS, CPU, RAM, GPU, CUDA, WSL, disk, tool versions | `agent doctor`, manifests, `agent models stop` |
+| `src/launcher.rs` | `server_args`, `parse_endpoint`, `spawn_server`, `wait_until_healthy`, `LaunchError` | Builds the `llama-server` argv, spawns the server, waits for health | `bridle models serve` |
+| `src/health.rs` | `run_checks`, `summarize`, `CheckKind`, `CheckResult`, `CheckOptions`, `Status` | Functional health checks (8 checks) | `bridle health` |
+| `src/manifest.rs` | `sha256_file`, `cached_sha256`, `hash_cache_path`, `parse_llama_version`, `build_manifest`, `write_manifest`, `ModelManifest` | Model manifests: hash, revision, runtime build, hardware | `bridle models manifest`, `bridle doctor` |
+| `src/sysprobe.rs` | `probe_system`, `probe_nvidia`, `probe_wsl`, `free_space`, `command_version`, `command_output`, `process_image`, parsers | OS, CPU, RAM, GPU, CUDA, WSL, disk, tool versions | `bridle doctor`, manifests, `bridle models stop` |
 | `src/event_log.rs` | `EventLog` (`for_workspace`, `append`, `dir`), `TOOL_EVENTS`, `EVENTS`, `truncate_strings` | Append-only JSONL log, redacted on write | hooks, MCP, commands |
 
 ## Behaviour
@@ -97,11 +97,11 @@ run with a 5 s timeout (`PROBE_TIMEOUT`).
 - `command_version(bin, args)`: first non-empty line of a tool's version output. `command_output` returns all of
   it (used for `llama-server --version`). Both run with the 5 s timeout.
 - `process_image(pid)`: the executable name of a running process (`tasklist` on Windows, parsed by
-  `parse_tasklist_csv`; `/proc` or `ps` elsewhere), used by `agent models stop` before it signals anything.
+  `parse_tasklist_csv`; `/proc` or `ps` elsewhere), used by `bridle models stop` before it signals anything.
 
 ### Event log (`event_log.rs`)
 
-`EventLog::for_workspace(workspace, redact, max_field_bytes, enabled)` writes to `<workspace>/.local-agent/`:
+`EventLog::for_workspace(workspace, redact, max_field_bytes, enabled)` writes to `<workspace>/.bridle/`:
 `tool-events.jsonl` (`TOOL_EVENTS`: `tool_before`, `tool_after` and `permission` events) and `events.jsonl`
 (`EVENTS`: everything else).
 

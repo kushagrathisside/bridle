@@ -744,7 +744,7 @@ Maintain local agent state separately from OpenCode's internal state.
 Use:
 
 ```
-.local-agent/
+.bridle/
     state.json
     task.json
     plan.json
@@ -757,7 +757,7 @@ Use:
 
 ```
 
-Add `.local-agent/` to `.gitignore` by default.
+Add `.bridle/` to `.gitignore` by default.
 State must be reconstructable from Git and logs whenever possible.
 State model
 At minimum:
@@ -1395,7 +1395,7 @@ Create one primary plugin package.
 Conceptual structure:
 
 ```
-.local-agent/
+.bridle/
 packages/
     opencode-plugin/
         src/
@@ -1821,7 +1821,7 @@ Do not make a multi-gigabyte model download an unconditional installation step.
 Provide:
 
 ```
-agent doctor
+bridle doctor
 
 ```
 
@@ -2224,7 +2224,7 @@ The user should be able to run something conceptually like:
 
 
 ```
-agent explain
+bridle explain
 
 ```
 
@@ -2254,7 +2254,7 @@ Confidence:
 Likewise:
 
 ```
-agent trace
+bridle trace
 
 ```
 

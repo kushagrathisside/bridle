@@ -13,7 +13,7 @@ download them, how to check them, and how to start, check and stop each server. 
 | `deep` | Ternary Bonsai 2 27B | PTQ1_0 | 5.95 GB | `prism-ml/Ternary-Bonsai-2-27B-gguf` at `b072e1d3b35a0a630cece372c2127528e0994386` | `Ternary-Bonsai-2-27B-PTQ1_0.gguf` | Apache-2.0 |
 
 The model files are not in the repository, and Bridle does not download them. Download each file from its source, into the
-weights folder you gave `agent init --machine`, under the folder names in the file column:
+weights folder you gave `bridle init --machine`, under the folder names in the file column:
 
 ```text
 <models-dir>\Qwen3.5-9B\Qwen3.5-9B-Q4_K_M.gguf
@@ -38,7 +38,7 @@ The value must match the one in the profile, `03b74727a860a56338e042c4420bb3f04b
 run:
 
 ```bat
-agent models manifest main
+bridle models manifest main
 ```
 
 ## Inference runtimes
@@ -54,10 +54,10 @@ Put each runtime in the runtimes folder, under the paths the profile expects:
 ## Start, check and stop a server
 
 ```bat
-agent models serve main --detach
-agent health main
-agent models status
-agent models stop main
+bridle models serve main --detach
+bridle health main
+bridle models status
+bridle models stop main
 ```
 
 - `serve` starts the server. With `--detach` it returns once the server answers its health check, and the server keeps
@@ -95,3 +95,16 @@ model requires stopping the `main` model first; Bridle does this for you when de
 ## If a server does not start
 
 See [troubleshooting](troubleshooting.md).
+
+## Vision projector and context size (2026-11-03)
+
+- **Projector.** `Qwen3.5-9B/mmproj-F16.gguf`, 918,166,080 bytes, SHA-256
+  `f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f`, from `unsloth/Qwen3.5-9B-GGUF` at revision
+  `3885219b6810b007914f3a7950a8d1b469d598a5`. Set `launch.mmproj_file`; the server then starts with `--mmproj`, and with
+  `--no-mmproj-offload` when `launch.mmproj_offload = false`.
+- **Cost of the cache.** This model keeps a cache in only 8 of its 32 layers (the others hold a fixed state). With an 8-bit
+  cache that is 17,408 bytes per token, read from the file's header.
+- **Measured on the RTX 4060 8 GB** (used VRAM including about 230 MiB of desktop): 16K 5,455 MiB; 98K with the projector on the
+  GPU 7,887 MiB (70 MiB free; the machine fell over in that state, see progress); 98K with the projector in system memory
+  7,203 MiB; **64K with the projector in system memory 6,499 MiB (1,458 MiB free)**, the default.
+- **The guard.** A GPU server starts only if its estimate plus 768 MiB fits in the free VRAM.

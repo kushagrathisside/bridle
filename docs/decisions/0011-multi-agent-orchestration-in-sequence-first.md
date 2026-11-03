@@ -26,7 +26,7 @@ serialised swaps (about 20 s each). So the first version runs in sequence.
 1. **Roles, not processes.** A run has three roles: `planner` (writes a short plan into the task state), `worker` (makes
    the edits for one plan step), and `verifier` (runs the checks and reports a verdict). Each role is a bounded sub-run
    with its own prompt, its own tool list, and its own iteration limit.
-2. **One journal.** Every sub-run writes to the same task journal, with the role in each record. `agent trace` shows the
+2. **One journal.** Every sub-run writes to the same task journal, with the role in each record. `bridle trace` shows the
    whole run in order. No second state store.
 3. **Sequence first.** Planner, then worker, then verifier, one at a time. Parallel workers wait for the sandbox
    decision (ADR-0012) and for measured need.
