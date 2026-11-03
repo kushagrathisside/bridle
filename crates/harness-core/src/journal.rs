@@ -42,7 +42,7 @@ pub enum Record {
     /// A verification failed and the loop rules sent the case to the deep slot. The task counts the escalation, and
     /// the answer applies to the calls after it until a verification passes or the task is reset.
     Escalated { call_id: String },
-    /// A person ended the block with `agent task reset`. The loop counters start again.
+    /// A person ended the block with `bridle task reset`. The loop counters start again.
     Reset { reason: String },
     /// One role of a team run ended (ADR-0011): the planner, a worker for one step, or the verifier. `outcome` is how the
     /// role ended. It is not a verdict on the task: the orchestrator's rules still decide whether the task is done.

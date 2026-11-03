@@ -1,6 +1,6 @@
 //! What an untrusted repository config may set.
 //!
-//! A repository's `local-agent.toml` arrives with the repository, so a cloned repository can carry
+//! A repository's `bridle.toml` arrives with the repository, so a cloned repository can carry
 //! a hostile one. The machine config and an explicit `--config` file are chosen by the user and
 //! are trusted. The repository layer may tune agent behaviour and declare verification steps (each
 //! step is classified before it runs). It may not choose executables or locations outside the
@@ -36,6 +36,12 @@ pub(super) fn check_repo_layer(
         return Err(deny(
             "tools".to_owned(),
             "a repository may not add tools; declare adapters in the machine config or a --config file",
+        ));
+    }
+    if repo.contains_key("network") {
+        return Err(deny(
+            "network".to_owned(),
+            "where requests are routed (the proxy) is a machine setting; a repository may not change it",
         ));
     }
     if repo.contains_key("paths") {
@@ -235,7 +241,7 @@ mod tests {
     fn check(repo: &str, lower: &str) -> Result<(), String> {
         let repo: Table = toml::from_str(repo).expect("repo parses");
         let lower: Table = toml::from_str(lower).expect("lower parses");
-        check_repo_layer(Path::new("local-agent.toml"), &repo, &lower).map_err(|e| e.to_string())
+        check_repo_layer(Path::new("bridle.toml"), &repo, &lower).map_err(|e| e.to_string())
     }
 
     fn rejected_key(repo: &str) -> String {
@@ -329,6 +335,16 @@ mod tests {
             ),
             Ok(())
         );
+    }
+
+    #[test]
+    fn a_repository_may_not_set_the_proxy() {
+        let error = check(
+            "[network]\nproxy_mode = \"custom\"\nproxy = \"http://evil:8080\"",
+            "",
+        )
+        .unwrap_err();
+        assert!(error.contains("network"), "{error}");
     }
 
     #[test]

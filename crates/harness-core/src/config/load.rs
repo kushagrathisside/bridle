@@ -6,10 +6,10 @@
 //! - `merge_toml(base, overlay)`: deep-merge `overlay` into `base`. Tables merge recursively;
 //!   every other value type (arrays included) in `overlay` replaces the value in `base`.
 //! - `discover_repo_config(start)`: walk from `start` up through its ancestors; return the first
-//!   `<dir>/local-agent.toml` (use `identity::CONFIG_FILE`) that is a file. `None` if none.
-//! - `machine_config_path()`: if env `LOCAL_AGENT_HOME` (use `identity::env_var("HOME")`) is set
-//!   and non-empty → `<it>/config.toml`. Else on Windows `%APPDATA%\local-agent\config.toml`;
-//!   else `$XDG_CONFIG_HOME/local-agent/config.toml` or `$HOME/.config/local-agent/config.toml`.
+//!   `<dir>/bridle.toml` (use `identity::CONFIG_FILE`) that is a file. `None` if none.
+//! - `machine_config_path()`: if env `BRIDLE_HOME` (use `identity::env_var("HOME")`) is set
+//!   and non-empty → `<it>/config.toml`. Else on Windows `%APPDATA%\bridle\config.toml`;
+//!   else `$XDG_CONFIG_HOME/bridle/config.toml` or `$HOME/.config/bridle/config.toml`.
 //!   Use `identity::MACHINE_CONFIG_DIR` / `MACHINE_CONFIG_FILE`. Returns the path even if the file
 //!   does not exist; `None` only if no base directory can be determined.
 //! - `load_layered(sources, env)`: start from an empty `toml::Table`; for each of
@@ -18,7 +18,7 @@
 //!   `toml::Table` (`ConfigError::Parse { path, message }`) and `merge_toml` it in, recording the
 //!   path in `LoadedConfig::files`. Deserialize the merged table into `Config`
 //!   (`ConfigError::Parse` with path = last file or "<merged>"). Then apply env overrides from the
-//!   `env` closure: `LOCAL_AGENT_MODELS_DIR` → `paths.models_dir`, `LOCAL_AGENT_RUNTIMES_DIR` →
+//!   `env` closure: `BRIDLE_MODELS_DIR` → `paths.models_dir`, `BRIDLE_RUNTIMES_DIR` →
 //!   `paths.runtimes_dir` (non-empty values only). The `env` closure is injected so tests never
 //!   mutate the real process environment.
 //! - Unit tests: merge semantics (nested tables merge, arrays replace), discovery walks up,
@@ -70,7 +70,7 @@ pub struct ConfigSources {
     pub machine: Option<PathBuf>,
     /// Repository config (see [`discover_repo_config`]). Skipped when the file does not exist.
     pub repo: Option<PathBuf>,
-    /// File from `--config` or `LOCAL_AGENT_CONFIG`. Must exist.
+    /// File from `--config` or `BRIDLE_CONFIG`. Must exist.
     pub explicit: Option<PathBuf>,
 }
 
@@ -81,9 +81,9 @@ pub enum Origin {
     Machine,
     /// The repository config (untrusted, restricted by `config::trust`).
     Repository,
-    /// An explicit `--config` file or `$LOCAL_AGENT_CONFIG` (trusted).
+    /// An explicit `--config` file or `$BRIDLE_CONFIG` (trusted).
     Explicit,
-    /// An environment override such as `LOCAL_AGENT_MODELS_DIR`.
+    /// An environment override such as `BRIDLE_MODELS_DIR`.
     Environment,
 }
 
@@ -101,7 +101,7 @@ impl Origin {
 /// Deepest key path (`models.main.endpoint` has three parts) for which an origin is recorded.
 const ORIGIN_DEPTH: usize = 3;
 
-/// The effective config plus the files it was built from (shown by `agent config show`).
+/// The effective config plus the files it was built from (shown by `bridle config show`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoadedConfig {
     /// The fully merged and deserialised configuration, with environment overrides applied.
@@ -156,26 +156,31 @@ pub fn merge_toml(base: &mut toml::Table, overlay: toml::Table) {
     }
 }
 
-/// Finds the nearest repository config: the first `local-agent.toml` that is a regular file in
-/// `start` or one of its ancestors.
+/// Finds the nearest repository config: the first `bridle.toml` (or, failing that, the old `bridle.toml`) that is a
+/// regular file in `start` or one of its ancestors.
 pub fn discover_repo_config(start: &Path) -> Option<PathBuf> {
-    start
-        .ancestors()
-        .map(|dir| dir.join(identity::CONFIG_FILE))
-        .find(|candidate| candidate.is_file())
+    start.ancestors().find_map(identity::config_file_in)
 }
 
-/// Location of the machine-level config file. Honours `LOCAL_AGENT_HOME` first, then the
-/// platform config directory. The path is returned even if the file does not exist; `None` only
-/// when no base directory can be determined.
+/// Location of the machine-level config file to read. Honours `BRIDLE_HOME` (or the old `BRIDLE_HOME`) first, then
+/// the platform config directory: `bridle\config.toml`, or the old `bridle\config.toml` when that is the only one
+/// that exists. The path is returned even if the file does not exist; `None` only when no base directory can be
+/// determined.
 pub fn machine_config_path() -> Option<PathBuf> {
     machine_config_path_with(&|name: &str| std::env::var(name).ok(), cfg!(windows))
+}
+
+/// Where the machine-level config is written: always the `bridle` location, so a setting saved under the new name is never
+/// put back into the old folder. Read the old file with [`machine_config_path`] first to carry its settings over.
+pub fn machine_config_write_path() -> Option<PathBuf> {
+    machine_config_location(&|name: &str| std::env::var(name).ok(), cfg!(windows))
+        .map(|(new, _)| new)
 }
 
 /// Loads and merges every layer in `sources`, then applies the environment overrides.
 ///
 /// Optional layers (machine, repo) are skipped when their file is absent. The explicit layer must
-/// exist. `env` is consulted for `LOCAL_AGENT_MODELS_DIR` and `LOCAL_AGENT_RUNTIMES_DIR`.
+/// exist. `env` is consulted for `BRIDLE_MODELS_DIR` and `BRIDLE_RUNTIMES_DIR`.
 pub fn load_layered(
     sources: &ConfigSources,
     env: &dyn Fn(&str) -> Option<String>,
@@ -216,11 +221,11 @@ pub fn load_layered(
         .try_into::<Config>()
         .map_err(|err| parse_error(source_label, err))?;
 
-    if let Some(dir) = env_path(env, &identity::env_var("MODELS_DIR")) {
+    if let Some(dir) = identity::lookup_env(env, "MODELS_DIR").map(PathBuf::from) {
         config.paths.models_dir = Some(dir);
         origins.insert("paths.models_dir".to_owned(), Origin::Environment);
     }
-    if let Some(dir) = env_path(env, &identity::env_var("RUNTIMES_DIR")) {
+    if let Some(dir) = identity::lookup_env(env, "RUNTIMES_DIR").map(PathBuf::from) {
         config.paths.runtimes_dir = Some(dir);
         origins.insert("paths.runtimes_dir".to_owned(), Origin::Environment);
     }
@@ -263,8 +268,20 @@ fn machine_config_path_with(
     env: &dyn Fn(&str) -> Option<String>,
     is_windows: bool,
 ) -> Option<PathBuf> {
-    if let Some(home) = env_path(env, &identity::env_var("HOME")) {
-        return Some(home.join(identity::MACHINE_CONFIG_FILE));
+    let (new, legacy) = machine_config_location(env, is_windows)?;
+    match legacy {
+        Some(old) if !new.exists() && old.is_file() => Some(old),
+        _ => Some(new),
+    }
+}
+
+/// The `bridle` machine config path and, when it is a platform folder (not `BRIDLE_HOME`), the old `bridle` one.
+fn machine_config_location(
+    env: &dyn Fn(&str) -> Option<String>,
+    is_windows: bool,
+) -> Option<(PathBuf, Option<PathBuf>)> {
+    if let Some(home) = identity::lookup_env(env, "HOME").map(PathBuf::from) {
+        return Some((home.join(identity::MACHINE_CONFIG_FILE), None));
     }
     let config_dir = if is_windows {
         env_path(env, "APPDATA")?
@@ -273,11 +290,16 @@ fn machine_config_path_with(
     } else {
         env_path(env, "HOME")?.join(".config")
     };
-    Some(
+    Some((
         config_dir
             .join(identity::MACHINE_CONFIG_DIR)
             .join(identity::MACHINE_CONFIG_FILE),
-    )
+        Some(
+            config_dir
+                .join(identity::LEGACY_MACHINE_CONFIG_DIR)
+                .join(identity::MACHINE_CONFIG_FILE),
+        ),
+    ))
 }
 
 /// Reads a non-empty path from the injected environment.
@@ -374,11 +396,7 @@ mod tests {
             "machine.toml",
             "profile = \"development\"\n\n[agent]\nmax_iterations = 3\nmax_same_failure = 4\n",
         );
-        let repo = write_file(
-            dir.path(),
-            "local-agent.toml",
-            "[agent]\nmax_iterations = 5\n",
-        );
+        let repo = write_file(dir.path(), "bridle.toml", "[agent]\nmax_iterations = 5\n");
         let explicit = write_file(dir.path(), "explicit.toml", "[agent]\nmax_iterations = 7\n");
 
         let all = ConfigSources {
@@ -409,18 +427,14 @@ mod tests {
             "machine.toml",
             "[agent]\nmax_iterations = 3\nmax_same_failure = 4\n\n[paths]\nmodels_dir = \"/m\"\n",
         );
-        let repo = write_file(
-            dir.path(),
-            "local-agent.toml",
-            "[agent]\nmax_iterations = 5\n",
-        );
+        let repo = write_file(dir.path(), "bridle.toml", "[agent]\nmax_iterations = 5\n");
         let explicit = write_file(dir.path(), "explicit.toml", "[agent]\nmax_iterations = 7\n");
         let sources = ConfigSources {
             machine: Some(machine),
             repo: Some(repo),
             explicit: Some(explicit),
         };
-        let env = |name: &str| (name == "LOCAL_AGENT_MODELS_DIR").then(|| "/env".to_owned());
+        let env = |name: &str| (name == "BRIDLE_MODELS_DIR").then(|| "/env".to_owned());
         let loaded = load_layered(&sources, &env).expect("loads");
         let o = &loaded.origins;
         assert_eq!(o["agent.max_iterations"], Origin::Explicit);
@@ -476,8 +490,8 @@ mod tests {
         };
 
         let env = |name: &str| match name {
-            "LOCAL_AGENT_MODELS_DIR" => Some("/mnt/models".to_owned()),
-            "LOCAL_AGENT_RUNTIMES_DIR" => Some("/mnt/runtimes".to_owned()),
+            "BRIDLE_MODELS_DIR" => Some("/mnt/models".to_owned()),
+            "BRIDLE_RUNTIMES_DIR" => Some("/mnt/runtimes".to_owned()),
             _ => None,
         };
         let loaded = load_layered(&sources, &env).expect("loads");
@@ -536,7 +550,7 @@ mod tests {
     fn repository_layer_may_not_choose_executables_but_an_explicit_file_may() {
         let dir = tempfile::tempdir().expect("tempdir");
         let body = "[runtimes.r]\nkind = \"llama_cpp\"\nserver_bin = \"/usr/bin/evil\"\n";
-        let repo = write_file(dir.path(), "local-agent.toml", body);
+        let repo = write_file(dir.path(), "bridle.toml", body);
         let from_repo = ConfigSources {
             repo: Some(repo.clone()),
             ..ConfigSources::default()
@@ -562,7 +576,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let sources = ConfigSources {
             machine: Some(dir.path().join("machine.toml")),
-            repo: Some(dir.path().join("local-agent.toml")),
+            repo: Some(dir.path().join("bridle.toml")),
             explicit: None,
         };
 
@@ -593,6 +607,48 @@ mod tests {
     }
 
     #[test]
+    fn discovery_finds_the_old_config_name_and_prefers_the_new_one() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("a")).unwrap();
+        let old = write_file(root.path(), identity::LEGACY_CONFIG_FILE, "");
+        assert_eq!(discover_repo_config(&root.path().join("a")), Some(old));
+        let new = write_file(root.path(), identity::CONFIG_FILE, "");
+        assert_eq!(discover_repo_config(&root.path().join("a")), Some(new));
+    }
+
+    #[test]
+    fn the_machine_config_is_read_from_the_old_folder_until_the_new_one_has_a_file() {
+        let base = tempfile::tempdir().unwrap();
+        let appdata = base.path().display().to_string();
+        let env = move |name: &str| (name == "APPDATA").then(|| appdata.clone());
+        let new = base.path().join("bridle").join("config.toml");
+        let old = base.path().join("local-agent").join("config.toml");
+        // Nothing yet: the new location, which a write would create.
+        assert_eq!(machine_config_path_with(&env, true), Some(new.clone()));
+        fs::create_dir_all(old.parent().unwrap()).unwrap();
+        fs::write(&old, "").unwrap();
+        // Only the old file exists: it is read.
+        assert_eq!(machine_config_path_with(&env, true), Some(old));
+        // Once the new file exists it wins, and writes always go to the new location.
+        fs::create_dir_all(new.parent().unwrap()).unwrap();
+        fs::write(&new, "").unwrap();
+        assert_eq!(machine_config_path_with(&env, true), Some(new.clone()));
+        assert_eq!(
+            machine_config_location(&env, true).map(|(n, _)| n),
+            Some(new)
+        );
+    }
+
+    #[test]
+    fn the_home_variable_works_under_the_new_and_the_old_name() {
+        let new_env = |name: &str| (name == "BRIDLE_HOME").then(|| "/h".to_owned());
+        let old_env = |name: &str| (name == "LOCAL_AGENT_HOME").then(|| "/h".to_owned());
+        let expected = Some(PathBuf::from("/h").join("config.toml"));
+        assert_eq!(machine_config_path_with(&new_env, false), expected);
+        assert_eq!(machine_config_path_with(&old_env, false), expected);
+    }
+
+    #[test]
     fn discovery_ignores_directories_named_like_the_config() {
         let root = tempfile::tempdir().expect("tempdir");
         let outer = write_file(root.path(), identity::CONFIG_FILE, "");
@@ -604,7 +660,7 @@ mod tests {
     #[test]
     fn machine_path_prefers_local_agent_home() {
         let env = |name: &str| match name {
-            "LOCAL_AGENT_HOME" => Some("/opt/la".to_owned()),
+            "BRIDLE_HOME" => Some("/opt/la".to_owned()),
             "HOME" => Some("/home/u".to_owned()),
             _ => None,
         };
@@ -617,13 +673,13 @@ mod tests {
     #[test]
     fn empty_local_agent_home_is_ignored() {
         let env = |name: &str| match name {
-            "LOCAL_AGENT_HOME" => Some(String::new()),
+            "BRIDLE_HOME" => Some(String::new()),
             "HOME" => Some("/home/u".to_owned()),
             _ => None,
         };
         assert_eq!(
             machine_config_path_with(&env, false),
-            Some(PathBuf::from("/home/u/.config/local-agent/config.toml"))
+            Some(PathBuf::from("/home/u/.config/bridle/config.toml"))
         );
     }
 
@@ -636,7 +692,7 @@ mod tests {
         };
         assert_eq!(
             machine_config_path_with(&env, false),
-            Some(PathBuf::from("/xdg/local-agent/config.toml"))
+            Some(PathBuf::from("/xdg/bridle/config.toml"))
         );
     }
 
@@ -650,7 +706,7 @@ mod tests {
             machine_config_path_with(&env, true),
             Some(
                 PathBuf::from(r"C:\Users\u\AppData\Roaming")
-                    .join("local-agent")
+                    .join("bridle")
                     .join("config.toml")
             )
         );
