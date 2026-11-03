@@ -310,6 +310,7 @@ fn run_git(ctx: &ToolContext, args: &[&str], stdout_limit: usize) -> Result<Vec<
         .current_dir(&ctx.workspace)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_OPTIONAL_LOCKS", "0");
+    crate::process::hide_console(&mut git);
     let subcommand = args.first().copied().unwrap_or_default();
     run_git_command(ctx, git, subcommand, stdout_limit, GIT_TIMEOUT)
 }
@@ -961,6 +962,7 @@ const STEP_SHELL: ShellKind = ShellKind::Posix;
 fn shell_command(command: &str) -> Command {
     let mut shell = Command::new("cmd");
     shell.arg("/C").arg(command);
+    crate::process::hide_console(&mut shell);
     shell
 }
 
@@ -1083,6 +1085,7 @@ fn kill_tree(pid: u32) -> Result<(), String> {
 fn kill_command(pid: u32) -> Command {
     let mut killer = Command::new("taskkill");
     killer.args(["/PID", &pid.to_string(), "/T", "/F"]);
+    crate::process::hide_console(&mut killer);
     killer
 }
 

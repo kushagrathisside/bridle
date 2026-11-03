@@ -204,9 +204,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("marker.txt"), "here").unwrap();
         let manifest = dir.path().join("plugin.toml");
+        // A real program on each system that prints the file name when it runs in the workspace: `where` looks in
+        // the current folder first on Windows, where there is no `ls`.
+        let (program, args) = if cfg!(windows) {
+            ("where", "[\"marker.txt\"]")
+        } else {
+            ("ls", "[\"-1\"]")
+        };
         std::fs::write(
             &manifest,
-            "name = \"files\"\nversion = \"0.1.0\"\n[[tools]]\nname = \"list\"\ndescription = \"List the root\"\nprogram = \"ls\"\nargs = [\"-1\"]\ndeclared = \"READ_ONLY\"\n",
+            format!(
+                "name = \"files\"\nversion = \"0.1.0\"\n[[tools]]\nname = \"list\"\ndescription = \"List the root\"\nprogram = \"{program}\"\nargs = {args}\ndeclared = \"READ_ONLY\"\n"
+            ),
         )
         .unwrap();
         let loaded = load(&config_with(&manifest));

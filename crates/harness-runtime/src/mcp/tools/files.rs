@@ -40,7 +40,7 @@ const MAX_MATCH_CHARS: usize = 200;
 /// Directories no walk enters: version control, harness state and build or dependency output.
 const SKIP_DIRS: &[&str] = &[
     ".git",
-    ".local-agent",
+    ".bridle",
     "target",
     "node_modules",
     ".venv",
@@ -687,7 +687,7 @@ mod tests {
         fs::write(root.join(".git/config"), "[core]\n").unwrap();
         fs::write(root.join("target/out.txt"), "hello from build\n").unwrap();
         fs::write(root.join("blob.bin"), [0u8, 1, 2, 3, 0, 0]).unwrap();
-        fs::write(root.join("local-agent.toml"), "profile = \"local-only\"\n").unwrap();
+        fs::write(root.join("bridle.toml"), "profile = \"local-only\"\n").unwrap();
         dir
     }
 
@@ -854,7 +854,7 @@ mod tests {
         assert!(again.text.starts_with("replaced"), "{}", again.text);
 
         for (path, why) in [
-            ("local-agent.toml", "control file"),
+            ("bridle.toml", "control file"),
             (".git/config", "git metadata"),
             ("../escape.txt", "outside the workspace"),
             (".env", "secret file needs approval"),
@@ -868,7 +868,7 @@ mod tests {
             assert!(err.contains("blocked by policy"), "{why}: {err}");
         }
         assert_eq!(
-            fs::read_to_string(ws.path().join("local-agent.toml")).unwrap(),
+            fs::read_to_string(ws.path().join("bridle.toml")).unwrap(),
             "profile = \"local-only\"\n",
             "the control file is untouched"
         );
@@ -944,7 +944,7 @@ mod tests {
         let protected = run(
             &EditFileTool,
             ws.path(),
-            json!({"path": "local-agent.toml", "old_string": "local-only", "new_string": "x"}),
+            json!({"path": "bridle.toml", "old_string": "local-only", "new_string": "x"}),
         );
         assert!(protected.unwrap_err().contains("blocked by policy"));
         let missing = run(

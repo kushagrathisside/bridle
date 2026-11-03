@@ -107,7 +107,7 @@ impl McpTool for RunKindTool {
         if of_kind.is_empty() {
             return Ok(ToolOutput {
                 text: format!(
-                    "No {kind} steps are configured. Add one to local-agent.toml:\n\n\
+                    "No {kind} steps are configured. Add one to bridle.toml:\n\n\
                      [[verification.steps]]\nname = \"...\"\ncommand = \"...\"\nkind = \"{kind}\"",
                     kind = self.kind.as_str()
                 ),
@@ -132,7 +132,7 @@ impl McpTool for RunKindTool {
         if !targets.is_empty() && !selected.iter().any(|(_, step)| step.targets) {
             return Err(
                 "none of the selected test steps accepts targets; set `targets = true` on the step \
-                 in local-agent.toml"
+                 in bridle.toml"
                     .to_owned(),
             );
         }

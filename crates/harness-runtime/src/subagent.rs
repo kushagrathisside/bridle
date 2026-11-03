@@ -97,7 +97,7 @@ pub fn gather_inputs(
 }
 
 /// Runs one subagent call from its configuration: the tier must be on, the slot must exist and be reachable, the task
-/// and the text must be within bounds, and the inputs pass the policy. Shared by the `subagent` tool and `agent subagent`,
+/// and the text must be within bounds, and the inputs pass the policy. Shared by the `subagent` tool and `bridle subagent`,
 /// so the two cannot drift apart.
 pub fn run_for_config(
     req: &Request,
