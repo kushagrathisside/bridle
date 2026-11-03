@@ -1,4 +1,4 @@
-//! `agent plugins`: lists the plugin tools the configuration offers, with the class each is offered under, and says what
+//! `bridle plugins`: lists the plugin tools the configuration offers, with the class each is offered under, and says what
 //! was not loaded and why (ADR-0013). It reads the manifests; it runs nothing.
 
 use std::process::ExitCode;

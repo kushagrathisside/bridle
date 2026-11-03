@@ -1,4 +1,4 @@
-//! `agent models list|serve|stop|manifest`.
+//! `bridle models list|serve|stop|manifest`.
 //!
 //! `serve` starts a slot's inference server from its `[models.<slot>.launch]` section. The PID is
 //! recorded under `<state>/servers/<slot>.pid` so `stop` can find the process later, and the output
@@ -47,7 +47,7 @@ pub enum ModelsAction {
     },
     /// Stop a server started with `serve --detach`.
     Stop { slot: String },
-    /// Record model manifests (hash, revision, runtime build, hardware) under .local-agent/manifests.
+    /// Record model manifests (hash, revision, runtime build, hardware) under .bridle/manifests.
     Manifest {
         /// Slot (default: every slot with a launch section).
         slot: Option<String>,
@@ -116,7 +116,7 @@ fn lifecycle(pid_state: Option<&RecordState>, healthy: bool) -> Lifecycle {
     }
 }
 
-/// `agent models status`: one line per slot. Only a running process is probed over HTTP.
+/// `bridle models status`: one line per slot. Only a running process is probed over HTTP.
 fn status(app: &App, slot: Option<&str>) -> anyhow::Result<ExitCode> {
     let state = app.state_dir();
     let slots: Vec<&str> = match slot {
@@ -187,6 +187,8 @@ fn serve(app: &App, slot: &str, detach: bool, wait_secs: u64) -> anyhow::Result<
         println!("· removed a stale record for `{slot}` (pid {})", record.pid);
     }
 
+    // The last check before the process exists: it must fit with room to spare (`harness_runtime::vram`).
+    check_vram(app, slot)?;
     let log = log_path(&state, slot);
     let mut child = launcher::spawn_server(&plan.bin, &plan.args, &log)
         .with_context(|| format!("starting {}", plan.bin.display()))?;
@@ -235,6 +237,42 @@ fn serve(app: &App, slot: &str, detach: bool, wait_secs: u64) -> anyhow::Result<
     Ok(exit_code_for(status))
 }
 
+/// A GPU slot starts only when its weights, projector and context cache fit in the VRAM that is free. The estimate comes
+/// from the model file's header (`harness_runtime::vram`). A machine with no readable GPU, or a file the estimate cannot
+/// read, is not blocked: the check only refuses a start that is known not to fit.
+fn check_vram(app: &App, slot: &str) -> anyhow::Result<()> {
+    let Some(model) = app.config.models.get(slot) else {
+        return Ok(());
+    };
+    let Some(launch) = &model.launch else {
+        return Ok(());
+    };
+    if model.hardware != harness_core::config::Hardware::Gpu {
+        return Ok(());
+    }
+    let Some(model_file) = app.config.resolve_model_file(slot) else {
+        return Ok(());
+    };
+    let projector = app.config.resolve_mmproj_file(slot);
+    let Ok(estimate) = harness_runtime::vram::estimate(
+        &model_file,
+        projector.as_deref(),
+        launch.mmproj_offload,
+        model.context,
+        model.kv_cache.as_deref(),
+    ) else {
+        return Ok(());
+    };
+    let (gpus, _) = harness_runtime::sysprobe::probe_nvidia();
+    let Some(gpu) = gpus.first() else {
+        return Ok(());
+    };
+    let free = gpu.vram_total_mib.saturating_sub(gpu.vram_used_mib);
+    harness_runtime::vram::check(&estimate, free, slot)
+        .map(|_| ())
+        .map_err(|message| anyhow::anyhow!(message))
+}
+
 /// One GPU model at a time: a GPU slot may start only when no other GPU slot's server
 /// is running. The person stops the other one first; nothing is stopped automatically.
 fn check_one_gpu_model(app: &App, slot: &str) -> anyhow::Result<()> {
@@ -271,7 +309,7 @@ fn check_one_gpu_model(app: &App, slot: &str) -> anyhow::Result<()> {
 
 /// What `stop_server` did.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum StopOutcome {
+pub enum StopOutcome {
     NoRecord,
     Stopped(u32),
     /// The recorded process was not running; the stale record was removed.
@@ -285,7 +323,7 @@ pub(crate) enum StopOutcome {
 
 /// Stops a server started by `serve`, with the PID-reuse safeguard, and reports what happened.
 /// Prints nothing. Shared by `stop` and the TUI.
-pub(crate) fn stop_server(app: &App, slot: &str) -> anyhow::Result<StopOutcome> {
+pub fn stop_server(app: &App, slot: &str) -> anyhow::Result<StopOutcome> {
     check_slot_name(slot)?;
     let pid_file = pid_path(&app.state_dir(), slot);
     let Some(record) = read_record(&pid_file)? else {
@@ -329,7 +367,7 @@ fn stop(app: &App, slot: &str) -> anyhow::Result<ExitCode> {
 /// A slot's managed-server state from its PID record only. Read-only: it never signals, never
 /// contacts the endpoint, so a responding endpoint is not mistaken for a managed server.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ServerState {
+pub enum ServerState {
     /// No record: Bridle has not started a server for this slot.
     NotManaged,
     Running {
@@ -348,7 +386,7 @@ pub(crate) enum ServerState {
     Unreadable(String),
 }
 
-pub(crate) fn server_state(app: &App, slot: &str) -> ServerState {
+pub fn server_state(app: &App, slot: &str) -> ServerState {
     if check_slot_name(slot).is_err() {
         return ServerState::Unreadable("invalid slot name".to_owned());
     }
@@ -373,7 +411,7 @@ pub(crate) fn server_log_path(app: &App, slot: &str) -> PathBuf {
 
 /// `serve --detach` without printing: the checks `serve` makes (valid config, one GPU model at a
 /// time, no second server for the slot), then the quiet start, which waits for health.
-pub(crate) fn start_checked(app: &App, slot: &str, wait: Duration) -> anyhow::Result<()> {
+pub fn start_checked(app: &App, slot: &str, wait: Duration) -> anyhow::Result<()> {
     app.require_valid_config()?;
     check_slot_name(slot)?;
     check_one_gpu_model(app, slot)?;
@@ -403,6 +441,8 @@ pub(crate) fn start_quiet(app: &App, slot: &str, wait: Duration) -> anyhow::Resu
         return Ok(());
     }
     let plan = plan_serve(&app.config, slot)?;
+    // The last check before the process exists: it must fit with room to spare (`harness_runtime::vram`).
+    check_vram(app, slot)?;
     let state = app.state_dir();
     let pid_file = pid_path(&state, slot);
     let _ = fs::remove_file(&pid_file);
@@ -532,7 +572,25 @@ fn plan_serve(config: &Config, slot: &str) -> anyhow::Result<ServePlan> {
             model_file.display()
         );
     }
-    let args = launcher::server_args(model, launch, &model_file, false)?;
+    let mmproj_file = match &launch.mmproj_file {
+        None => None,
+        Some(configured) => {
+            let projector = config.resolve_mmproj_file(slot).with_context(|| {
+                format!(
+                    "vision projector `{}` is relative, but paths.models_dir is not set",
+                    configured.display()
+                )
+            })?;
+            if !projector.is_file() {
+                bail!(
+                    "vision projector not found: {} (check models.{slot}.launch.mmproj_file and paths.models_dir)",
+                    projector.display()
+                );
+            }
+            Some(projector)
+        }
+    };
+    let args = launcher::server_args(model, launch, &model_file, mmproj_file.as_deref(), false)?;
     Ok(ServePlan {
         bin,
         args,

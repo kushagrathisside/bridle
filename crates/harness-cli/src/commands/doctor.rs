@@ -1,4 +1,4 @@
-//! `agent doctor`: one read-only report on the host, the configured runtimes and model files,
+//! `bridle doctor`: one read-only report on the host, the configured runtimes and model files,
 //! each endpoint's quick health, the OpenCode binary and the config issues.
 //!
 //! Missing optional pieces are warnings. The exit code is a failure only when a configured runtime
@@ -44,7 +44,7 @@ impl Level {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct Report {
+pub struct Report {
     pub(crate) os: String,
     pub(crate) arch: String,
     pub(crate) cpu_brand: Option<String>,
@@ -146,7 +146,9 @@ pub(crate) fn gather(app: &App) -> Report {
         .models
         .iter()
         .filter(|(_, model)| model.launch.is_some())
-        .map(|(slot, _)| model_file_entry(config, slot))
+        .flat_map(|(slot, _)| {
+            std::iter::once(model_file_entry(config, slot)).chain(mmproj_file_entry(config, slot))
+        })
         .collect();
     let endpoints = config
         .models
@@ -285,6 +287,41 @@ fn runtime_entry(config: &Config, name: &str, runtime: &RuntimeConfig) -> Runtim
     }
 }
 
+/// The vision projector of a slot, when it has one: present and its size, or not found.
+fn mmproj_file_entry(config: &Config, slot: &str) -> Option<ModelFileEntry> {
+    let launch = config.models.get(slot)?.launch.as_ref()?;
+    launch.mmproj_file.as_ref()?;
+    let label = format!("{slot} (vision projector)");
+    let Some(path) = config.resolve_mmproj_file(slot) else {
+        return Some(ModelFileEntry {
+            slot: label,
+            path: None,
+            size_bytes: None,
+            level: Level::Warn,
+            detail: "cannot resolve: the mmproj_file is relative and paths.models_dir is not set"
+                .to_owned(),
+        });
+    };
+    let size = fs::metadata(&path)
+        .ok()
+        .filter(|meta| meta.is_file())
+        .map(|meta| meta.len());
+    let (level, detail) = match size {
+        Some(bytes) => (Level::Ok, format!("{} on disk", gib(bytes))),
+        None => (
+            Level::Warn,
+            "not found: images are refused until the projector file is in place".to_owned(),
+        ),
+    };
+    Some(ModelFileEntry {
+        slot: label,
+        path: Some(path.display().to_string()),
+        size_bytes: size,
+        level,
+        detail,
+    })
+}
+
 fn model_file_entry(config: &Config, slot: &str) -> ModelFileEntry {
     let Some(path) = config.resolve_model_file(slot) else {
         return ModelFileEntry {
@@ -315,7 +352,7 @@ fn model_file_entry(config: &Config, slot: &str) -> ModelFileEntry {
 
 /// Quick health of one endpoint. An endpoint that is down is a warning here: the server is often
 /// simply not started yet. When a slot the harness launches does not answer, its port is checked
-/// too, because another program holding it makes `agent models serve` fail.
+/// too, because another program holding it makes `bridle models serve` fail.
 fn endpoint_entry(slot: &str, model: &ModelConfig) -> EndpointEntry {
     let checks = check_slot(model, true);
     let status = summarize(&checks);
@@ -373,7 +410,7 @@ fn port_note(state: PortState, port: u16, slot: &str) -> Option<String> {
     match state {
         PortState::Free | PortState::Unknown => None,
         PortState::InUse => Some(format!(
-            "port {port} is in use by another program, so `agent models serve {slot}` cannot bind it"
+            "port {port} is in use by another program, so `bridle models serve {slot}` cannot bind it"
         )),
         PortState::Reserved if cfg!(windows) => Some(format!(
             "port {port} cannot be bound: it is probably in an excluded port range (see \

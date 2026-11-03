@@ -1,6 +1,6 @@
-//! Black-box regression fixtures for `agent hook <event>`.
+//! Black-box regression fixtures for `bridle hook <event>`.
 //!
-//! Each row runs the real `agent` binary against a fresh workspace (a tempdir holding the
+//! Each row runs the real `bridle-cli` binary against a fresh workspace (a tempdir holding the
 //! `local-only` profile and a few small files), feeds one payload on stdin and checks the one JSON
 //! answer on stdout. Nothing here calls the library crates directly, so the suite pins the
 //! protocol the OpenCode shim relies on.
@@ -17,7 +17,7 @@ use std::process::{Command, Stdio};
 
 use serde_json::{Value, json};
 
-/// The real profile the hook loads from the workspace (`local-agent.toml`).
+/// The real profile the hook loads from the workspace (`bridle.toml`).
 const PROFILE: &str = include_str!("../../../configs/local-only.toml");
 
 /// Environment set on the child process for rows that need one.
@@ -246,16 +246,16 @@ fn rows() -> Vec<Row> {
         ),
         // 22-27: MCP, search and subagent tools.
         row(
-            "22 mcp local-agent_git_status",
+            "22 mcp bridle_git_status",
             BEFORE,
-            before("local-agent_git_status", json!({})),
+            before("bridle_git_status", json!({})),
             NO_ENV,
             Allow,
         ),
         row(
-            "23 mcp local-agent_unknown_tool",
+            "23 mcp bridle_unknown_tool",
             BEFORE,
-            before("local-agent_unknown_tool", json!({})),
+            before("bridle_unknown_tool", json!({})),
             NO_ENV,
             Block("unknown_tool"),
         ),
@@ -367,7 +367,7 @@ fn rows() -> Vec<Row> {
 fn workspace() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path();
-    std::fs::write(root.join("local-agent.toml"), PROFILE).expect("write profile");
+    std::fs::write(root.join("bridle.toml"), PROFILE).expect("write profile");
     std::fs::write(root.join("README.md"), "# fixture\n").expect("write README");
     std::fs::create_dir_all(root.join("src")).expect("mkdir src");
     std::fs::write(root.join("src/main.rs"), "fn main() {}\n").expect("write main.rs");
@@ -377,7 +377,7 @@ fn workspace() -> tempfile::TempDir {
     dir
 }
 
-/// Runs `agent hook <event> --workspace <dir>` with a clean environment and returns the exit
+/// Runs `bridle hook <event> --workspace <dir>` with a clean environment and returns the exit
 /// success and stdout.
 fn invoke(
     workspace: &Path,
@@ -387,7 +387,7 @@ fn invoke(
 ) -> (bool, String) {
     let path = std::env::var_os("PATH").unwrap_or_default();
     let home = std::env::var_os("HOME").unwrap_or_default();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_agent"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_bridle-cli"))
         .arg("hook")
         .arg(event)
         .arg("--workspace")
@@ -395,8 +395,8 @@ fn invoke(
         .env_clear()
         .env("PATH", path)
         .env("HOME", home)
-        .env("LOCAL_AGENT_MODELS_DIR", workspace)
-        .env("LOCAL_AGENT_RUNTIMES_DIR", workspace)
+        .env("BRIDLE_MODELS_DIR", workspace)
+        .env("BRIDLE_RUNTIMES_DIR", workspace)
         .envs(child_env.iter().copied())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

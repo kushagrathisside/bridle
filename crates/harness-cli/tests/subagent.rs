@@ -18,7 +18,7 @@ fn workspace(enabled: bool) -> tempfile::TempDir {
         "endpoint = \"http://127.0.0.1:9/v1\"",
     );
     let config = format!("{profile}\n[subagents]\nenabled = {enabled}\n");
-    std::fs::write(dir.path().join("local-agent.toml"), config).unwrap();
+    std::fs::write(dir.path().join("bridle.toml"), config).unwrap();
     std::fs::write(
         dir.path().join("notes.txt"),
         "def add(a, b):\n    return a - b\n",
@@ -31,15 +31,15 @@ fn workspace(enabled: bool) -> tempfile::TempDir {
 fn run(workspace: &Path, args: &[&str], stdin: &str) -> (bool, String, String) {
     let path = std::env::var_os("PATH").unwrap_or_default();
     let home = std::env::var_os("HOME").unwrap_or_default();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_agent"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_bridle-cli"))
         .args(args)
         .arg("--workspace")
         .arg(workspace)
         .env_clear()
         .env("PATH", path)
         .env("HOME", home)
-        .env("LOCAL_AGENT_MODELS_DIR", workspace)
-        .env("LOCAL_AGENT_RUNTIMES_DIR", workspace)
+        .env("BRIDLE_MODELS_DIR", workspace)
+        .env("BRIDLE_RUNTIMES_DIR", workspace)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -59,7 +59,7 @@ fn run(workspace: &Path, args: &[&str], stdin: &str) -> (bool, String, String) {
     )
 }
 
-/// The tools one `agent mcp` server offers, from a `tools/list` call.
+/// The tools one `bridle mcp` server offers, from a `tools/list` call.
 fn offered_tools(workspace: &Path) -> Vec<Value> {
     let request = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}\n";
     let (_, stdout, _) = run(workspace, &["mcp"], request);

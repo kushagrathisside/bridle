@@ -1,4 +1,4 @@
-//! `agent task`, `agent explain` and `agent trace`.
+//! `bridle task`, `bridle explain` and `bridle trace`.
 //!
 //! Output is plain text, one fact per line. Anything that came from the model or the host passes through
 //! [`clean`], so a control character cannot rewrite the terminal.
@@ -72,7 +72,7 @@ pub fn run(app: &App, action: &TaskAction) -> Result<ExitCode> {
         TaskAction::Reset { task } => {
             let id = resolve(&state, task.as_deref())?;
             task_state(app, &id)?.task(&id)?.append(Record::Reset {
-                reason: "agent task reset".to_owned(),
+                reason: "bridle task reset".to_owned(),
             })?;
             println!("reset {id}: the loop counters start again");
         }
@@ -92,7 +92,7 @@ pub fn run(app: &App, action: &TaskAction) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// `agent explain`: the most recent decisions of a task, with the rule and the signals behind each.
+/// `bridle explain`: the most recent decisions of a task, with the rule and the signals behind each.
 pub fn explain(app: &App, task: Option<&str>, limit: usize) -> Result<ExitCode> {
     let state = StateDir::open(&app.workspace)?;
     let id = resolve(&state, task)?;
@@ -132,7 +132,7 @@ pub fn explain(app: &App, task: Option<&str>, limit: usize) -> Result<ExitCode> 
     Ok(ExitCode::SUCCESS)
 }
 
-/// `agent trace`: the ordered record of a task, one line per journal entry.
+/// `bridle trace`: the ordered record of a task, one line per journal entry.
 pub fn trace(app: &App, task: Option<&str>, limit: usize) -> Result<ExitCode> {
     let state = StateDir::open(&app.workspace)?;
     let id = resolve(&state, task)?;
@@ -153,7 +153,7 @@ fn resolve(state: &StateDir, task: Option<&str>) -> Result<String> {
     }
     let index: SessionIndex = state.read_json(INDEX_FILE)?.unwrap_or_default();
     if index.next_task == 0 {
-        bail!("no task exists yet; start one with `agent task start`");
+        bail!("no task exists yet; start one with `bridle task start`");
     }
     Ok(format!("task-{:04}", index.next_task))
 }
@@ -167,7 +167,7 @@ fn task_state(app: &App, id: &str) -> Result<StateDir> {
     }
 }
 
-/// `agent task start --worktree`: creates `.worktrees/agent-task-NNN` on a new branch from HEAD, copies the
+/// `bridle task start --worktree`: creates `.worktrees/agent-task-NNN` on a new branch from HEAD, copies the
 /// generated config files that git does not track, and starts the task in the worktree's own state.
 fn start_in_worktree(app: &App, state: &StateDir, prompt: &str) -> Result<()> {
     let repo = &app.workspace;
@@ -196,7 +196,7 @@ fn start_in_worktree(app: &App, state: &StateDir, prompt: &str) -> Result<()> {
         state.release_task_id(&id)?;
         return Err(error);
     }
-    for name in ["local-agent.toml", "opencode.json"] {
+    for name in ["bridle.toml", "opencode.json"] {
         let from = repo.join(name);
         if from.is_file() {
             std::fs::copy(&from, worktree.join(name))

@@ -1,4 +1,4 @@
-//! `agent config show|validate|paths`.
+//! `bridle config show|validate|paths`.
 
 use std::process::ExitCode;
 

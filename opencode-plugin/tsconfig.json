@@ -7,5 +7,5 @@
     "target": "ES2022",
     "skipLibCheck": true
   },
-  "include": ["local-agent.ts"]
+  "include": ["bridle.ts"]
 }

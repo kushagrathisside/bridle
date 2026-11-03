@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-//! The adversarial regression suite: hostile tool calls through the real `agent hook tool-before`.
+//! The adversarial regression suite: hostile tool calls through the real `bridle hook tool-before`.
 //!
 //! The cases are in `evals/security/cases.json`. Each names the verdict the policy must give: `block` (denied or
 //! asked, so OpenCode would not run it), or `allow`. A case the policy allows on purpose is written as `allow` with a
@@ -20,13 +20,13 @@ const CASES: &str = include_str!("../../../evals/security/cases.json");
 /// A repository with a secret file, so a read of it would be a real leak if the policy allowed it.
 fn workspace() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
-    std::fs::write(dir.path().join("local-agent.toml"), PROFILE).expect("write config");
+    std::fs::write(dir.path().join("bridle.toml"), PROFILE).expect("write config");
     std::fs::write(dir.path().join(".env"), "API_KEY=secret\n").expect("write .env");
     std::fs::write(dir.path().join("notes.txt"), "plain notes\n").expect("write notes");
     dir
 }
 
-/// Runs `agent hook tool-before` for one call and returns the answer.
+/// Runs `bridle hook tool-before` for one call and returns the answer.
 fn hook(workspace: &Path, call: &Value) -> Value {
     let payload = json!({
         "sessionID": "ses_adversarial",
@@ -37,14 +37,14 @@ fn hook(workspace: &Path, call: &Value) -> Value {
     .to_string();
     let path = std::env::var_os("PATH").unwrap_or_default();
     let home = std::env::var_os("HOME").unwrap_or_default();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_agent"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_bridle-cli"))
         .args(["hook", "tool-before", "--workspace"])
         .arg(workspace)
         .env_clear()
         .env("PATH", path)
         .env("HOME", home)
-        .env("LOCAL_AGENT_MODELS_DIR", workspace)
-        .env("LOCAL_AGENT_RUNTIMES_DIR", workspace)
+        .env("BRIDLE_MODELS_DIR", workspace)
+        .env("BRIDLE_RUNTIMES_DIR", workspace)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

@@ -2,7 +2,7 @@
 #
 # Machine-specific locations (where weights and runtimes live) are NOT set here. Put them in the
 # machine config with:
-#   agent init --machine --models-dir D:\models --runtimes-dir D:\runtimes --opencode-bin <path>
+#   bridle init --machine --models-dir D:\models --runtimes-dir D:\runtimes --opencode-bin <path>
 # Relative model_file / server_bin paths below resolve against those directories.
 #
 # Numeric values marked DEF are initial engineering defaults to be tuned by benchmark.

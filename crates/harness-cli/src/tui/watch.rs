@@ -63,7 +63,8 @@ pub fn fingerprint(args: &LoadArgs, snap: &Snapshot) -> Fingerprint {
     paths.extend(snap.config_files.iter().map(|(p, _)| PathBuf::from(p)));
     if let Some(ws) = &workspace {
         paths.push(ws.join(identity::CONFIG_FILE));
-        let state = ws.join(identity::STATE_DIR);
+        paths.push(ws.join(identity::LEGACY_CONFIG_FILE));
+        let state = identity::state_dir(ws);
         paths.push(state.join(TOOL_EVENTS));
         paths.push(state.join(EVENTS));
         if let Ok(entries) = std::fs::read_dir(state.join("servers")) {
