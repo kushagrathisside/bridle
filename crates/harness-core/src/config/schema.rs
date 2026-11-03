@@ -43,6 +43,8 @@ pub struct Config {
     pub sandbox: SandboxSection,
     /// Plugin manifests (ADR-0013). See [`PluginsSection`]. Machine config only.
     pub plugins: PluginsSection,
+    /// How requests to remote endpoints are routed. See [`NetworkSection`]. Machine config only.
+    pub network: NetworkSection,
 }
 
 impl Default for Config {
@@ -67,8 +69,36 @@ impl Default for Config {
             memory: MemorySection::default(),
             sandbox: SandboxSection::default(),
             plugins: PluginsSection::default(),
+            network: NetworkSection::default(),
         }
     }
+}
+
+/// How the harness reaches remote endpoints (a cloud model, a gateway, a web tool, a download). The model servers on
+/// loopback never use a proxy, whatever is set here. Machine config only: a repository must not be able to redirect
+/// where a person's traffic goes.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct NetworkSection {
+    /// Which proxy remote requests use.
+    pub proxy_mode: ProxyMode,
+    /// The proxy for [`ProxyMode::Custom`]: `http://host:port`, `https://host:port` or `socks5://host:port`. Credentials
+    /// do not belong in this file; an authenticated proxy goes in the environment variable `BRIDLE_PROXY`, which
+    /// overrides this setting and is never shown.
+    pub proxy: Option<String>,
+}
+
+/// The route remote requests take.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProxyMode {
+    /// The proxy the environment names (`HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`), as other programs do. The default.
+    #[default]
+    Environment,
+    /// The proxy in `network.proxy`, whatever the environment says.
+    Custom,
+    /// No proxy: connect directly, whatever the environment says.
+    None,
 }
 
 /// Loop bounds. These are starting values to be tuned from trajectories, not constants.
@@ -104,7 +134,7 @@ impl Default for AgentSection {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SubagentsSection {
-    /// Whether the `subagent` tool is offered to the model and the `agent subagent` command runs.
+    /// Whether the `subagent` tool is offered to the model and the `bridle subagent` command runs.
     pub enabled: bool,
     /// The model slot that answers. It must be defined under `[models]` (V37).
     pub slot: String,
@@ -219,7 +249,7 @@ impl Default for WorkflowSection {
 
 /// Machine-specific storage locations (weights live off the system drive).
 ///
-/// Neither path has a default: an unset path is reported by `agent doctor` instead of silently
+/// Neither path has a default: an unset path is reported by `bridle doctor` instead of silently
 /// falling back to a location on the system drive.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -316,7 +346,7 @@ pub enum Hardware {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MtpMode {
-    /// Use MTP if `agent health` detects support.
+    /// Use MTP if `bridle health` detects support.
     #[default]
     Auto,
     On,
@@ -391,7 +421,11 @@ fn default_parallel() -> u32 {
     1
 }
 
-/// How `agent models serve <slot>` launches a local server for this slot.
+fn default_mmproj_offload() -> bool {
+    true
+}
+
+/// How `bridle models serve <slot>` launches a local server for this slot.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LaunchConfig {
@@ -399,6 +433,14 @@ pub struct LaunchConfig {
     pub runtime: String,
     /// GGUF file, absolute or relative to `paths.models_dir`.
     pub model_file: PathBuf,
+    /// Vision projector GGUF (`--mmproj`), absolute or relative to `paths.models_dir`. A slot that reads images
+    /// needs it next to its weights; without it the server cannot take an image.
+    #[serde(default)]
+    pub mmproj_file: Option<PathBuf>,
+    /// Whether the projector is loaded on the GPU, which is the default. `false` adds `--no-mmproj-offload`: the projector
+    /// stays in system memory, which saves about 1 GB of VRAM and makes an image turn slower.
+    #[serde(default = "default_mmproj_offload")]
+    pub mmproj_offload: bool,
     /// Layers offloaded to GPU (`-ngl`). `0` keeps the model CPU-resident.
     #[serde(default)]
     pub gpu_layers: Option<i32>,

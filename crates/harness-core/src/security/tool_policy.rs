@@ -60,7 +60,7 @@ impl ToolRequest {
     }
 }
 
-/// The policy's answer, with enough detail for `agent explain` and the event log.
+/// The policy's answer, with enough detail for `bridle explain` and the event log.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolicyDecision {
     pub verdict: Verdict,
@@ -101,12 +101,17 @@ const READ_ONLY_HARNESS_TOOLS: &[&str] = &[
 ];
 /// Harness and host control files, relative to the workspace root (lowercase). The harness reads
 /// its profile, and the host its config, on every call, so the agent must not change them.
+///
+/// The names of the first working name stay protected: a project that still has `local-agent.toml` or `.local-agent/` is
+/// read through them (ADR-0018), so they are as much control files as the new ones.
 const PROTECTED_ROOT_ENTRIES: &[&str] = &[
-    "local-agent.toml",
+    crate::identity::CONFIG_FILE,
+    crate::identity::LEGACY_CONFIG_FILE,
     "opencode.json",
     "opencode.jsonc",
     ".opencode",
-    ".local-agent",
+    crate::identity::STATE_DIR,
+    crate::identity::LEGACY_STATE_DIR,
     ".worktrees",
     GIT_DIR,
 ];
@@ -1205,14 +1210,14 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let p = policy(dir.path());
         for path in [
-            "local-agent.toml",
+            "bridle.toml",
             "opencode.json",
             "opencode.jsonc",
             ".opencode/plugin.ts",
-            ".local-agent/state.db",
+            ".bridle/state.db",
             ".git/config",
             ".git",
-            "sub/../local-agent.toml",
+            "sub/../bridle.toml",
             "sub/.git/hooks/pre-commit",
         ] {
             for kind in [ToolKind::Edit, ToolKind::Write, ToolKind::Patch] {
@@ -1229,7 +1234,13 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let p =
             ToolPolicy::with_rules(dir.path(), &SecuritySection::default(), true).expect("policy");
-        for path in ["LOCAL-AGENT.TOML", ".GIT/config", "Opencode.JSON"] {
+        for path in [
+            "BRIDLE.TOML",
+            "LOCAL-AGENT.TOML",
+            ".LOCAL-AGENT/x",
+            ".GIT/config",
+            "Opencode.JSON",
+        ] {
             let d = p.evaluate(&write(ToolKind::Write, path));
             assert_eq!(d.verdict, Verdict::Deny, "{path}");
             assert_eq!(d.rule, "protected_path", "{path}");
@@ -1269,7 +1280,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let p = policy(dir.path());
         for cmd in [
-            "echo x >> local-agent.toml",
+            "echo x >> bridle.toml",
             "sed -i s/a/b/ opencode.json",
             "cp x .git/hooks/pre-commit",
         ] {

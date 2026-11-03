@@ -3,11 +3,11 @@
 //! Layers, lowest to highest precedence (each layer deep-merges over the previous one):
 //!
 //! 1. built-in defaults (serde `Default`s in [`schema`]),
-//! 2. the machine config (`%APPDATA%\local-agent\config.toml`, `~/.config/local-agent/config.toml`,
-//!    or `$LOCAL_AGENT_HOME/config.toml`) — machine facts such as model and runtime paths,
-//! 3. the repository config (`local-agent.toml`, found by walking up from the workspace),
-//! 4. an explicit `--config` file or `$LOCAL_AGENT_CONFIG`,
-//! 5. environment overrides for paths (`LOCAL_AGENT_MODELS_DIR`, `LOCAL_AGENT_RUNTIMES_DIR`).
+//! 2. the machine config (`%APPDATA%\bridle\config.toml`, `~/.config/bridle/config.toml`,
+//!    or `$BRIDLE_HOME/config.toml`) — machine facts such as model and runtime paths,
+//! 3. the repository config (`bridle.toml`, found by walking up from the workspace),
+//! 4. an explicit `--config` file or `$BRIDLE_CONFIG`,
+//! 5. environment overrides for paths (`BRIDLE_MODELS_DIR`, `BRIDLE_RUNTIMES_DIR`).
 
 mod load;
 mod schema;
@@ -16,11 +16,12 @@ mod validate;
 
 pub use load::{
     ConfigError, ConfigSources, LoadedConfig, Origin, discover_repo_config, from_toml_str,
-    load_layered, machine_config_path, merge_toml,
+    load_layered, machine_config_path, machine_config_write_path, merge_toml,
 };
 pub use schema::*;
 pub use validate::{
-    ConfigIssue, Severity, ValidationEnv, endpoint_is_loopback, validate, validate_with,
+    ConfigIssue, Severity, ValidationEnv, check_proxy_url, endpoint_is_loopback, validate,
+    validate_with,
 };
 
 use std::path::{Path, PathBuf};
@@ -33,6 +34,16 @@ impl Config {
     pub fn resolve_model_file(&self, slot: &str) -> Option<PathBuf> {
         let launch = self.models.get(slot)?.launch.as_ref()?;
         resolve_against(&launch.model_file, self.paths.models_dir.as_deref())
+    }
+
+    /// Resolves `models.<slot>.launch.mmproj_file` (the vision projector) against `paths.models_dir`. `None` when the
+    /// slot has no projector, or when the file is relative and no models directory is configured.
+    pub fn resolve_mmproj_file(&self, slot: &str) -> Option<PathBuf> {
+        let launch = self.models.get(slot)?.launch.as_ref()?;
+        resolve_against(
+            launch.mmproj_file.as_ref()?,
+            self.paths.models_dir.as_deref(),
+        )
     }
 
     /// Resolves `runtimes.<name>.server_bin` against `paths.runtimes_dir`.

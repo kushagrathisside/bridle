@@ -50,6 +50,8 @@
 //! | V46 | Error | `plugins.manifests` names a path that is not absolute |
 //! | V44 | Warning | `routing.auto_slot` on while `external.laya` is off: requests the rules cannot place go to `main` |
 //! | V24 | Warning | a verification step sets `targets = true` but its `kind` is not `test` |
+//! | V47 | Error | `network.proxy_mode = "custom"` without a proxy URL of the form `http://host:port`, `https://host:port` or `socks5://host:port`, or a proxy URL that carries credentials |
+//! | V45 | Warning | a managed slot sets `capabilities.vision` without `launch.mmproj_file`, or sets `mmproj_file` while vision is off |
 //!
 //! Unit tests: one passing baseline config (no issues) and at least one failing case per rule.
 
@@ -62,7 +64,7 @@ use serde::Serialize;
 
 use super::schema::{
     Config, DecisionProviderKind, LaunchConfig, ModelConfig, ModelRole, ProfileKind, ProviderKind,
-    RuntimeConfig, RuntimeKind, StepKind,
+    ProxyMode, RuntimeConfig, RuntimeKind, StepKind,
 };
 use super::{is_absolute_any_platform, reserved_launch_flag};
 
@@ -131,6 +133,8 @@ pub fn validate_with(cfg: &Config, env: &ValidationEnv) -> Vec<ConfigIssue> {
     check_jev_endpoint(cfg, &mut report);
     check_decisions(cfg, &mut report);
     check_routing(cfg, &mut report);
+    check_vision(cfg, &mut report);
+    check_network(cfg, &mut report);
     check_context(cfg, &mut report);
     check_hard_limit_against_default_model(cfg, &mut report);
     check_verification(cfg, &mut report);
@@ -754,6 +758,78 @@ fn check_decisions(cfg: &Config, report: &mut Report) {
 
 /// V10: the escalation threshold is a confidence in `[0, 1]`. V39: deep escalation needs a deep slot. V40: the micro
 /// engine is used only when `routing.enable_micro_decisions` is on, so a `local_lfm` provider without it is a warning.
+/// The proxy setting: a custom mode needs a well-formed proxy URL, and the URL must not carry a password (the file may be
+/// read by other tools, and the value is shown in the window).
+fn check_network(cfg: &Config, report: &mut Report) {
+    let network = &cfg.network;
+    match (network.proxy_mode, network.proxy.as_deref()) {
+        (ProxyMode::Custom, None | Some("")) => report.error(
+            "V47",
+            "network.proxy",
+            "network.proxy_mode is `custom` but no proxy URL is set",
+        ),
+        (ProxyMode::Custom, Some(url)) => {
+            if let Err(reason) = check_proxy_url(url) {
+                report.error("V47", "network.proxy", reason);
+            }
+        }
+        (_, Some(url)) if !url.is_empty() => report.warning(
+            "V47",
+            "network.proxy",
+            "network.proxy is set but network.proxy_mode is not `custom`, so it is not used",
+        ),
+        _ => {}
+    }
+}
+
+/// Whether `url` is a proxy address the harness accepts: a scheme it supports, a host, an optional port, no credentials,
+/// no path.
+pub fn check_proxy_url(url: &str) -> Result<(), String> {
+    let rest = ["http://", "https://", "socks5://"]
+        .iter()
+        .find_map(|scheme| url.strip_prefix(scheme))
+        .ok_or_else(|| "the proxy must start with http://, https:// or socks5://".to_owned())?;
+    if rest.contains('@') {
+        return Err("the proxy URL must not carry a user name or password; put an authenticated proxy in the environment variable BRIDLE_PROXY".to_owned());
+    }
+    let authority = rest.trim_end_matches('/');
+    if authority.is_empty() || authority.contains('/') || authority.chars().any(char::is_whitespace)
+    {
+        return Err("the proxy must be of the form scheme://host:port, with no path".to_owned());
+    }
+    if let Some((host, port)) = authority.rsplit_once(':')
+        && !authority.ends_with(']')
+        && (host.is_empty() || port.parse::<u16>().is_err())
+    {
+        return Err("the proxy port must be a number between 0 and 65535".to_owned());
+    }
+    Ok(())
+}
+
+/// A slot the harness starts reads images only when its server loads a vision projector. Either half without the other
+/// leaves images refused or the projector loaded for nothing.
+fn check_vision(cfg: &Config, report: &mut Report) {
+    for (slot, model) in &cfg.models {
+        let Some(launch) = &model.launch else {
+            continue;
+        };
+        let vision = model.capabilities.vision;
+        if vision && launch.mmproj_file.is_none() {
+            report.warning(
+                "V45",
+                format!("models.{slot}.launch.mmproj_file"),
+                "capabilities.vision is on but no vision projector is set; the server cannot take an image",
+            );
+        } else if !vision && launch.mmproj_file.is_some() {
+            report.warning(
+                "V45",
+                format!("models.{slot}.capabilities.vision"),
+                "a vision projector is set but capabilities.vision is off; images are refused",
+            );
+        }
+    }
+}
+
 fn check_routing(cfg: &Config, report: &mut Report) {
     if !(0.0..=1.0).contains(&cfg.routing.escalation_threshold) {
         report.error(
@@ -1441,6 +1517,76 @@ mod tests {
         deep.role = ModelRole::DeepReasoning;
         cfg.models.insert("deep".to_owned(), deep);
         assert_no_rule(&cfg, "V39");
+    }
+
+    #[test]
+    fn v47_a_custom_proxy_needs_a_well_formed_url_without_credentials() {
+        let mut cfg = baseline();
+        assert_no_rule(&cfg, "V47");
+        cfg.network.proxy_mode = ProxyMode::Custom;
+        assert_issue(&cfg, "V47", Severity::Error, "network.proxy");
+        for bad in [
+            "proxy.example.com:8080",
+            "ftp://proxy:21",
+            "http://user:secret@proxy:8080",
+            "http://proxy:notaport",
+            "http://proxy:8080/path",
+            "http://",
+        ] {
+            cfg.network.proxy = Some(bad.to_owned());
+            assert_issue(&cfg, "V47", Severity::Error, "network.proxy");
+        }
+        for good in [
+            "http://172.31.2.4:8080",
+            "https://proxy.example.com:3128",
+            "socks5://127.0.0.1:1080",
+            "http://proxy",
+        ] {
+            cfg.network.proxy = Some(good.to_owned());
+            assert_no_rule(&cfg, "V47");
+        }
+        // A URL with a password is never echoed back by the message.
+        cfg.network.proxy = Some("http://user:secret@proxy:8080".to_owned());
+        let found = issues(&cfg);
+        assert!(
+            found.iter().all(|i| !i.message.contains("secret")),
+            "{found:?}"
+        );
+        // Set but unused is a warning.
+        cfg.network.proxy_mode = ProxyMode::Environment;
+        cfg.network.proxy = Some("http://proxy:8080".to_owned());
+        assert_issue(&cfg, "V47", Severity::Warning, "network.proxy");
+    }
+
+    #[test]
+    fn v45_vision_and_the_projector_go_together_for_a_managed_slot() {
+        let mut cfg = baseline();
+        let launch: crate::config::LaunchConfig = serde_json::from_value(serde_json::json!({
+            "runtime": "llama_cpp",
+            "model_file": "m.gguf",
+        }))
+        .expect("launch fixture");
+        main_model(&mut cfg).launch = Some(launch);
+        main_model(&mut cfg).capabilities.vision = true;
+        assert_issue(
+            &cfg,
+            "V45",
+            Severity::Warning,
+            "models.main.launch.mmproj_file",
+        );
+        main_model(&mut cfg)
+            .launch
+            .as_mut()
+            .expect("launch")
+            .mmproj_file = Some(PathBuf::from("mm.gguf"));
+        assert_no_rule(&cfg, "V45");
+        main_model(&mut cfg).capabilities.vision = false;
+        assert_issue(
+            &cfg,
+            "V45",
+            Severity::Warning,
+            "models.main.capabilities.vision",
+        );
     }
 
     #[test]
