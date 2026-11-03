@@ -4,7 +4,7 @@
 //! Three jobs:
 //! 1. translate OpenCode tool calls and permission requests into host-neutral
 //!    [`ToolRequest`]s for `harness-core`'s [`ToolPolicy`];
-//! 2. answer the plugin shim's hook calls (`agent hook <event>`) with JSON verdicts;
+//! 2. answer the plugin shim's hook calls (`bridle hook <event>`) with JSON verdicts;
 //! 3. generate `opencode.json` from the harness config, so there is one source of truth.
 
 use std::path::Path;
@@ -21,7 +21,7 @@ use serde_json::{Map, Value, json};
 
 use crate::workflow::is_test_command;
 
-/// Hook events the shim forwards. Names are the CLI spelling (`agent hook tool-before`).
+/// Hook events the shim forwards. Names are the CLI spelling (`bridle hook tool-before`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum HookEvent {
     ToolBefore,
@@ -499,7 +499,7 @@ fn mcp_timeout_ms(cfg: &Config) -> u64 {
     steps.max(MCP_GIT_WORST_CASE_MS) + MCP_TIMEOUT_MARGIN_MS
 }
 
-/// OpenCode provider id for a model slot (`local-agent-main`).
+/// OpenCode provider id for a model slot (`bridle-main`).
 pub fn provider_id(slot: &str) -> String {
     format!("{}-{slot}", identity::PROVIDER_PREFIX)
 }
@@ -711,7 +711,7 @@ pub fn generate_opencode_config(cfg: &Config, agent_bin: &Path) -> Value {
 }
 
 const EXPLORE_PROMPT: &str = "You are a read-only exploration subagent. Gather evidence to answer \
-the parent's question using search, read and the local-agent tools. Do not edit files. Answer with \
+the parent's question using search, read and the bridle tools. Do not edit files. Answer with \
 a compact JSON object: {\"summary\": str, \"findings\": [str], \"evidence\": [str], \"confidence\": \
 number, \"recommendation\": str, \"files\": [str], \"commands\": [str], \"unresolved\": [str]}. \
 Cite files as path:line. Never paste whole files.";
@@ -961,8 +961,8 @@ mod context_tests {
             "{}FAILED tests/test_calc.py::test_add - assert 1 == 2\nok\n",
             "....\n".repeat(300)
         );
-        let mut messages = vec![tool_message("local-agent_run_tests", "", &output)];
-        messages.extend((0..3).map(|_| tool_message("local-agent_git_status", "", "clean")));
+        let mut messages = vec![tool_message("bridle_run_tests", "", &output)];
+        messages.extend((0..3).map(|_| tool_message("bridle_git_status", "", "clean")));
 
         let (answer, _) = transform(&config, messages);
 
@@ -1019,7 +1019,7 @@ mod tests {
         assert_eq!(r.command.as_deref(), Some("ls"));
         assert_eq!(r.workdir.as_deref(), Some("sub"));
 
-        let r = map_tool_call("local-agent_git_status", &json!({}));
+        let r = map_tool_call("bridle_git_status", &json!({}));
         assert_eq!(r.kind, ToolKind::Harness("git_status".into()));
 
         let r = map_tool_call("mystery", &json!({}));
@@ -1213,15 +1213,15 @@ mod tests {
         let oc = generate_opencode_config(&cfg, Path::new("/opt/agent"));
         assert_eq!(oc["share"], "disabled");
         assert_eq!(oc["autoupdate"], false);
-        assert_eq!(oc["model"], "local-agent-main/qwen3.5-9b");
-        assert_eq!(oc["small_model"], "local-agent-main/qwen3.5-9b");
+        assert_eq!(oc["model"], "bridle-main/qwen3.5-9b");
+        assert_eq!(oc["small_model"], "bridle-main/qwen3.5-9b");
         assert_eq!(
-            oc["provider"]["local-agent-main"]["options"]["baseURL"],
+            oc["provider"]["bridle-main"]["options"]["baseURL"],
             "http://127.0.0.1:8001/v1"
         );
-        assert_eq!(oc["mcp"]["local-agent"]["command"][1], "mcp");
+        assert_eq!(oc["mcp"]["bridle"]["command"][1], "mcp");
         // No verification steps: the git tools set the floor (4 × 30 s) plus the margin.
-        assert_eq!(oc["mcp"]["local-agent"]["timeout"], 150_000);
+        assert_eq!(oc["mcp"]["bridle"]["timeout"], 150_000);
         assert_eq!(oc["agent"]["deep"]["permission"]["edit"], "deny");
         assert_eq!(oc["agent"]["explore"]["permission"]["edit"], "deny");
         assert_eq!(oc["agent"]["build"]["permission"]["bash"]["*"], "ask");

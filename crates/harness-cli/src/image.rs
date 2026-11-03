@@ -107,11 +107,51 @@ pub fn encode(bytes: &[u8]) -> String {
     out
 }
 
+/// Decodes standard base64 (padding optional, whitespace ignored). `None` for any other character or a bad length.
+pub fn decode(text: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(text.len() / 4 * 3);
+    let (mut acc, mut bits) = (0u32, 0u32);
+    for c in text.bytes().filter(|c| !c.is_ascii_whitespace()) {
+        let value = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            b'=' => break,
+            _ => return None,
+        };
+        acc = (acc << 6) | u32::from(value);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push(u8::try_from((acc >> bits) & 0xFF).ok()?);
+        }
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use harness_core::config::SecuritySection;
+
+    #[test]
+    fn base64_decodes_what_it_encodes() {
+        for sample in [
+            &b""[..],
+            b"f",
+            b"fo",
+            b"foo",
+            b"foob",
+            b"\x00\xff\x10binary",
+        ] {
+            assert_eq!(decode(&encode(sample)).unwrap(), sample);
+        }
+        assert_eq!(decode("Zm9v\nYg==").unwrap(), b"foob");
+        assert!(decode("not base64!").is_none());
+    }
 
     #[test]
     fn an_image_turn_uses_the_vision_slot_when_it_is_defined() {

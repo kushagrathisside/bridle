@@ -1,4 +1,4 @@
-//! `agent health`: functional checks against each configured model endpoint.
+//! `bridle health`: functional checks against each configured model endpoint.
 //!
 //! Every slot gets the checks from [`harness_runtime::health::run_checks`] (the quick subset with
 //! `--quick`). A slot whose provider cannot be built, for example because its API key variable is
@@ -253,12 +253,12 @@ retries = 0
     fn unset_api_key_fails_without_contacting_the_endpoint() {
         let config = slot_config(
             "http://127.0.0.1:9/v1",
-            r#"api_key_env = "LOCAL_AGENT_CLI_TEST_UNSET_KEY""#,
+            r#"api_key_env = "BRIDLE_CLI_TEST_UNSET_KEY""#,
         );
         let checks = check_slot(&config.models["m"], true);
         assert_eq!(checks.len(), 1);
         assert_eq!(checks[0].status, Status::Fail);
-        assert!(checks[0].detail.contains("LOCAL_AGENT_CLI_TEST_UNSET_KEY"));
+        assert!(checks[0].detail.contains("BRIDLE_CLI_TEST_UNSET_KEY"));
     }
 
     #[test]

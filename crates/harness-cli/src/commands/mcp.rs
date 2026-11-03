@@ -1,4 +1,4 @@
-//! `agent mcp`: serve the harness tools over MCP on stdio for the coding-agent host.
+//! `bridle mcp`: serve the harness tools over MCP on stdio for the coding-agent host.
 
 use std::process::ExitCode;
 

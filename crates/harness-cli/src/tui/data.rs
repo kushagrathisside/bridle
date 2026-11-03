@@ -3,7 +3,7 @@
 //!
 //! Collecting a [`Snapshot`] reads local files and process records only. It never contacts a model
 //! endpoint, starts a process or writes anything. Everything shown comes from the same loaders the
-//! CLI uses ([`App::load`], the validator, the redactor, the PID records of `agent models`).
+//! CLI uses ([`App::load`], the validator, the redactor, the PID records of `bridle models`).
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -87,9 +87,15 @@ pub struct SlotRow {
     pub runtime_state: FileState,
     pub model_file: Option<String>,
     pub model_state: FileState,
+    /// The vision projector, when the slot has one.
+    pub mmproj_file: Option<String>,
+    /// `NotManaged` when the slot has no projector.
+    pub mmproj_state: FileState,
+    /// Whether the slot is configured to read images (`capabilities.vision`).
+    pub vision: bool,
     pub server: ServerState,
     pub log_path: String,
-    /// Whether `agent models serve` could start this slot (it has a launch section).
+    /// Whether `bridle models serve` could start this slot (it has a launch section).
     pub launchable: bool,
 }
 
@@ -97,7 +103,9 @@ impl SlotRow {
     /// Static (no network) readiness of the slot's files.
     pub fn static_sev(&self) -> Sev {
         let bad = |s: &FileState| matches!(s, FileState::Missing | FileState::Unresolved);
-        if self.launchable && (bad(&self.model_state) || bad(&self.runtime_state)) {
+        if self.launchable
+            && (bad(&self.model_state) || bad(&self.runtime_state) || bad(&self.mmproj_state))
+        {
             Sev::Fail
         } else if matches!(
             self.server,
@@ -205,7 +213,7 @@ impl Snapshot {
             }
         }
         if let Some(ws) = &snap.workspace {
-            snap.log = events::read_logs(&ws.join(identity::STATE_DIR));
+            snap.log = events::read_logs(&identity::state_dir(ws));
             snap.tasks = collect_tasks(ws, &snap.log);
         }
         snap
@@ -223,7 +231,7 @@ impl Snapshot {
             .map(|f| {
                 let layer = if Some(f) == machine.as_ref() {
                     "machine (trusted)"
-                } else if f.file_name().is_some_and(|n| n == identity::CONFIG_FILE) {
+                } else if f.file_name().is_some_and(identity::is_config_file_name) {
                     "repository (untrusted: restricted by the trust rules)"
                 } else {
                     "explicit --config / env (trusted)"
@@ -342,6 +350,11 @@ fn slot_row(app: &App, name: &str, model: &harness_core::config::ModelConfig) ->
         .as_deref()
         .and_then(|r| app.config.resolve_runtime_bin(r));
     let model_file = app.config.resolve_model_file(name);
+    let mmproj_file = app.config.resolve_mmproj_file(name);
+    let has_projector = model
+        .launch
+        .as_ref()
+        .is_some_and(|l| l.mmproj_file.is_some());
     SlotRow {
         name: sanitize(name),
         model_id: sanitize(&model.id),
@@ -355,6 +368,13 @@ fn slot_row(app: &App, name: &str, model: &harness_core::config::ModelConfig) ->
         runtime_state: file_state(runtime_bin.as_deref(), launchable),
         model_file: model_file.as_ref().map(|p| p.display().to_string()),
         model_state: file_state(model_file.as_deref(), launchable),
+        mmproj_file: mmproj_file.as_ref().map(|p| p.display().to_string()),
+        mmproj_state: if has_projector {
+            file_state(mmproj_file.as_deref(), launchable)
+        } else {
+            FileState::NotManaged
+        },
+        vision: model.capabilities.vision,
         server: models::server_state(app, name),
         log_path: models::server_log_path(app, name).display().to_string(),
         launchable,
@@ -410,7 +430,7 @@ fn policy_info(app: &App) -> PolicyInfo {
     }
 }
 
-/// The outbound destinations, from the same list `agent egress` prints.
+/// The outbound destinations, from the same list `bridle egress` prints.
 fn network_rows(app: &App) -> Vec<NetRow> {
     destinations(&app.config)
         .into_iter()

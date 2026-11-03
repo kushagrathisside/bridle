@@ -1,4 +1,4 @@
-//! `agent subagent`: runs the subagent tier from the command line, with the same checks as the `subagent` tool.
+//! `bridle subagent`: runs the subagent tier from the command line, with the same checks as the `subagent` tool.
 //! It is the way to test a slot by hand before a model uses the tool.
 
 use std::process::ExitCode;

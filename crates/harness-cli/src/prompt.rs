@@ -12,6 +12,7 @@ use crate::workflow;
 
 /// The extra text for the system prompt. `degraded` names a part that could not be read. The other part is still
 /// returned, so a broken memory file does not hide the task state.
+#[derive(Debug)]
 pub struct Extras {
     pub text: Option<String>,
     pub degraded: Option<anyhow::Error>,

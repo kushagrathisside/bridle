@@ -1,5 +1,5 @@
 //! Routing for a request: which slot answers it, and why. The chat calls it for each turn when `[routing] auto_slot`
-//! is on, and `agent route` calls it for one text.
+//! is on, and `bridle route` calls it for one text.
 //!
 //! The rules place the request first (`harness_core::routing::place`). A request they cannot place goes to the decision
 //! model, Laya, when `[external.laya]` is enabled. The deep slot is used only when Bridle reports it running; otherwise
@@ -89,7 +89,7 @@ fn ask_laya(app: &App, text: &str) -> Option<Result<Answer, String>> {
     Some(answer)
 }
 
-/// `agent route <text>`: prints the slot a request would go to, and the reason. Sends nothing when the rules place the
+/// `bridle route <text>`: prints the slot a request would go to, and the reason. Sends nothing when the rules place the
 /// request; an undecided request is sent to the decision model only when `[external.laya]` is enabled.
 pub fn run(app: &App, text: &str) -> anyhow::Result<std::process::ExitCode> {
     let default = app.config.agent.default_model.clone();
@@ -142,7 +142,7 @@ struct Case {
     expected: String,
 }
 
-/// `agent eval-routing <cases>`: runs each labelled request through the placement and prints the agreement, by source.
+/// `bridle eval-routing <cases>`: runs each labelled request through the placement and prints the agreement, by source.
 /// The labels are a judgement that a person must review; the report says how many of each source agreed.
 pub fn eval(
     app: &App,

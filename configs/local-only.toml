@@ -2,7 +2,7 @@
 #
 # Machine-specific locations (where weights and runtimes live) are NOT set here. Put them in the
 # machine config with:
-#   agent init --machine --models-dir D:\models --runtimes-dir D:\runtimes --opencode-bin <path>
+#   bridle init --machine --models-dir D:\models --runtimes-dir D:\runtimes --opencode-bin <path>
 # Relative model_file / server_bin paths below resolve against those directories.
 #
 # Numeric values marked DEF are initial engineering defaults to be tuned by benchmark.
@@ -34,7 +34,7 @@ id = "qwen3.5-9b"
 display_name = "Qwen3.5-9B Q4_K_M"
 role = "engineer"
 endpoint = "http://127.0.0.1:8001/v1"
-context = 16384                 # DEF
+context = 65536                 # 4x the old 16K. The 8-bit cache of this hybrid model costs 17 KiB per token (from the GGUF header). Measured on the RTX 4060 8 GB: 98304 left only 754 MiB free; 65536 leaves about 1.3 GB
 max_output_tokens = 4096
 kv_cache = "q8_0"
 mtp = "auto"                    # optional, detected
@@ -52,7 +52,7 @@ enabled = false
 
 [models.main.capabilities]
 tool_calling = true
-vision = false                  # projector not loaded
+vision = true                   # the projector below is loaded by the server
 reasoning = true
 structured_output = true
 streaming = true
@@ -66,6 +66,8 @@ cache_ram_mib = 1024
 parallel = 1
 runtime = "llama_cpp"
 model_file = "Qwen3.5-9B/Qwen3.5-9B-Q4_K_M.gguf"
+mmproj_file = "Qwen3.5-9B/mmproj-F16.gguf"   # unsloth/Qwen3.5-9B-GGUF at the same revision, 918 MB
+mmproj_offload = false          # projector stays in system memory: on the GPU, 98K context left 0.3 GB of 8 GB free
 gpu_layers = 99
 flash_attn = true
 
