@@ -1,4 +1,4 @@
-//! Persistent task state under `.local-agent/`.
+//! Persistent task state under `.bridle/`.
 //!
 //! Every file is a versioned envelope, `{"schema": 1, "data": ...}`. Readers tolerate unknown fields
 //! inside `data`, refuse a newer schema by name, and skip a torn last line of a JSON Lines file.
@@ -65,7 +65,7 @@ pub enum StateError {
     },
 }
 
-/// The state directory of one workspace: `<workspace>/.local-agent/`.
+/// The state directory of one workspace: `<workspace>/.bridle/`.
 #[derive(Debug)]
 pub struct StateDir {
     root: PathBuf,
@@ -76,7 +76,7 @@ impl StateDir {
     /// Opens the state directory of `workspace`, creating it if needed, and removes temporary files
     /// that a killed process left behind.
     pub fn open(workspace: &Path) -> Result<Self, StateError> {
-        let root = workspace.join(identity::STATE_DIR);
+        let root = identity::state_dir(workspace);
         std_fs::create_dir_all(&root).map_err(|source| StateError::Io {
             action: "create",
             path: root.clone(),
@@ -93,7 +93,7 @@ impl StateDir {
     /// is removed and no lock is taken. `None` when the workspace has no state directory yet.
     /// For viewers that must not change anything; writers use [`StateDir::open`].
     pub fn open_existing(workspace: &Path) -> Option<Self> {
-        let root = workspace.join(identity::STATE_DIR);
+        let root = identity::state_dir(workspace);
         root.is_dir().then(|| Self {
             root,
             redactor: Redactor::new(),

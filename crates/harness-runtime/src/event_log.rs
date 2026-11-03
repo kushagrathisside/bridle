@@ -26,7 +26,7 @@ pub struct EventLog {
 }
 
 impl EventLog {
-    /// Event log rooted at `<workspace>/.local-agent/`.
+    /// Event log rooted at `<workspace>/.bridle/`.
     pub fn for_workspace(
         workspace: &Path,
         redact: bool,
@@ -34,7 +34,7 @@ impl EventLog {
         enabled: bool,
     ) -> Self {
         Self {
-            dir: workspace.join(identity::STATE_DIR),
+            dir: identity::state_dir(workspace),
             redactor: redact.then(Redactor::new),
             max_field_bytes,
             enabled,
