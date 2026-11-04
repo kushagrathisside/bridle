@@ -5,6 +5,8 @@ while a run is working. They are one feature: the ideas are the first column of 
 on it. The design and the plan for what is not built yet are in
 [the plan](../spec/team-subagents-ideas-plan.md). This page says what is built and how to use it.
 
+![The board popup](../images/board.png)
+
 ## The crew rail
 
 A strip of round avatars on the **right edge of the window**, centred vertically, one for each member of the team.
