@@ -10,6 +10,7 @@
 //! `bridge.rs` and listen to the `bridle` event, and nothing else (see `capabilities/default.json`).
 
 mod bridge;
+mod ideas_cmd;
 mod view;
 
 use std::ffi::OsString;
@@ -190,6 +191,13 @@ fn run_window(raw: &[OsString]) -> ExitCode {
             bridge::git_file_diff,
             bridge::list_dir,
             bridge::read_workspace_file,
+            ideas_cmd::list_ideas,
+            ideas_cmd::add_idea,
+            ideas_cmd::update_idea,
+            ideas_cmd::delete_idea,
+            ideas_cmd::move_idea,
+            ideas_cmd::set_ideas_hold,
+            ideas_cmd::take_idea,
         ])
         .build(tauri::generate_context!());
     let app = match built {

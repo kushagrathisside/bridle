@@ -249,6 +249,7 @@ function applySnapshot(snapshot) {
   if (first) { showEmpty(); loadTools(); refreshTree(); }
   maybeSetup();
   maybeAutoStart();
+  ideasOnSnapshot(snapshot);
 }
 
 function maybeAutoStart() {
@@ -257,7 +258,7 @@ function maybeAutoStart() {
   const slot = name && slotInfo(name);
   if (!slot) return;
   state.autoStartDone = true;
-  if (slot.ready_to_start && slot.server !== "running") startSlot(name);
+  if (slot.ready_to_start && slot.server !== "running" && slot.server !== "warming") startSlot(name);
 }
 
 function startSlot(name) {

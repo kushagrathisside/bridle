@@ -307,3 +307,19 @@ tr.blocked td, tr.failure td { background: var(--del); }
 
 .note { font-size: 12px; margin: 6px 0; overflow-wrap: anywhere; }
 #network-card input, #network-card select { margin-top: 6px; }
+
+/* ideas: notes kept out of the conversation until a run finishes */
+.ideas-btn { position: relative; }
+.ideas-btn.active { background: var(--hover); color: var(--text); }
+.badge { position: absolute; top: -2px; right: -2px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: var(--warn); color: #1a1a1a; font: 700 10px/15px var(--mono); text-align: center; }
+.badge[hidden] { display: none; }
+.ideas-panel { position: absolute; top: 40px; right: 10px; width: 380px; max-height: calc(100vh - 90px); overflow-y: auto; z-index: 30; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, .4); display: flex; flex-direction: column; gap: 6px; }
+.ideas-panel[hidden] { display: none; }
+.ideas-head { display: flex; align-items: center; justify-content: space-between; }
+.ideas-hold { font-size: 12px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+.ideas-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.idea { background: var(--panel-2); border-radius: 8px; padding: 8px 10px; }
+.idea-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.idea-actions { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+.idea-actions .icon { font-size: 12px; }
+.idea-edit, #idea-new { width: 100%; box-sizing: border-box; resize: vertical; }

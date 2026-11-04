@@ -18,9 +18,18 @@
       </div>
       <span class="workspace-path" id="workspace-path"></span>
       <span class="spacer"></span>
+      <button id="ideas-btn" class="icon-btn ideas-btn" title="Ideas: notes sent when a run finishes" aria-label="Ideas"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg><span id="ideas-count" class="badge" hidden></span></button>
       <button id="toggle-bottom" class="icon-btn" title="Show or hide the terminal panel (Ctrl+`)" aria-label="Terminal"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l6 6-6 6M12 18h8"/></svg></button>
       <button id="toggle-chat" class="icon-btn" title="Show or hide the chat (Ctrl+J)" aria-label="Chat"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg></button>
     </header>
+
+    <div id="ideas-panel" class="ideas-panel" hidden>
+      <div class="ideas-head"><strong>Ideas</strong><label class="ideas-hold" title="While on hold, no idea is sent when a run finishes"><input type="checkbox" id="idea-hold"> Hold</label></div>
+      <p id="ideas-summary" class="muted note"></p>
+      <ol id="ideas-list" class="ideas-list"></ol>
+      <textarea id="idea-new" rows="2" placeholder="Write an idea. It is not sent to the model until a run finishes." maxlength="8000"></textarea>
+      <div class="idea-actions"><button type="button" id="idea-add" class="small primary">Save idea</button></div>
+    </div>
 
     <div id="body">
       <nav id="activity" aria-label="Views">
@@ -150,6 +159,7 @@
             <span id="status" class="status"></span>
             <span id="context" class="context" hidden title="How much of the model's context window the conversation uses"><span id="context-text"></span><span class="meter"><span id="context-bar"></span></span></span>
             <button type="button" id="attach" class="small" title="Attach an image (/image)">Image</button>
+            <button type="button" id="idea" class="small" title="Save what is in the box as an idea; it is sent when the current run finishes (Ctrl+Shift+Enter)">Idea</button>
             <button type="button" id="compact" class="small" title="Summarise the conversation to free context (/compact)">Compact</button>
             <button type="button" id="stop" class="danger" hidden>Stop</button>
             <button type="submit" id="send" class="primary">Send</button>
@@ -184,6 +194,7 @@
   <script src="chat.js"></script>
   <script src="editor.js"></script>
   <script src="panels.js"></script>
+  <script src="ideas.js"></script>
   <script src="boot.js"></script>
 </body>
 </html>

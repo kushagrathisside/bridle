@@ -62,7 +62,7 @@ impl Bridge {
         self.args()
     }
 
-    fn args(&self) -> LoadArgs {
+    pub(crate) fn args(&self) -> LoadArgs {
         locked(&self.args).clone()
     }
 
@@ -1455,7 +1455,7 @@ fn cut_at(text: &str, limit: usize) -> String {
     text[..end].to_owned()
 }
 
-fn workspace_of(args: &LoadArgs) -> anyhow::Result<PathBuf> {
+pub(crate) fn workspace_of(args: &LoadArgs) -> anyhow::Result<PathBuf> {
     harness_cli::app::resolve_workspace(args.workspace.as_deref())
 }
 
