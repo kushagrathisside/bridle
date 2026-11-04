@@ -35,7 +35,7 @@ Open a developer shell, or run `"C:\Program Files\Microsoft Visual Studio\2022\C
 first, so the linker is on the path. Then:
 
 ```bat
-cargo build -p harness-cli --bin agent
+cargo build -p harness-cli
 ```
 
 Cargo writes the binary to `target\debug\bridle-cli.exe`. To keep build output outside the repository, set `CARGO_TARGET_DIR`
@@ -48,10 +48,11 @@ target\debug\bridle-cli.exe --version
 ```
 
 ```text
-agent 0.1.0
+bridle 0.1.0
 ```
 
-The examples in these docs write `bridle` for the binary. Add its folder to your `PATH`, or call it by its full path.
+The examples in these docs write `bridle` for the binary. Add its folder to your `PATH`, or call it by its full path. This builds
+the headless `bridle-cli`. For the window as well, build `bridle-desktop`; see [the desktop app](desktop.md).
 
 ## 3. Write the machine configuration
 

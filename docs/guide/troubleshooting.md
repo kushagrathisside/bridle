@@ -115,7 +115,7 @@ the plugin loader stall.
 **Fix:** vendor the crates from a machine that can reach the registry, with `cargo vendor`, then build offline:
 
 ```bat
-cargo build -p harness-cli --bin agent --offline --config "source.crates-io.replace-with='vendored-sources'"
+cargo build -p harness-cli --offline --config "source.crates-io.replace-with='vendored-sources'"
 ```
 
 ## A Windows path is blocked
