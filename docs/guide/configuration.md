@@ -159,6 +159,8 @@ The shipped profiles satisfy these rules, so `bridle init` output loads as a pro
 | V44 | warning: `routing.auto_slot` is on while `external.laya` is off, so requests the rules cannot place go to `main` |
 | V48 | `[web]`: an enabled provider needs what it needs (a SearXNG `base_url` without credentials, a Brave key variable name), `web.enabled` needs a usable provider, and the limits are inside their ranges |
 | V49 | `[web.browser]`: it needs `web.enabled`, `headless` stays `true`, 1 to 4 sessions, a navigation timeout of 1 to 120 s, an action timeout of 0.5 to 60 s, an idle time of 1 to 60 minutes, and 1,000 to 100,000 characters of page text; host lists hold lowercase names such as `arxiv.org`, never addresses |
+| V50 | `[desktop]`: `max_wait_ms` between 1000 and 120000 |
+| V51 | `[fleet]` (when enabled): one to four slots that exist and have a `[launch]` section, a worker among them, a manager (if set) among them, `swap_budget` at most 10, `parallel` 1 to 16; a warning when the worker's `launch.parallel` is below `fleet.parallel` |
 
 ## Workflow and loop limits
 
@@ -423,6 +425,26 @@ browser in [The managed browser](web-browser.md).
 
 There is no key for a browser program, a launch flag, a profile or a download folder: those are not configurable. The runtime lives in
 `browser-runtime\` next to the machine configuration.
+
+### `[desktop]`: window screenshots (machine configuration only)
+
+| Key | Default | What it does |
+|---|---|---|
+| `desktop.screenshots_enabled` | `false` | Offers the `window_screenshot` tool and `bridle desktop screenshot`. See [Window screenshots](window-screenshots.md). |
+| `desktop.max_wait_ms` | 30000 | The most a call may wait for the window to appear (1000 to 120000; rule V50). |
+
+### `[fleet]`: the small-model fleet (machine configuration only)
+
+| Key | Default | What it does |
+|---|---|---|
+| `fleet.enabled` | `false` | Turns on `bridle fleet`. See [The fleet](fleet.md). |
+| `fleet.slots` | `[]` | One to four model slots that run together; each must be defined under `[models]` with a `[launch]` section. |
+| `fleet.worker` | `""` | The slot that serves the tasks (one server with several slots); must be one of `slots`. |
+| `fleet.manager` | `""` | Optional; one of `slots`. Loaded, but it has no job yet. |
+| `fleet.swap_budget` | 2 | Swaps a run may make (at most 10). |
+| `fleet.parallel` | 4 | Tasks at once (1 to 16). The worker's `launch.parallel` should be at least this; a smaller one only warns (rule V51). |
+
+A repository's `bridle.toml` cannot set `desktop` or `fleet`.
 
 ### `[paths]` and `[host]`: machine settings
 

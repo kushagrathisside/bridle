@@ -28,6 +28,39 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-11-04 (latest): window screenshots and the small-model fleet (ADR-0021, ADR-0022)
+
+Branch `main`, after `b6a51f7`. Windows only. Not pushed. **Gate:** fmt, clippy `-D warnings`, **1,148 tests passed, 0 failed, 5 ignored** (`D:\e2e\gate6.out`).
+
+| Item | What was built | Evidence |
+|---|---|---|
+| Window screenshots | `window_screenshot` tool and `bridle desktop screenshot`: the program goes through the `run_command` checks, its window (process tree only) is found by a built-in PowerShell script, drawn with `PrintWindow` (screen copy as a fallback), kept as a PNG source record, and the program is stopped. Config `[desktop]` (V50), machine only | `winver` launched, window found, correct picture, program ended (method `printwindow`). Unit tests for the refusals and the script encoding. One program, one display |
+| Scheduler | `harness_runtime::scheduler`: `plan_up`, `plan_down`, `Budget`, `fit`, write-ahead `Swap` record | 5 unit tests |
+| Fleet commands | `bridle fleet status / up / down / recover / run`; config `[fleet]` (V51) machine only; a worker server with 4 slots; `check_one_gpu_model` lets an enabled fleet's slots coexist; the VRAM estimator reads per-layer `head_count_kv` | See the live run below |
+| Reference check | A sub-agent answer's `name:line` reference is dropped and counted when the input has fewer lines | 1 new test |
+
+**Live fleet run** (RTX 4060 Laptop 8,188 MiB; main = Qwen3.5-9B, manager = Granite-4.0-H-Micro Q4_K_M, worker = Granite-4.0-H-1B Q4_K_M, 4 slots):
+
+- `fleet status`: manager about 2,378 MiB and worker about 1,534 MiB (estimates), together fitting with about 3,278 MiB to spare.
+- `fleet run` with eight tasks over this repository's files: main stopped; manager and worker healthy after 2.0 s and 1.5 s; **8 answered, 0
+  failed; 7.1 s of wall time for 26.0 s of work, 4 at once: about 3.7 times**; fleet stopped; main healthy again after 7.6 s; no swap
+  pending. GPU memory read 6,499 MiB with main loaded and 0 MiB after it was stopped (`D:\e2e\fleet2.out`, `fleet-results.json`).
+- Crash path on the real models (`D:\e2e\fleet3.out`): after `fleet up` the record `.bridle\swap.json` existed (phase `up`, stopped
+  `main`) and `fleet status` named it; a second `fleet up` was refused with the command to run; `fleet recover` stopped the fleet, started
+  main and removed the record.
+
+- **Found on the way.** The answers were well-formed but shallow, and one cited `leases.rs:4105` in a file of 526 lines: the old check only
+  verified the input's name. It now also drops a line number the input does not have (cannot tell that an existing line says what the
+  model claims). The inputs are not numbered when shown to the small model, so it counts lines itself; numbering them is the next change
+  to try and has not been measured. Models stopped from the app can show `notmanaged` for a moment after a stop.
+- **Not verified.** Answer quality was not graded. No crash was forced between the two stops (the write-before-stop order is unit-tested
+  and the record and recovery were run). The manager has no job yet. Worktrees for parallel engineers, a planning loop, and use inside the
+  board runner are not built. The Qwen3.5-4B download was not complete, so the manager is the Micro model. Window screenshots: one program
+  on one display; a covered window falls back to a screen copy that can be wrong.
+- **The video and "harness2".** Not done: the only thing known about the video (`os5eNeAVRpc`) is its title and channel, with no transcript,
+  and "harness2" was not found in the repository, in `D:\`, `D:\src` or the home folder. Nothing was invented from either; a transcript, a link or the name of
+  the project is needed.
+
 ## 2026-11-04 (leftover sections: leases, shadow repository, repair, PDF and archives)
 
 Branch `main`, after `2e89ace`. Windows only. These are the unbuilt parts of the plan (section 13) that can be built and checked on this machine
@@ -73,7 +106,7 @@ items that were left open were taken one by one:
 - **Still true.** Windows x64 only; the Brave and SearXNG providers have never talked to the real services; the browser has been run
   on one machine and one proxy.
 
-## 2026-11-04 (latest): the managed browser (ADR-0020)
+## 2026-11-04 (earlier): the managed browser (ADR-0020)
 
 Branch `web-research`, on top of `d28b0a2` and `e49df81`. Windows only; the tested machine (Windows 11, x64). Design, alternatives and
 residual risks: [ADR-0020](../decisions/0020-managed-browser-is-a-policy-gated-playwright-worker.md). Use: [web-browser.md](../guide/web-browser.md).

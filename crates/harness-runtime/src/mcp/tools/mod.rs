@@ -1076,7 +1076,7 @@ fn run_child(mut command: Command, timeout: Duration, stdout_keep: Keep) -> io::
 /// `cmd /C`) would otherwise keep running after a timeout. Windows uses `taskkill /T`; Unix kills
 /// the process group the child was started in. Errors only when the killer cannot be run; a
 /// non-zero killer status (the tree already exited) is not an error.
-fn kill_tree(pid: u32) -> Result<(), String> {
+pub(crate) fn kill_tree(pid: u32) -> Result<(), String> {
     run_killer(kill_command(pid))
 }
 
@@ -1252,6 +1252,7 @@ pub mod subagent;
 pub mod task;
 pub mod verify;
 pub mod web;
+pub mod window;
 
 #[cfg(test)]
 mod test_support;

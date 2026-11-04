@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use harness_core::identity;
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceRecord {
@@ -58,6 +59,41 @@ impl Sources {
     /// Where screenshots from the browser are kept.
     pub fn screenshots_dir(&self) -> PathBuf {
         self.dir.join("screenshots")
+    }
+
+    /// Keeps a PNG picture: checks the signature and the size, names it by its hash, copies it into the screenshot folder (atomically,
+    /// once), and returns the final path, the SHA-256 and the length. The source file is not touched.
+    pub fn keep_png(
+        &self,
+        source: &Path,
+        max_bytes: u64,
+    ) -> Result<(PathBuf, String, u64), String> {
+        use std::io::Read;
+        let meta =
+            fs::symlink_metadata(source).map_err(|e| format!("cannot read the picture: {e}"))?;
+        if !meta.file_type().is_file() || meta.len() == 0 || meta.len() > max_bytes {
+            return Err(format!(
+                "the picture is not a file of up to {max_bytes} bytes"
+            ));
+        }
+        let mut bytes = Vec::new();
+        fs::File::open(source)
+            .and_then(|f| f.take(max_bytes + 1).read_to_end(&mut bytes))
+            .map_err(|e| format!("cannot read the picture: {e}"))?;
+        if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+            return Err("the picture is not a PNG".to_owned());
+        }
+        let sha = crate::web::fetch::hex(&sha2::Sha256::digest(&bytes));
+        let dir = self.screenshots_dir();
+        fs::create_dir_all(&dir)
+            .map_err(|e| format!("cannot create the screenshot folder: {e}"))?;
+        let final_path = dir.join(format!("{}-window.png", &sha[..8]));
+        if !final_path.exists() {
+            let temp = dir.join(format!(".part-{}-window.png", std::process::id()));
+            fs::write(&temp, &bytes).map_err(|e| format!("cannot save the picture: {e}"))?;
+            fs::rename(&temp, &final_path).map_err(|e| format!("cannot save the picture: {e}"))?;
+        }
+        Ok((final_path, sha, bytes.len() as u64))
     }
 
     fn file(&self) -> PathBuf {

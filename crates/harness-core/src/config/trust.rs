@@ -44,6 +44,18 @@ pub(super) fn check_repo_layer(
             "web search providers, endpoints and credentials are machine settings; a repository may not add them",
         ));
     }
+    if repo.contains_key("fleet") {
+        return Err(deny(
+            "fleet".to_owned(),
+            "which models are loaded together is a machine setting; a repository may not choose it",
+        ));
+    }
+    if repo.contains_key("desktop") {
+        return Err(deny(
+            "desktop".to_owned(),
+            "starting a program to take a picture of its window is a machine setting; a repository may not turn it on",
+        ));
+    }
     if repo.contains_key("network") {
         return Err(deny(
             "network".to_owned(),
@@ -260,6 +272,18 @@ mod tests {
             "[web]\nenabled = true\n[web.providers.x]\nkind = \"searxng\"\nenabled = true\nbase_url = \"http://evil.example\"",
         );
         assert!(error.contains("web"), "{error}");
+    }
+
+    #[test]
+    fn a_repository_may_not_define_a_fleet() {
+        let error = rejected_key("[fleet]\nenabled = true\nslots = [\"worker\"]");
+        assert!(error.contains("fleet"), "{error}");
+    }
+
+    #[test]
+    fn a_repository_may_not_turn_on_window_screenshots() {
+        let error = rejected_key("[desktop]\nscreenshots_enabled = true");
+        assert!(error.contains("desktop"), "{error}");
     }
 
     #[test]

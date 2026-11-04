@@ -99,6 +99,16 @@ enum Command {
     },
     /// List every outbound destination of this configuration, and the proxy state. Sends nothing.
     Egress,
+    /// The small-model fleet and its scheduler: status, up, down, recover, run (plan F1; ADR-0022).
+    Fleet {
+        #[command(subcommand)]
+        action: commands::fleet::FleetAction,
+    },
+    /// Window screenshots: start a program, take a picture of its window, stop it (ADR-0021).
+    Desktop {
+        #[command(subcommand)]
+        action: commands::desktop::DesktopAction,
+    },
     /// Web research from the terminal: providers, status, search, open, download, inspect (ADR-0019).
     Web {
         #[command(subcommand)]
@@ -173,6 +183,8 @@ pub fn run() -> ExitCode {
                     commands::task::trace(&app, task.as_deref(), limit)
                 }
                 Command::Egress => commands::egress::run(&app),
+                Command::Fleet { action } => commands::fleet::run(&app, &action),
+                Command::Desktop { action } => commands::desktop::run(&app, &action),
                 Command::Web { action } => commands::web::run(&app, &action),
                 Command::Subagent {
                     role,

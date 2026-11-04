@@ -41,6 +41,7 @@ The table lists the tools in the order the server reports them. The class is the
 | `document_inspect` | READ_ONLY | Only when `[web] enabled`. Reads a saved download by source id, or a file in the project: text, a PDF's pages and text, a zip, tar or tar.gz listing. |
 | `browser_navigate`, `browser_snapshot`, `browser_action` | NETWORK | Only when `[web] enabled` and `[web.browser] enabled`. A managed Chromium; see [The managed browser](../guide/web-browser.md). Refused inside the tool unless `security.network = "allow"`. |
 | `browser_close` | READ_ONLY | The same condition. Closes a session; always allowed so a session can be freed. |
+| `window_screenshot` | EXECUTE_SAFE or EXECUTE_RISKY (as the program) | Only when `[desktop] screenshots_enabled`, and only on Windows. Starts a program under the `run_command` rules, takes a picture of its window only, stops it. See [Window screenshots](../guide/window-screenshots.md). |
 
 Any tool name the server does not know is blocked, including the names a general browser server would offer (`browser_evaluate`,
 `browser_run_code`, a raw DevTools command, `browser_install`). The browser tools have no way to run a script, choose a file path or change

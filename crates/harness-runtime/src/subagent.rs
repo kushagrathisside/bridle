@@ -144,7 +144,10 @@ pub fn answer(
     limits: Limits,
 ) -> Result<Outcome, String> {
     let (inputs, inputs_left_out) = subagent::bound_inputs(inputs, limits);
-    let names: Vec<&str> = inputs.iter().map(|input| input.name.as_str()).collect();
+    let known: Vec<(&str, Option<usize>)> = inputs
+        .iter()
+        .map(|input| (input.name.as_str(), Some(input.text.lines().count())))
+        .collect();
     let started = Instant::now();
     let response = provider
         .chat(&chat_request(req, &inputs))
@@ -153,7 +156,7 @@ pub fn answer(
     let content = response
         .content
         .ok_or_else(|| "the subagent model gave no text".to_owned())?;
-    let answer = subagent::parse_answer(&content, &names)
+    let answer = subagent::parse_answer_in(&content, &known)
         .map_err(|reject| format!("the subagent answer broke the contract: {reject}"))?;
     let rendered = subagent::render(req.role, &answer, inputs_left_out);
     Ok(Outcome {

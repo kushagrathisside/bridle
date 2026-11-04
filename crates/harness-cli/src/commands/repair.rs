@@ -74,6 +74,12 @@ pub fn repair_project(workspace: &Path) -> Vec<String> {
             "skipped the steps that need no run to be alive: {why}"
         )),
     }
+    if let Some(swap) = harness_runtime::scheduler::Swap::pending(workspace) {
+        lines.push(format!(
+            "an unfinished model swap is recorded ({:?} were stopped for the fleet): run `bridle fleet recover` to put them back (not done here, because starting a model takes memory and time)",
+            swap.stopped
+        ));
+    }
     let state = identity::state_dir(workspace);
     let web = state.join("web");
     let parts = remove_parts(&web.join("downloads"), Duration::from_secs(300))

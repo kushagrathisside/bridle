@@ -18,8 +18,8 @@ Bridle is built for one developer's daily work first. It needs no cloud service:
 machine through [llama.cpp](https://github.com/ggml-org/llama.cpp), and the only network use is the one you turn on.
 
 **Status:** version 0.1.0. Native Windows only, verified on one machine (Windows 11, RTX 4060 Laptop with 8 GB of VRAM, 16 GB
-of RAM). Web research and a managed browser exist, off by default (the providers are tested against fake servers only); the small-model
-sub-agent fleet is planned, not built. See [Status and known limits](#status-and-known-limits).
+of RAM). Web research, a managed browser, window screenshots and a small-model fleet with a scheduler exist, off by default (the web
+providers are tested against fake servers only; the fleet's answers are not graded). See [Status and known limits](#status-and-known-limits).
 
 ---
 
@@ -548,8 +548,9 @@ setting were verified in the real window on 2026-11-03.
 - **No approvals.** `ask` is never allowed, so network, destructive and risky commands are denied, not offered for confirmation.
 - **One conversation at a time** in the window, and images are limited to 4 MiB.
 - **The team works in Solo mode.** One model answers every member, one member at a time, in the project's working copy. Members are
-  prompts and tools, not separate models, and how well a 9B model plays each role is not measured. The small-model fleet, the Git layer
-  (leases, worktrees) and a model-based pick for a tagged team are planned, not built. Checkpoints and undo for a member's turn are built.
+  prompts and tools, not separate models, and how well a 9B model plays each role is not measured. The small-model fleet and its scheduler
+  are built (see [the fleet](docs/guide/fleet.md)) but not yet used by the board runner; worktrees for parallel engineers and a
+  model-based pick for a tagged team are planned, not built. Checkpoints and undo for a member's turn are built.
 - **No installer program and no automatic update.** `install.cmd` copies the executable and edits your user `PATH`.
 - **`bridle > file.txt` or `bridle | more`** keeps the pipe or file open until the window closes, because the detached window inherits the handle.
 - **Syntactic code index.** `find_references` matches identifiers by spelling and does not resolve imports, types or overloads. There is
@@ -572,15 +573,16 @@ setting were verified in the real window on 2026-11-03.
 ## Roadmap
 
 The first slice of the team, the board and the ideas queue is built (see [Team and board](docs/guide/team-and-board.md)). The rest is
-planned in [docs/spec/team-subagents-ideas-plan.md](docs/spec/team-subagents-ideas-plan.md), and none of it is built yet:
+planned in [docs/spec/team-subagents-ideas-plan.md](docs/spec/team-subagents-ideas-plan.md), and each item says how much of it is built:
 
 1. **The rest of the Git layer.** Checkpoints, per-issue undo, a project lock, recovery of a cut-short run, file leases, a stale-write
    check, a shadow repository for folders without Git, and `bridle doctor --repair` are built (see
    [Runs, checkpoints and recovery](docs/reference/run-recovery.md)). Still planned: worktrees for parallel engineers and the integration
    step.
-2. **Sub-agents on small models.** A manager model (Qwen3.5-4B is the candidate) and workers (Granite-4.0-H-Micro and H-1B for code,
-   LFM2.5 for reading) on the GPU with the 9B model unloaded, run as parallel slots of one server each. Measured against the 9B before
-   anything is adopted, and bound by the GPU memory guard.
+2. **Sub-agents on small models.** The fleet, the scheduler and a parallel worker are built (see [the fleet](docs/guide/fleet.md)): a
+   manager and a worker (Granite-4.0-H-Micro and H-1B) are loaded with the 9B model unloaded, and eight tasks ran 3.7 times faster than
+   one at a time. Still planned: a manager that plans work (Qwen3.5-4B is the candidate), use inside the board runner, and a measurement
+   against the 9B before anything is adopted.
 3. **The rest of web research.** Search, page reading, downloads, a managed browser, PDF text and archive listing are built (see
    [Web research](docs/guide/web-research.md) and [The managed browser](docs/guide/web-browser.md)). Still planned: crawling, academic and
    news providers, and an evaluation suite for research quality. Network access stays off by default.

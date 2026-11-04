@@ -167,7 +167,12 @@ fn status(app: &App, slot: Option<&str>) -> anyhow::Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn serve(app: &App, slot: &str, detach: bool, wait_secs: u64) -> anyhow::Result<ExitCode> {
+pub(crate) fn serve(
+    app: &App,
+    slot: &str,
+    detach: bool,
+    wait_secs: u64,
+) -> anyhow::Result<ExitCode> {
     app.require_valid_config()?;
     check_slot_name(slot)?;
     let plan = plan_serve(&app.config, slot)?;
@@ -285,11 +290,17 @@ fn check_one_gpu_model(app: &App, slot: &str) -> anyhow::Result<()> {
     if !is_gpu(slot) {
         return Ok(());
     }
+    // The slots of an enabled fleet are meant to run together (the scheduler checks that they fit); they may share the GPU.
+    let together = |a: &str, b: &str| {
+        app.config.fleet.enabled
+            && app.config.fleet.slots.iter().any(|s| s == a)
+            && app.config.fleet.slots.iter().any(|s| s == b)
+    };
     for other in app
         .config
         .models
         .keys()
-        .filter(|name| name.as_str() != slot && is_gpu(name))
+        .filter(|name| name.as_str() != slot && is_gpu(name) && !together(name, slot))
     {
         let pid_file = pid_path(&app.state_dir(), other);
         if let Some(record) = read_record(&pid_file)?

@@ -834,6 +834,84 @@ fn check_web(cfg: &Config, report: &mut Report) {
         report.error("V48", "web.max_download_mb", "must be between 1 and 2048");
     }
     check_browser(cfg, report);
+    check_desktop(cfg, report);
+    check_fleet(cfg, report);
+}
+
+/// V51: a fleet names slots that exist and can be started, a worker among them, and sane counts.
+fn check_fleet(cfg: &Config, report: &mut Report) {
+    let fleet = &cfg.fleet;
+    if !fleet.enabled {
+        return;
+    }
+    if fleet.slots.is_empty() || fleet.slots.len() > 4 {
+        report.error(
+            "V51",
+            "fleet.slots",
+            "name one to four slots that run together",
+        );
+    }
+    for slot in &fleet.slots {
+        match cfg.models.get(slot) {
+            None => report.error(
+                "V51",
+                "fleet.slots",
+                format!("slot `{slot}` is not defined under [models]"),
+            ),
+            Some(model) if model.launch.is_none() => report.error(
+                "V51",
+                "fleet.slots",
+                format!("slot `{slot}` has no [launch] section, so Bridle cannot start it"),
+            ),
+            Some(_) => {}
+        }
+    }
+    if !fleet.slots.contains(&fleet.worker) {
+        report.error(
+            "V51",
+            "fleet.worker",
+            "the worker must be one of fleet.slots",
+        );
+    }
+    if !fleet.manager.is_empty() && !fleet.slots.contains(&fleet.manager) {
+        report.error(
+            "V51",
+            "fleet.manager",
+            "the manager, when set, must be one of fleet.slots",
+        );
+    }
+    if fleet.swap_budget > 10 {
+        report.error("V51", "fleet.swap_budget", "at most 10");
+    }
+    if !(1..=16).contains(&fleet.parallel) {
+        report.error("V51", "fleet.parallel", "must be between 1 and 16");
+    }
+    if let Some(launch) = cfg
+        .models
+        .get(&fleet.worker)
+        .and_then(|m| m.launch.as_ref())
+        && usize::try_from(launch.parallel).unwrap_or(usize::MAX) < fleet.parallel
+    {
+        report.warning(
+            "V51",
+            "fleet.parallel",
+            format!(
+                "the worker's server has {} slot(s) (launch.parallel); {} tasks at once will queue",
+                launch.parallel, fleet.parallel
+            ),
+        );
+    }
+}
+
+/// V50: the window screenshot wait is bounded.
+fn check_desktop(cfg: &Config, report: &mut Report) {
+    if !(1_000..=120_000).contains(&cfg.desktop.max_wait_ms) {
+        report.error(
+            "V50",
+            "desktop.max_wait_ms",
+            "must be between 1000 and 120000",
+        );
+    }
 }
 
 /// V49: the managed browser's limits, and that it is only on together with web research.
@@ -1294,6 +1372,50 @@ mod tests {
             found.iter().all(|i| i.rule != rule),
             "expected no {rule}, got {found:#?}"
         );
+    }
+
+    #[test]
+    fn a_fleet_names_slots_that_exist_and_a_worker_among_them() {
+        let v51 = |cfg: &Config| -> Vec<String> {
+            issues(cfg)
+                .into_iter()
+                .filter(|i| i.rule == "V51" && i.severity == Severity::Error)
+                .map(|i| i.path)
+                .collect()
+        };
+        assert!(v51(&baseline()).is_empty(), "off by default");
+        let mut cfg = baseline();
+        cfg.fleet.enabled = true;
+        assert!(v51(&cfg).contains(&"fleet.slots".to_owned()), "no slots");
+        cfg.fleet.slots = vec!["nope".into()];
+        cfg.fleet.worker = "nope".into();
+        assert!(
+            v51(&cfg).contains(&"fleet.slots".to_owned()),
+            "an undefined slot"
+        );
+        cfg.fleet.slots = vec!["main".into()];
+        cfg.fleet.worker = "other".into();
+        assert!(v51(&cfg).contains(&"fleet.worker".to_owned()));
+        cfg.fleet.worker = "main".into();
+        cfg.fleet.manager = "elsewhere".into();
+        assert!(v51(&cfg).contains(&"fleet.manager".to_owned()));
+        cfg.fleet.manager = String::new();
+        assert!(v51(&cfg).is_empty(), "{:?}", v51(&cfg));
+        cfg.fleet.parallel = 0;
+        assert!(v51(&cfg).contains(&"fleet.parallel".to_owned()));
+        cfg.fleet.parallel = 4;
+        cfg.fleet.swap_budget = 99;
+        assert!(v51(&cfg).contains(&"fleet.swap_budget".to_owned()));
+    }
+
+    #[test]
+    fn the_window_screenshot_wait_is_bounded() {
+        assert_no_rule(&baseline(), "V50");
+        let mut cfg = baseline();
+        cfg.desktop.max_wait_ms = 10;
+        assert_issue(&cfg, "V50", Severity::Error, "desktop.max_wait_ms");
+        cfg.desktop.max_wait_ms = 10 * 60 * 1000;
+        assert_issue(&cfg, "V50", Severity::Error, "desktop.max_wait_ms");
     }
 
     #[test]

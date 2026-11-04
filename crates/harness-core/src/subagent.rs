@@ -113,7 +113,7 @@ pub struct Answer {
     /// The model's own estimate, not a calibrated probability. Absent when the model gave none.
     pub confidence: Option<f64>,
     pub recommendation: Option<String>,
-    /// References that named no input. Their findings are kept without a reference.
+    /// References that named no input, or a line the input does not have. Their findings are kept without a reference.
     pub unverified_references: usize,
     /// Findings beyond `MAX_FINDINGS`, cut.
     pub cut_findings: usize,
@@ -163,6 +163,15 @@ pub fn system_prompt(role: Role) -> String {
 
 /// Checks one answer against the contract. `input_names` are the inputs the call gave; a reference must name one of them.
 pub fn parse_answer(text: &str, input_names: &[&str]) -> Result<Answer, Reject> {
+    let inputs: Vec<(&str, Option<usize>)> = input_names.iter().map(|name| (*name, None)).collect();
+    parse_answer_in(text, &inputs)
+}
+
+/// As [`parse_answer`], and a reference's line number must also exist: each input comes with its number of lines (`None` when it is
+/// not known). A small model that is not shown line numbers has to count, and counts wrongly (a real run cited line 4105 of a file
+/// of 526 lines); a reference to a line the input does not have is dropped and counted like a reference to an input that is not there.
+pub fn parse_answer_in(text: &str, inputs: &[(&str, Option<usize>)]) -> Result<Answer, Reject> {
+    let input_names: Vec<&str> = inputs.iter().map(|(name, _)| *name).collect();
     let body = lfm::strip_fence(text.trim());
     let value: Value = serde_json::from_str(body).map_err(|_| Reject::NotJson)?;
     let object = value.as_object().ok_or(Reject::NotAnObject)?;
@@ -206,7 +215,7 @@ pub fn parse_answer(text: &str, input_names: &[&str]) -> Result<Answer, Reject> 
             .map(str::trim)
             .filter(|r| !r.is_empty())
             // With exactly one input, a bare line number (`2`, `line:2`, `line 2`) can only mean that input.
-            .map(|r| match input_names {
+            .map(|r| match input_names.as_slice() {
                 [only] => match bare_line(r) {
                     Some(line) => format!("{only}:{line}"),
                     None => r.to_owned(),
@@ -214,7 +223,7 @@ pub fn parse_answer(text: &str, input_names: &[&str]) -> Result<Answer, Reject> 
                 _ => r.to_owned(),
             })
             .and_then(|r| {
-                if references_input(&r, input_names) {
+                if references_input(&r, inputs) {
                     Some(r)
                 } else {
                     unverified_references += 1;
@@ -264,20 +273,28 @@ fn bare_line(reference: &str) -> Option<&str> {
     (!line.is_empty() && line.chars().all(|c| c.is_ascii_digit())).then_some(line)
 }
 
-/// Whether `reference` names one of the inputs, as `name` or `name:line` with a positive line number.
-fn references_input(reference: &str, input_names: &[&str]) -> bool {
+/// Whether `reference` names one of the inputs, as `name` or `name:line` with a positive line number that the input has.
+fn references_input(reference: &str, inputs: &[(&str, Option<usize>)]) -> bool {
     let (name, line) = match reference.rsplit_once(':') {
         Some((name, line)) if line.chars().all(|c| c.is_ascii_digit()) && !line.is_empty() => {
             (name, Some(line))
         }
         _ => (reference, None),
     };
-    if let Some(line) = line
-        && line.parse::<u64>().map_or(true, |n| n == 0)
-    {
+    let number = match line {
+        Some(digits) => match digits.parse::<usize>() {
+            Ok(n) if n > 0 => Some(n),
+            _ => return false,
+        },
+        None => None,
+    };
+    let Some((_, lines)) = inputs.iter().find(|(known, _)| *known == name) else {
         return false;
+    };
+    match (number, lines) {
+        (Some(n), Some(count)) => n <= *count,
+        _ => true,
     }
-    input_names.contains(&name)
 }
 
 /// The text with control characters replaced by spaces, trimmed, and cut to `max` characters.
@@ -317,7 +334,7 @@ pub fn render(role: Role, answer: &Answer, inputs_left_out: usize) -> String {
     }
     if answer.unverified_references > 0 {
         out.push_str(&format!(
-            "{} reference(s) named no input and were dropped\n",
+            "{} reference(s) named no input, or a line the input does not have, and were dropped\n",
             answer.unverified_references
         ));
     }
@@ -419,6 +436,26 @@ mod tests {
         assert_eq!(answer.findings.len(), 2);
         assert!(answer.findings.iter().all(|f| f.reference.is_none()));
         assert_eq!(answer.unverified_references, 2);
+    }
+
+    #[test]
+    fn a_reference_to_a_line_the_input_does_not_have_is_dropped() {
+        let answer = parse_answer_in(
+            r#"{"summary":"s","findings":[{"text":"in range","ref":"a.rs:526"},{"text":"past the end","ref":"a.rs:4105"},{"text":"no line","ref":"a.rs"},{"text":"unknown size","ref":"b.rs:4105"}]}"#,
+            &[("a.rs", Some(526)), ("b.rs", None)],
+        )
+        .unwrap();
+        let refs: Vec<_> = answer
+            .findings
+            .iter()
+            .map(|f| f.reference.as_deref())
+            .collect();
+        assert_eq!(
+            refs,
+            vec![Some("a.rs:526"), None, Some("a.rs"), Some("b.rs:4105")]
+        );
+        assert_eq!(answer.unverified_references, 1);
+        assert!(render(Role::Explore, &answer, 0).contains("a line the input does not have"));
     }
 
     #[test]

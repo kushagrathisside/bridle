@@ -88,6 +88,16 @@ The project has not been published, so the version below is for the repository o
   file limit and a 200 MB stop; **`bridle doctor --repair`**; and `document_inspect` now reads a **PDF's** pages, title, author and text and
   **lists** zip, tar and tar.gz archives (names that would unpack outside their folder are flagged; nothing is extracted), with a DEFLATE
   decoder written for it.
+- Window screenshots (ADR-0021), off by default and machine-config only (`[desktop]`, rule V50): the tool `window_screenshot` and
+  `bridle desktop screenshot PROGRAM` start a program under the same rules as `run_command`, wait for its window, take a picture of that
+  window only (the process tree Bridle started; never the desktop or other windows), keep the PNG as a source record and stop the program.
+  Windows only; tried on one program.
+- The small-model fleet and its scheduler (ADR-0022), off by default and machine-config only (`[fleet]`, rule V51): `bridle fleet status |
+  up | down | recover | run`. A deterministic scheduler checks that the fleet fits in video memory before anything is stopped, counts
+  swaps against a budget, and writes a swap record (`.bridle/swap.json`) before the first process is stopped so that a crash is put
+  right by `fleet recover`. One worker server with several slots runs the `explore` and `summarise` roles several tasks at a time
+  (3.7 times faster than one at a time on eight tasks with Granite-4.0-H-1B). The video-memory estimator reads per-layer attention
+  head counts for hybrid models.
 
 ### Fixed
 
@@ -98,6 +108,8 @@ The project has not been published, so the version below is for the repository o
 
 ### Changed
 
+- A sub-agent answer's reference is dropped (and counted) when it names a line that the input does not have, not only when it names an
+  input that is not there. A real run had cited line 4105 of a file of 526 lines.
 - The product name is Bridle everywhere (ADR-0018): `bridle.toml`, `.bridle/`, `BRIDLE_*`, the `bridle` machine config folder
   and the `bridle_<tool>` names in OpenCode. The old `local-agent` names are read as a fallback and never written.
 - The shipped `local-only` profile uses a 65,536-token context and loads the vision projector in system memory.
