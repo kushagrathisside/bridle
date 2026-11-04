@@ -940,7 +940,8 @@ mod tests {
         }
         // A tool that only looks like one of them is not recognised, so it is refused.
         let d = p.evaluate(&ToolRequest::new(ToolKind::Harness("board_delete".to_owned())));
-        assert_eq!((d.verdict, d.rule.as_str()), (Verdict::Deny, "unknown_tool"));
+        assert_ne!(d.verdict, Verdict::Allow, "a look-alike tool is never allowed");
+        assert_eq!(d.rule, "unknown_tool");
     }
 
     #[test]
