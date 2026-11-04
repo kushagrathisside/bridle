@@ -354,7 +354,11 @@ fn brief(issue: &Issue) -> String {
             text.push_str(&format!("- {item}\n"));
         }
     }
-    if issue.comments.iter().any(|c| c.text.starts_with(NOT_PLANNED)) {
+    if issue
+        .comments
+        .iter()
+        .any(|c| c.text.starts_with(NOT_PLANNED))
+    {
         text.push_str("\nIMPORTANT: your last attempt created no issues. Call board_plan once now, with every step, before you answer.\n");
     }
     text.push_str("\nDo the work, say what you did with board_comment, and move the issue on with board_update.");
@@ -391,7 +395,10 @@ pub fn run_issue(app: AppHandle, bridge: State<'_, Bridge>, id: String, slot: St
         return fail("a turn is already running; stop it or wait for it to finish");
     }
     // The project's lock and a checkpoint of the files, before anything changes. Refuses in the middle of a merge or rebase.
-    let guard = match workspace_of(&args).map_err(|e| format!("{e:#}")).and_then(|ws| RunGuard::begin(&ws, &id)) {
+    let guard = match workspace_of(&args)
+        .map_err(|e| format!("{e:#}"))
+        .and_then(|ws| RunGuard::begin(&ws, &id))
+    {
         Ok(guard) => guard,
         Err(error) => return fail(error),
     };
@@ -464,7 +471,13 @@ pub fn run_issue(app: AppHandle, bridge: State<'_, Bridge>, id: String, slot: St
 }
 
 /// Brings the board in step with how a member's turn ended, when the member did not do it themselves.
-pub fn finish_member_turn(bridge: &Bridge, active: &Active, end: &TurnEnd, answer: Option<&str>, guard: Option<RunGuard>) {
+pub fn finish_member_turn(
+    bridge: &Bridge,
+    active: &Active,
+    end: &TurnEnd,
+    answer: Option<&str>,
+    guard: Option<RunGuard>,
+) {
     settle_issue(bridge, active, end, answer);
     // The checkpoint after the run, and a note on the issue when the files changed.
     let Some(guard) = guard else { return };
@@ -475,7 +488,9 @@ pub fn finish_member_turn(bridge: &Bridge, active: &Active, end: &TurnEnd, answe
         TurnEnd::Failed(_) => "failed",
     };
     let finished = guard.finish(outcome);
-    let (Ok(store), Ok(ws)) = (board(bridge), workspace_of(&bridge.args())) else { return };
+    let (Ok(store), Ok(ws)) = (board(bridge), workspace_of(&bridge.args())) else {
+        return;
+    };
     if let Some(note) = finished.note {
         let _ = store.comment("bridle", &active.issue, &note);
     } else if let (Some(before), Some(after)) = (&finished.before, &finished.after)
@@ -483,8 +498,20 @@ pub fn finish_member_turn(bridge: &Bridge, active: &Active, end: &TurnEnd, answe
         && !files.is_empty()
     {
         let shown: Vec<&str> = files.iter().take(8).map(String::as_str).collect();
-        let more = if files.len() > 8 { format!(" and {} more", files.len() - 8) } else { String::new() };
-        let _ = store.comment("bridle", &active.issue, &format!("The run changed {} file(s): {}{more}. Undo changes on the board puts them back.", files.len(), shown.join(", ")));
+        let more = if files.len() > 8 {
+            format!(" and {} more", files.len() - 8)
+        } else {
+            String::new()
+        };
+        let _ = store.comment(
+            "bridle",
+            &active.issue,
+            &format!(
+                "The run changed {} file(s): {}{more}. Undo changes on the board puts them back.",
+                files.len(),
+                shown.join(", ")
+            ),
+        );
     }
 }
 
@@ -515,12 +542,26 @@ fn settle_issue(bridge: &Bridge, active: &Active, end: &TurnEnd, answer: Option<
         .any(|c| c.status.is_open());
     // A project manager who ends a turn without having split the work did not do the job. The issue is given back to her, up to
     // twice, with a reminder in her brief; after that it is blocked so a person looks at it.
-    let planner = roster.member(&active.member).and_then(|m| roster.role(&m.role)).is_some_and(|r| r.team == "pm");
+    let planner = roster
+        .member(&active.member)
+        .and_then(|m| roster.role(&m.role))
+        .is_some_and(|r| r.team == "pm");
     let no_children = current.children(&active.issue).is_empty();
-    let tries = issue.comments.iter().filter(|c| c.text.starts_with(NOT_PLANNED)).count();
+    let tries = issue
+        .comments
+        .iter()
+        .filter(|c| c.text.starts_with(NOT_PLANNED))
+        .count();
     let (to, note): (Status, Option<String>) = match end {
-        TurnEnd::Done if planner && no_children && tries < 2 => (Status::Ready, Some(format!("{NOT_PLANNED} Trying again."))),
-        TurnEnd::Done if planner && no_children => (Status::Blocked, Some(format!("{NOT_PLANNED} It was tried three times. Split the work by hand or ask again."))),
+        TurnEnd::Done if planner && no_children && tries < 2 => {
+            (Status::Ready, Some(format!("{NOT_PLANNED} Trying again.")))
+        }
+        TurnEnd::Done if planner && no_children => (
+            Status::Blocked,
+            Some(format!(
+                "{NOT_PLANNED} It was tried three times. Split the work by hand or ask again."
+            )),
+        ),
         TurnEnd::Done if open_children => return, // it is waiting for the issues it created
         TurnEnd::Done if review => (Status::InReview, None),
         TurnEnd::Done => (Status::Done, None),
@@ -554,9 +595,17 @@ pub fn undo_issue(bridge: State<'_, Bridge>, id: String) -> Value {
     };
     match gitlayer::undo(&ws, &before, &after) {
         Ok(report) => {
-            let mut text = format!("Undid the latest run: put back {} file(s), removed {} file(s) it created.", report.restored.len(), report.removed.len());
+            let mut text = format!(
+                "Undid the latest run: put back {} file(s), removed {} file(s) it created.",
+                report.restored.len(),
+                report.removed.len()
+            );
             if !report.skipped.is_empty() {
-                let names: Vec<String> = report.skipped.iter().map(|(p, why)| format!("{p} ({why})")).collect();
+                let names: Vec<String> = report
+                    .skipped
+                    .iter()
+                    .map(|(p, why)| format!("{p} ({why})"))
+                    .collect();
                 text.push_str(&format!(" Left alone: {}.", names.join(", ")));
             }
             if let Ok(store) = board(&bridge) {
