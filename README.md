@@ -494,10 +494,10 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 ```
 
-- **Size and tests.** About 58,000 lines of Rust in four crates, and 997 test functions in the source. The last full run on 2026-11-04
-  passed 978 tests with none failed and 5 ignored. About 500 dependency crates are listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+- **Size and tests.** About 59000 lines of Rust in four crates, and 1006 test functions in the source. The last full run on 2026-11-04
+  passed 987 tests with none failed and 5 ignored. About 500 dependency crates are listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 - **Style.** `unsafe` is forbidden, clippy runs with `-D warnings`, and there is no `unwrap` outside tests.
-- **End-to-end suite.** `tools/e2e` launches the window on a throwaway project with WebView2's debug port open, runs 19 named checks
+- **End-to-end suite.** `tools/e2e` launches the window on a throwaway project with WebView2's debug port open, runs 22 named checks
   through a bounded client (a hard watchdog, read timeouts and size caps), closes the window, and verifies that no `bridle.exe` or
   `llama-server.exe` is left running. See [tools/e2e/README.md](tools/e2e/README.md).
 - **Build limits.** The tested machine has 16 GB of RAM and an 8 GB GPU, so builds run one at a time with `CARGO_BUILD_JOBS=4`.
@@ -546,7 +546,7 @@ setting were verified in the real window on 2026-11-03.
 - **One conversation at a time** in the window, and images are limited to 4 MiB.
 - **The team works in Solo mode.** One model answers every member, one member at a time, in the project's working copy. Members are
   prompts and tools, not separate models, and how well a 9B model plays each role is not measured. The small-model fleet, the Git layer
-  (checkpoints, undo, worktrees, locks) and a model-based pick for a tagged team are planned, not built.
+  (leases, worktrees) and a model-based pick for a tagged team are planned, not built. Checkpoints and undo for a member's turn are built.
 - **No installer program and no automatic update.** `install.cmd` copies the executable and edits your user `PATH`.
 - **`bridle > file.txt` or `bridle | more`** keeps the pipe or file open until the window closes, because the detached window inherits the handle.
 - **Syntactic code index.** `find_references` matches identifiers by spelling and does not resolve imports, types or overloads. There is
@@ -566,8 +566,9 @@ setting were verified in the real window on 2026-11-03.
 The first slice of the team, the board and the ideas queue is built (see [Team and board](docs/guide/team-and-board.md)). The rest is
 planned in [docs/spec/team-subagents-ideas-plan.md](docs/spec/team-subagents-ideas-plan.md), and none of it is built yet:
 
-1. **A Git layer for shared work.** Checkpoints under `refs/bridle/`, undo for a step, a repository lock, file leases, worktrees for
-   parallel engineers, and recovery of a run after a crash, with a failure matrix and a manual runbook.
+1. **The rest of the Git layer.** Checkpoints, per-issue undo, a project lock and recovery of a cut-short run are built (see
+   [Runs, checkpoints and recovery](docs/reference/run-recovery.md)). Still planned: file leases, a stale-write check, worktrees for
+   parallel engineers, and `doctor --repair`.
 2. **Sub-agents on small models.** A manager model (Qwen3.5-4B is the candidate) and workers (Granite-4.0-H-Micro and H-1B for code,
    LFM2.5 for reading) on the GPU with the 9B model unloaded, run as parallel slots of one server each. Measured against the 9B before
    anything is adopted, and bound by the GPU memory guard.

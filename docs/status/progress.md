@@ -49,7 +49,40 @@ Branch `team-board`. Windows only; checked on the tested machine (Windows 11, RT
   issues, both worked in order, parent closed); once she created one of two issues and her turn ended blocked. Not reliable yet.
 - **Environment note.** From a session that is not the Claude app the machine config is not in `%APPDATA%\bridle` but in the app's
   virtualised copy under `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\bridle`; set `BRIDLE_HOME` to it to run the model checks.
-- **Not built:** the Git layer, the scheduler, the small-model fleet, search, a model-based pick for a tagged team, and a new README
+- **Git layer (built, second slice).** `harness_cli::gitlayer`: the project lock, a checkpoint before and after each member's turn under
+  `refs/bridle/runs/<issue>/`, a journal, undo from the two checkpoints, preflight (refuses in the middle of a merge or rebase), and recovery of a
+  run cut short. 8 tests on real temporary repositories: the branch, index and stash are untouched; secret files, ignored files and the
+  harness folders are left out; undo restores modified, deleted and created files and leaves a file the person changed since; an unborn
+  branch and a folder with no repository work; one run holds the lock; a run cut short is found and its files saved. Runbook:
+  [run-recovery.md](../reference/run-recovery.md). Not built: leases, the stale-write check, worktrees, a shadow repository for a folder without
+  Git, `doctor --repair`.
+- **Measured: LFM2.5-1.2B-Instruct (Q8_0) as parallel slots of one `llama-server`** (RTX 4060 Laptop, b11756, 4,096 tokens per slot, default
+  cache, 160 new tokens per request; `D:\cargo-target\fleet-bench.py`):
+
+  | Configuration | Aggregate speed | Each request | VRAM added |
+  |---|---|---|---|
+  | GPU, 1 slot | 160 tokens/s | 160 | 1,415 MiB |
+  | GPU, 2 slots | 305 | 153 | 1,463 MiB |
+  | GPU, 4 slots | 483 | 130 | 1,559 MiB |
+  | GPU, 8 slots | **670** | 90 | 1,751 MiB |
+  | CPU, 1 slot (8 threads) | 40 | 40 | none |
+  | CPU, 4 slots | 85 | 22 | none |
+
+  So on the GPU one small model server does about four times the work of the 9B model (about 42 tokens/s) per stream and 16 times in
+  aggregate with 8 slots; eight slots give 4.2 times the throughput of one, not eight. Each extra slot costs about 48 MiB (the default
+  16-bit cache, 12 KiB per token). The buffers beyond the weights were about 230 MiB, far below the 736 MiB the memory guard assumes
+  for the 9B, so the plan's fleet estimates are pessimistic for small models. Load takes 1.5 s with the file cached. Quality on bounded
+  tasks is **not measured**.
+- **Measured again: the project manager with `board_plan`.** Five runs of the same request: 2 made the plan (an engineering and a QA issue,
+  QA waiting for engineering), 3 created no issue and closed her own. A retry was added (the issue goes back to her twice, with a reminder,
+  then blocks); it is not re-measured.
+- **Chat.** A Markdown renderer for the chat (tables with alignment, headings, nested and numbered and task lists, quotes, rules, fenced code
+  with a Copy button, links shown but not followed), a Copy button on each answer and a jump-to-latest button. A table that the model wrote
+  was shown as one line of pipes before.
+- **Explorer (left pane).** Project name and branch, a fuzzy file filter, an Open editors section, Git colours and letters on files
+  and folders, indent guides, the folders you had open remembered for each project, keyboard navigation, drag and drop to move, reveal of the
+  active file. End-to-end checked.
+- **Not built:** the scheduler, the small-model fleet, a model-based pick for a tagged team, and a new README
   screenshot showing the crew rail and the board.
 
 ## 2026-11-03 (later): Bridle names, one `bridle` program, a proxy setting in the app, and Windows-only tooling
