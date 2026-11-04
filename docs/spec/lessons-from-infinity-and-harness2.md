@@ -83,7 +83,13 @@ not: **real verifiers**. `evals/tasks/*` have a `verify.py`, `bridle bench` has 
 
 A Bridle version would be **offline, run by the person, and never live**:
 
-1. **Baseline first.** Add verifier-backed planning tasks (the plan is split into the right issues; dependent issues wait) to
+1. **Baseline first (first measurement done, 2026-11-04).** `bridle eval-agent plan --runs 10` gave the project manager (Qwen3.5-9B,
+   Priya) the request "add `sub(a, b)` to `calc.py`, split into one engineering issue and one QA issue that waits for it" ten times in
+   fresh repositories. Result: two or more child issues **10 of 10**; an engineering issue and a QA issue **8 of 10**; the QA issue
+   waiting for the engineering issue **7 of 10**; **all three 7 of 10**. The failures were an issue assigned to neither role (twice, both
+   ending at the step limit) and one plan with two engineering issues in which the QA issue waited for neither. With ten runs the interval
+   around 7 of 10 is wide (very roughly 35 to 93 percent); it is a baseline to beat, not a rate to quote. The next step is more runs and
+   a second request shape. The remaining text of this step is the plan for a larger set: add verifier-backed planning tasks (the plan is split into the right issues; dependent issues wait) to
    `evals/tasks` and measure the current prompts over many runs. Two runs are not a measurement. This is useful on its own.
 2. **Editable surface: text only.** Role and member prompts, the planner prompt (`team::planner_system`), tool guidance. **Never**:
    the tool policy, the machine configuration, hooks, allow-lists, `security.*`. Candidates are read as text and never executed, as in

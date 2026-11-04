@@ -1,19 +1,287 @@
-/* Accent colours as tokens for both themes. Starlight reads these custom properties, so the rest of the
-   layout keeps its defaults. The contrast of each accent text colour against its background is at least 4.5:1. */
+/* Bridle documentation site: theme for Astro Starlight.
+   Colours are tokens for both themes; Starlight reads the --sl-* properties, so the layout keeps its defaults. The text colours
+   meet a contrast of at least 4.5:1 against their backgrounds. Fonts are system fonts: the site loads nothing from outside. */
+
+:root {
+  --bridle-radius: 12px;
+  --bridle-glow: radial-gradient(60rem 28rem at 78% -8%, rgb(34 138 196 / 0.22), transparent 62%),
+    radial-gradient(40rem 22rem at 6% 8%, rgb(20 160 140 / 0.16), transparent 60%);
+  --sl-font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --sl-font-mono: 'Cascadia Code', 'Cascadia Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 :root[data-theme='light'] {
-  --sl-color-accent-low: #dbeef8;
-  --sl-color-accent: #1d5f8c;
-  --sl-color-accent-high: #123f5e;
+  --sl-color-accent-low: #dcecf7;
+  --sl-color-accent: #14598a;
+  --sl-color-accent-high: #0d3f62;
+  --sl-color-bg: #fbfcfd;
+  --sl-color-bg-nav: #ffffff;
+  --sl-color-bg-sidebar: #f5f8fa;
+  --sl-color-hairline: #dde5eb;
+  --bridle-card: #ffffff;
+  --bridle-ok: #0f6b4f;
+  --bridle-no: #a3261f;
 }
 
 :root[data-theme='dark'] {
-  --sl-color-accent-low: #143a50;
+  --sl-color-accent-low: #0f3550;
   --sl-color-accent: #7fcbee;
   --sl-color-accent-high: #c4e8f8;
+  --sl-color-bg: #0d1317;
+  --sl-color-bg-nav: #0f171c;
+  --sl-color-bg-sidebar: #0f171c;
+  --sl-color-hairline: #22313a;
+  --bridle-card: #131c22;
+  --bridle-ok: #6fd6b0;
+  --bridle-no: #ff9a92;
 }
 
 /* A visible focus ring for keyboard users on every interactive element. */
 :focus-visible {
   outline: 2px solid var(--sl-color-accent);
   outline-offset: 2px;
+}
+
+/* ---- Text -------------------------------------------------------------------------------------------------------------- */
+
+.sl-markdown-content h2,
+.sl-markdown-content h3 {
+  letter-spacing: -0.012em;
+}
+
+.sl-markdown-content h2 {
+  margin-top: 2.6rem;
+}
+
+.sl-markdown-content :not(pre) > code {
+  border-radius: 6px;
+  padding: 0.12em 0.4em;
+}
+
+.sl-markdown-content table {
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 0.92rem;
+}
+
+.sl-markdown-content table th {
+  background: var(--sl-color-accent-low);
+  color: var(--sl-color-text-accent);
+}
+
+/* ---- Cards and code ---------------------------------------------------------------------------------------------------- */
+
+.card {
+  background: var(--bridle-card);
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: var(--bridle-radius);
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  border-color: var(--sl-color-accent);
+  box-shadow: 0 8px 24px rgb(15 40 60 / 0.1);
+}
+
+.sl-link-card {
+  border-radius: var(--bridle-radius);
+  background: var(--bridle-card);
+  transition: transform 0.16s ease, border-color 0.16s ease;
+}
+
+.sl-link-card:hover {
+  transform: translateY(-2px);
+}
+
+.expressive-code .frame {
+  border-radius: 10px;
+}
+
+/* ---- The home page ----------------------------------------------------------------------------------------------------- */
+
+[data-has-hero] .page {
+  background: var(--bridle-glow);
+}
+
+[data-has-hero] .hero {
+  padding-block: clamp(2.5rem, 6vw, 5rem);
+  gap: clamp(2rem, 5vw, 4rem);
+}
+
+@media (min-width: 72rem) {
+  [data-has-hero] .hero {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.25fr);
+  }
+}
+
+[data-has-hero] .hero h1 {
+  font-size: clamp(3rem, 8vw, 5.25rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  background: linear-gradient(120deg, var(--sl-color-accent-high), var(--sl-color-accent) 55%, #1b9d83);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+[data-has-hero] .hero .tagline {
+  font-size: clamp(1.05rem, 2.2vw, 1.3rem);
+  line-height: 1.5;
+  max-width: 34rem;
+}
+
+[data-has-hero] .hero img {
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgb(10 40 70 / 0.28);
+}
+
+.manifesto {
+  margin: 1rem 0 2.5rem;
+  padding: clamp(1.5rem, 4vw, 2.5rem);
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 18px;
+  background: var(--bridle-card);
+  text-align: center;
+}
+
+.manifesto__line {
+  margin: 0;
+  font-size: clamp(1.6rem, 4.5vw, 2.6rem);
+  font-weight: 750;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+
+.manifesto__line--accent {
+  color: var(--sl-color-accent);
+}
+
+.manifesto__sub {
+  margin: 1.1rem auto 0;
+  max-width: 36rem;
+  color: var(--sl-color-gray-2);
+}
+
+/* The decision path, drawn with ordinary elements so it follows the theme and reads on a phone. */
+.flow {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1.3fr;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 1.4rem 0;
+}
+
+.flow__node {
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 12px;
+  background: var(--bridle-card);
+  font-weight: 650;
+  text-align: center;
+  line-height: 1.25;
+}
+
+.flow__node small {
+  display: block;
+  margin-top: 0.2rem;
+  font-weight: 450;
+  font-size: 0.78rem;
+  color: var(--sl-color-gray-3);
+}
+
+.flow__node--decide {
+  border-color: var(--sl-color-accent);
+  box-shadow: 0 0 0 3px var(--sl-color-accent-low);
+}
+
+.flow__arrow {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--sl-color-gray-3);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.flow__arrow::after {
+  content: '\2192';
+  display: block;
+  font-size: 1.1rem;
+  letter-spacing: 0;
+  color: var(--sl-color-accent);
+}
+
+.flow__branches {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8rem;
+  margin-top: 0.4rem;
+}
+
+.flow__branch {
+  padding: 0.8rem 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--sl-color-hairline);
+  border-left-width: 4px;
+  background: var(--bridle-card);
+  font-size: 0.92rem;
+}
+
+.flow__branch b {
+  display: block;
+  margin-bottom: 0.15rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.78rem;
+}
+
+.flow__branch--ok {
+  border-left-color: var(--bridle-ok);
+}
+
+.flow__branch--ok b {
+  color: var(--bridle-ok);
+}
+
+.flow__branch--no {
+  border-left-color: var(--bridle-no);
+}
+
+.flow__branch--no b {
+  color: var(--bridle-no);
+}
+
+@media (max-width: 50rem) {
+  .flow {
+    grid-template-columns: 1fr;
+  }
+
+  .flow__arrow::after {
+    content: '\2193';
+  }
+
+  .flow__branches {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Motion ------------------------------------------------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .sl-link-card {
+    transition: none;
+  }
+
+  .card:hover,
+  .sl-link-card:hover {
+    transform: none;
+  }
 }

@@ -1,12 +1,12 @@
 # Notices and background commands
 
-Two small features that belong together. A **background command** runs while the model goes on working. A **notice** is how Bridle tells
-the model that something happened meanwhile. The design, and where the idea comes from (AWS's Infinity), is in
-[ADR-0023](../decisions/0023-notices-background-commands-and-lanes-from-infinity.md).
+These two features belong together. A **background command** runs while the model continues to work. A **notice** is the means by which
+Bridle tells the model that something has happened in the meantime. The design, and the source of the idea (AWS's Infinity), are described
+in [ADR-0023](../decisions/0023-notices-background-commands-and-lanes-from-infinity.md).
 
 ## Notices
 
-After a tool result, Bridle may add a block:
+After a tool result, Bridle may append a block of the following form:
 
 ```text
 [[bridle notices 4433832c4979: added by Bridle after the tool finished, not part of its output]]
@@ -14,53 +14,69 @@ After a tool result, Bridle may add a block:
 [[end of bridle notices 4433832c4979]]
 ```
 
-- **Always on.** There is nothing to switch on: a block appears only when something happened. The server's instructions (and the chat's
-  system prompt) tell the model how a notice looks and give it this server's marker, twelve random hexadecimal digits.
-- **Cannot be forged.** Before the block is added, every tool result is scrubbed of the marker and of the words that open and close the
-  frame. A file, a commit message or a web page that contains a fake notice shows up as `[ [bridle notices ...` and is not one.
-- **A hint, not the record.** A notice can be lost (Bridle ended, too many were waiting). It always names the tool that shows the real
-  state.
-- **Bounded.** At most 32 wait, 400 characters each, 8 are shown at once; dropped ones are counted in the block.
+- **Always available.** Nothing needs to be enabled: a block appears only when there is something to report. The server's instructions
+  (and the chat's system prompt) tell the model how a notice looks and give it the marker of this server, which is twelve random
+  hexadecimal digits.
+- **Resistant to forgery.** Before the block is appended, every tool result is scrubbed of the marker and of the words that open and close
+  the frame. A file, a commit message or a web page that contains a counterfeit notice therefore appears as `[ [bridle notices ...` and is
+  not mistaken for one.
+- **A hint, not the record.** A notice can be lost, for example if Bridle ends or too many are waiting. It always names the tool that shows
+  the true state.
+- **Bounded.** At most 32 notices wait, each of at most 400 characters, and at most eight are shown at a time; any that were dropped are
+  counted in the block.
 
-What can produce a notice today:
+The following events can produce a notice.
 
-| Kind | When |
+| Kind | When it is produced |
 |---|---|
 | `background_finished` | A command started with `command_start` ended, was stopped, or reached its time limit |
-| `file_changed`, `file_gone` | A file the model read or wrote with the file tools was changed (or deleted) on disk by someone else since; the model's own writes do not count. Checked after every tool call, over the 256 most recent files, by size and time |
+| `file_changed`, `file_gone` | A file that the model read or wrote with the file tools has since been changed, or deleted, on disk by someone else. The model's own writes do not count. The check runs after every tool call, covers the 256 most recent files, and compares size and time |
+| `lease_free` | A write that the model was refused, because another run held the file, can now proceed: the holder finished or its claim lapsed |
+| `board_change` | While a member's turn is running, the person changed the issue it is working on, or commented on it |
 
-Board comments, lease releases and fleet events could use the same mechanism; none does yet.
+Events from the fleet could use the same mechanism, but none does so yet.
 
 ## Background commands
 
-Turn them on in the project or machine configuration:
+Enable them in the project or the machine configuration:
 
 ```toml
 [workflow]
-background_commands = true      # offers command_start, command_status, command_stop
+background_commands = true      # offers command_start, command_status and command_stop
 ```
 
-They are off by default because every tool costs prompt tokens on a small context.
+They are disabled by default because every tool consumes prompt tokens, which is significant on a small context.
 
-| Tool | What it does |
+| Tool | Purpose |
 |---|---|
-| `command_start` | `program`, `args`, `cwd`, `timeout_ms` exactly as `run_command`, judged by the same policy and sandbox. Returns an id (`bg-1`) at once |
-| `command_status` | With an id: the state (running, passed, failed, timeout, stopped), the exit code and the last 4 KB of output, redacted. `wait_ms` (up to 10 s) waits for it to end. Without an id: the list |
-| `command_stop` | Ends a command Bridle started, with its whole process tree. Always allowed, so a runaway command can be stopped |
+| `command_start` | Accepts `program`, `args`, `cwd` and `timeout_ms` exactly as `run_command` does, and is judged by the same policy and sandbox. It returns an identifier (`bg-1`) at once |
+| `command_status` | With an identifier, reports the state (running, passed, failed, timeout or stopped), the exit code and the last 4 KB of output, redacted; `wait_ms` (up to ten seconds) waits for the command to end. Without an identifier, it lists the commands |
+| `command_stop` | Ends a command that Bridle started, together with its whole process tree. It is always permitted, so that a runaway command can be stopped |
 
-Limits: three at once, a time limit of 1 s to 10 min (default 5 min), 64 KiB of output kept, sixteen finished commands remembered. The
-commands belong to the tool server of the workspace; when it ends they are stopped. If Bridle itself is killed without a chance to clean
-up, a running command keeps going until it ends.
+The limits are three commands at one time, a time limit of between one second and ten minutes (five minutes by default), 64 KiB of output
+retained, and sixteen finished commands remembered. The commands belong to the tool server of the workspace and are stopped when it ends. If
+Bridle itself is killed without the opportunity to clean up, a running command continues until it finishes. For that reason each running
+command leaves a small record in `.bridle\background\` (the program's name, never its arguments, and the process identifiers), and
+`bridle doctor --repair` stops the commands whose Bridle has gone, after checking that each process identifier still belongs to that program.
 
-A command the policy would not run (a program that is not allowed, a path as the program, shell characters, a working directory outside
-the project) is not started: the answer is the same refusal `run_command` gives.
+A command that the policy would not allow (a program that is not permitted, a path given as the program, shell characters, or a working
+directory outside the project) is not started; the answer is the same refusal that `run_command` gives.
 
-## What was and was not shown
+## Evidence
 
-Run against the real `bridle mcp` over stdio: the instructions carry the marker; a command that ended is announced after the next result,
-once; a file named like a notice frame is neutralised in `git_status`'s text; a command over its time limit is stopped; `command_stop`
-works; a blocked program is not started; a long command does not outlive the server. **Not measured:** whether a 9B model reads a notice
-correctly or uses `command_status` when it should. Infinity's authors say models are mostly trained on synchronous tool calls.
+Run against the real `bridle mcp` over standard input and output, the following were confirmed: the instructions carry the marker; a command
+that ended is announced after the next result, once only; a file named like a notice frame is neutralised in the text of `git_status`; a
+command over its time limit is stopped; `command_stop` works; a blocked program is not started; and a long command does not outlive the
+server.
+
+A real model (Qwen3.5-9B) was also run through scripted scenarios, five runs each. Told how to use the tools, it used `command_start` and
+`command_status` correctly in all five runs. Told only that Bridle would announce the end of the command, it read the result after the
+notice in four of five runs. It tended to call `command_status` repeatedly instead of waiting, up to 21 times in one run, so the tool's
+description and its answer for a running command now say that it should not be polled; in five later runs the calls fell to between none and
+four per run. These samples are small and the two sets of runs differed in timing, so they are indications and not conclusions. A file that
+was changed under the model produced a notice, and the model re-read the file in all five runs; but a control run, in which nobody
+changed the file, showed the same editing failures (the model copies the line-number column of `read_file` into its replacement text), so
+the runs do not show that the notice prevented a failure.
 
 ## Related
 

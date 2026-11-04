@@ -55,7 +55,7 @@ that file is **refused when it has changed since** (you typed in the editor, a f
 
 `bridle doctor --repair` puts right what a crash leaves: it ends leases (only when no run is alive), closes runs cut short (saving the state of
 the files as a checkpoint), removes `bridle-index-*` files from the Git directory, `.part-*` files of unfinished downloads and screenshots, old
-`*.tmp-*` files in `.bridle`, and browser session folders of processes that are gone. It says what it did, does nothing to a live run (it skips
+`*.tmp-*` files in `.bridle`, browser session folders of processes that are gone, and background commands whose Bridle is gone (stopped after checking that the process id still belongs to that program). It says what it did, does nothing to a live run (it skips
 those steps when another Bridle holds the project lock), and is safe to repeat.
 
 ### What Undo does

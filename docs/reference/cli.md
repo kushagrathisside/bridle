@@ -148,6 +148,17 @@ and [ADR-0023](../decisions/0023-notices-background-commands-and-lanes-from-infi
 | `undo` | Puts the project back as it was before the last integration. |
 | `remove NAME` | Deletes a lane: folder, record and checkpoints. |
 
+### `bridle eval-agent`
+
+Runs a **real model** through the chat loop on scripted scenarios and scores what it did. For evaluating Bridle, not for daily use. The model
+server must already be running (`bridle models serve main --detach`). Every scenario runs in a fresh temporary Git repository.
+
+| Command | What it does |
+|---|---|
+| `notices [--runs N] [--slot S] [--max-seconds N] [--out FILE]` | Does the model start a background command, read the notice that says it ended, and re-read a file after a notice that someone else changed it? Includes a control with no change. |
+| `plan [--runs N] [--slot S] [--out FILE]` | The project manager's plan for a request to split: two or more child issues, an engineering and a QA issue, and the QA issue waiting for the engineering one. |
+| `lanes [--slot S] [--out FILE]` | Two turns at the same time, each in its own lane, then `lanes integrate`. |
+
 ### `bridle desktop`
 
 | Command | What it does |

@@ -88,6 +88,19 @@ The project has not been published, so the version below is for the repository o
   file limit and a 200 MB stop; **`bridle doctor --repair`**; and `document_inspect` now reads a **PDF's** pages, title, author and text and
   **lists** zip, tar and tar.gz archives (names that would unpack outside their folder are flagged; nothing is extracted), with a DEFLATE
   decoder written for it.
+- The window's **Info** pane has a **Machine settings** card (the configuration file, the models and runtimes folders, **Show in Explorer** and
+  **Reload**), a **Runtimes** card and a **Plugins** card; the **Models** pane has a **Reload** button and says how to add a model. A new guide,
+  [Adding and updating models, runtimes and plugins](docs/guide/models-runtimes-and-plugins.md), explains each step and when a change takes effect.
+- More notices (ADR-0023): `lease_free` (a write the model was refused because another run held the file can go ahead) and
+  `board_change` (the person changed or commented on the issue a member is working on). Running background commands leave a record in
+  `.bridle/background/`, and `bridle doctor --repair` stops the ones whose Bridle is gone after checking the process id still belongs to them.
+  `command_status` now tells a polling model to wait.
+- `bridle eval-agent notices | plan | lanes`: runs a real model through the chat loop on scripted scenarios and scores it (for evaluating
+  Bridle). First figures, Qwen3.5-9B: the project manager's split into engineering and QA issues with the QA issue waiting, 7 of 10 runs.
+- A documentation site (Astro Starlight, `site/`) with a new home page and theme, the guides for the window, team and board, lanes, the
+  fleet, notices, web research, the browser and window screenshots, and `.github/workflows/site.yml` to publish it to GitHub Pages.
+  Rewritten: the introduction, getting started, installation, status and the documentation index. New: [releasing](docs/project/releasing.md),
+  the whole release process by hand.
 - Background commands (ADR-0023), off by default (`[workflow] background_commands`): `command_start`, `command_status` and
   `command_stop` run a command under the same policy and sandbox as `run_command` while the model goes on; three at once, a time limit of
   at most ten minutes, 64 KiB of output kept; stopped when the tool server ends.
