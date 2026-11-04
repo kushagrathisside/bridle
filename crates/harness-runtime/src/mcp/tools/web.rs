@@ -16,10 +16,12 @@ use sha2::{Digest, Sha256};
 
 use super::{McpTool, ToolContext, ToolOutput, redacted_output};
 use crate::http;
+use crate::web::archive;
 use crate::web::download;
 use crate::web::fetch::Fetcher;
 use crate::web::fusion;
 use crate::web::html;
+use crate::web::pdf;
 use crate::web::providers::{self, Kind, SearchHit, SearchProvider, SearchRequest};
 use crate::web::store::{SourceRecord, Sources, now};
 
@@ -28,6 +30,8 @@ const DEFAULT_CHARS: usize = 12_000;
 const MAX_CHARS: usize = 40_000;
 /// The most of a local file `document_inspect` reads.
 const INSPECT_BYTES: u64 = 4 * 1024 * 1024;
+/// The most of a PDF or a tar that is read for a listing or its text.
+const PDF_BYTES: u64 = 64 * 1024 * 1024;
 
 /// The tools for this configuration: none unless web research is on.
 pub fn tools(config: &Config) -> Vec<Box<dyn McpTool>> {
@@ -499,8 +503,49 @@ pub fn inspect_file(path: &Path, label: &str, max_chars: usize) -> Result<String
                 out.push_str(&format!("\n{t}\n{}", if body.chars().count() > max_chars { "[cut]\n" } else { "" }));
             }
         }
-        "pdf" => out.push_str("\nPDF text extraction is not built yet. This is a PDF; its size and checksum are above.\n"),
-        "zip" | "gzip" | "7z" | "rar" => out.push_str("\nThis is an archive. Listing and unpacking archives is not built yet; nothing was extracted.\n"),
+        "pdf" => {
+            // A PDF can be larger than the first 4 MiB that were read for the checksum; read the rest, up to 64 MiB.
+            let whole = if meta.len() > INSPECT_BYTES && meta.len() <= PDF_BYTES {
+                std::fs::read(path).map_err(|e| format!("cannot read {label}: {e}"))?
+            } else {
+                bytes.clone()
+            };
+            match pdf::read(&whole, max_chars) {
+                Ok(read) => out.push_str(&format!("\n{}", pdf::render(&read))),
+                Err(e) => out.push_str(&format!("\nThe PDF could not be read: {e}\n")),
+            }
+        }
+        "zip" => match archive::list_zip(path) {
+            Ok(listing) => out.push_str(&format!("\n{}", archive::render(&listing, 200))),
+            Err(e) => out.push_str(&format!("\nThis looks like a zip but could not be listed: {e}. Nothing was extracted.\n")),
+        },
+        "gzip" => match archive::gunzip_file(path, 64 * 1024 * 1024) {
+            Ok((inner, complete, packed)) if archive::is_tar(&inner) => {
+                let mut listing = archive::list_tar(&inner, "tar.gz", !complete);
+                listing.total_packed = packed;
+                out.push_str(&format!("\n{}", archive::render(&listing, 200)));
+            }
+            Ok((inner, complete, _)) => {
+                let shown = download::sniff(&inner[..inner.len().min(512)]);
+                if shown == "text" {
+                    let body = String::from_utf8_lossy(&inner);
+                    let t: String = body.chars().take(max_chars).collect();
+                    out.push_str(&format!("\nA gzip file holding text ({} bytes decompressed{}):\n\n{t}\n", inner.len(), if complete { "" } else { ", cut" }));
+                } else {
+                    out.push_str(&format!("\nA gzip file holding {shown} data ({} bytes decompressed); it is not shown.\n", inner.len()));
+                }
+            }
+            Err(e) => out.push_str(&format!("\nThis looks like a gzip file but could not be read: {e}. Nothing was extracted.\n")),
+        },
+        "7z" | "rar" => out.push_str("\nThis is an archive of a kind that is not listed here (only zip, tar and tar.gz are); nothing was extracted.\n"),
+        _ if archive::is_tar(&bytes) => {
+            let whole = if meta.len() > INSPECT_BYTES && meta.len() <= PDF_BYTES {
+                std::fs::read(path).map_err(|e| format!("cannot read {label}: {e}"))?
+            } else {
+                bytes.clone()
+            };
+            out.push_str(&format!("\n{}", archive::render(&archive::list_tar(&whole, "tar", meta.len() > PDF_BYTES), 200)));
+        }
         _ => out.push_str("\nThis file is not text, so its content is not shown.\n"),
     }
     Ok(out)
@@ -513,8 +558,9 @@ impl McpTool for DocumentInspectTool {
         "document_inspect"
     }
     fn description(&self) -> &'static str {
-        "Read a downloaded file (by its source id, such as S-0005) or a file in the project (by path): text, HTML and Markdown are shown; a PDF or \
-         an archive is reported with its size and checksum. Nothing is run or unpacked."
+        "Read a downloaded file (by its source id, such as S-0005) or a file in the project (by path): text, HTML and Markdown are shown; a PDF \
+         gives its pages, title, author and text (when its fonts allow); a zip, tar or tar.gz gives its listing, with names that would unpack \
+         outside their folder flagged. Nothing is run or unpacked."
     }
     fn input_schema(&self) -> Value {
         json!({"type": "object", "properties": {
@@ -815,7 +861,7 @@ mod tests {
             .call(&json!({"path": "p.pdf"}), &c)
             .unwrap();
         assert!(
-            pdf.text.contains("PDF text extraction is not built yet"),
+            pdf.text.contains("PDF 1.7") && pdf.text.contains("no text was found"),
             "{}",
             pdf.text
         );
@@ -902,6 +948,49 @@ mod tests {
             text.matches("https://doc.rust-lang.org").count(),
             2,
             "the per-site cap is relaxed when nothing else is left to show"
+        );
+    }
+    #[test]
+    fn document_inspect_reads_a_pdf_lists_a_tar_and_still_declines_other_binaries() {
+        let dir = tempfile::tempdir().unwrap();
+        let pdf = dir.path().join("paper.pdf");
+        std::fs::write(
+            &pdf,
+            b"%PDF-1.4\n1 0 obj\n<< /Type /Page >>\nendobj\n2 0 obj\n<< /Length 40 >>\nstream\nBT 72 720 Td (Hello PDF world) Tj ET\nendstream\nendobj\n3 0 obj\n<< /Title (A tiny paper) >>\nendobj\n",
+        )
+        .unwrap();
+        let text = inspect_file(&pdf, "paper.pdf", 5_000).unwrap();
+        assert!(
+            text.contains("PDF 1.4")
+                && text.contains("Title: A tiny paper")
+                && text.contains("Hello PDF world"),
+            "{text}"
+        );
+        assert!(text.starts_with("(Web content."), "{text}");
+        // A tar built by hand: one file of three bytes, then the end blocks.
+        let mut tar = vec![0u8; 512];
+        tar[..10].copy_from_slice(b"docs/a.txt");
+        tar[124..135].copy_from_slice(b"00000000003");
+        tar[156] = b'0';
+        tar[257..262].copy_from_slice(b"ustar");
+        tar.extend_from_slice(b"abc");
+        tar.extend(vec![0u8; 509 + 1024]);
+        let path = dir.path().join("x.tar");
+        std::fs::write(&path, &tar).unwrap();
+        let listing = inspect_file(&path, "x.tar", 5_000).unwrap();
+        assert!(
+            listing.contains("tar archive")
+                && listing.contains("docs/a.txt")
+                && listing.contains("Nothing was extracted"),
+            "{listing}"
+        );
+        // A file of no known kind is still not shown.
+        let other = dir.path().join("blob.bin");
+        std::fs::write(&other, [0u8, 159, 146, 150, 0, 1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
+        assert!(
+            inspect_file(&other, "blob.bin", 5_000)
+                .unwrap()
+                .contains("not text")
         );
     }
 }

@@ -28,6 +28,30 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-11-04 (leftover sections: leases, shadow repository, repair, PDF and archives)
+
+Branch `main`, after `2e89ace`. Windows only. These are the unbuilt parts of the plan (section 13) that can be built and checked on this machine
+without new model downloads. The small-model fleet and scheduler, and worktrees for parallel engineers, are **not** built (the fleet needs the
+three model downloads, which are not finished; parallel worktrees need the fleet).
+
+| Item | What was built | Evidence |
+|---|---|---|
+| File leases (F0.5) | `harness_runtime::leases`: `.bridle/leases.json` under a lock, one holder per path, case-insensitive keys, 15-minute time to live, renewal by the same holder, release at the end of a run; the file tools claim a lease for the active run; `RunGuard` sets and clears the active run | 6 lease tests (spellings, conflict, expiry, 8 threads on one path, damaged file, active holder) and 1 file-tool test (another run's path refused, a different spelling is the same lease) |
+| Stale-write check | `read_file` shows `(sha256 ...)`; `write_file` and `edit_file` refuse a file that changed since it was read, and accept `expected_sha256`; their own writes do not trip the next one | 2 file-tool tests, incl. an old hash, a bad hash, a deleted file |
+| Shadow repository | A folder without Git gets `.bridle/shadow.git` (`GIT_DIR` + `GIT_WORK_TREE`, no `.git` appears); same checkpoints, Undo and recovery; files over 5 MB listed not stored; over 200 MB stops the run; a real repository made later takes over | 3 Git-layer tests on real temporary folders (checkpoint, change, Undo, the secret and dependency folders left out, big file, take-over) |
+| `bridle doctor --repair` | Ends leases of dead runs, closes runs cut short, removes leftover index files, old unfinished downloads, old temporary files and dead browser session folders; skips run-dependent steps while another Bridle holds the run lock | 2 tests (a crash scene with a live lock, then without; repeatable) and a run of the real binary ("nothing needed repair") |
+| PDF text | `web::pdf`: page count, title, author, producer and the text of Flate or uncompressed content streams; says so for encryption, embedded font encodings, other compressions and scans | 5 tests; the real binary read a compressed sample ("Bridle reads this compressed page") |
+| Archive listing | `web::archive`: zip (central directory), tar, tar.gz; flags names that climb out of their folder (`../x`, `/abs`, `C:\x`); never extracts | 4 tests incl. a zip and a tar.gz made by Python; the real binary listed both and flagged `../escape.txt` |
+| DEFLATE decoder | `web::inflate` (puff-style) with zlib and gzip wrappers and an output cap | 3 tests against zlib and gzip output made by Python (fixed, dynamic, stored, gzip with a name, limit, damage) |
+
+- **Found on the way.** A path claimed as `README.md` and written through a resolved Windows path did not match until both were made canonical
+  (short names and `\\?\` prefixes); a decoder that stopped at a match boundary returned fewer bytes than its limit; the first draft's PDF font
+  check missed glyph numbers made of control bytes. All are fixed and tested.
+- **Gate.** fmt, clippy `-D warnings`, **1,127 tests passed, 0 failed, 5 ignored** (`D:\e2e\gate5.out`).
+- **Not verified.** PDF reading was tried on generated files and one compressed sample, **not on a collection of real papers**; most real
+  papers use embedded fonts and will give the "cannot decode" note rather than text. The lease check is not exercised by two live members
+  (members still run one at a time). The shadow repository was checked on temporary folders, not on a large real project.
+
 ## 2026-11-04 (closing the browser's open items)
 
 Branch `main` after the merge `36c58f6`. This entry **supersedes the "Not verified, plainly" bullet** of the browser entry below. The five

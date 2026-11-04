@@ -61,6 +61,9 @@ pub struct Report {
     pub(crate) opencode: OpencodeEntry,
     /// The managed browser, when it is enabled or installed.
     pub(crate) browser: Option<BrowserEntry>,
+    /// What `--repair` did, one line each (empty when it was not asked for).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) repairs: Vec<String>,
     pub(crate) config_issues: Vec<IssueEntry>,
     /// True when the exit code is a failure: a runtime is missing or the config has errors.
     pub(crate) blocking_problems: bool,
@@ -128,8 +131,14 @@ pub(crate) struct IssueEntry {
     pub(crate) level: Level,
 }
 
-pub fn run(app: &App, json: bool) -> anyhow::Result<ExitCode> {
+pub fn run(app: &App, json: bool, repair: bool) -> anyhow::Result<ExitCode> {
+    let repairs = if repair {
+        crate::commands::repair::run(&app.workspace)
+    } else {
+        Vec::new()
+    };
     let mut report = gather(app);
+    report.repairs = repairs;
     report.blocking_problems = is_blocking(&report);
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);
@@ -181,6 +190,7 @@ pub(crate) fn gather(app: &App) -> Report {
         endpoints,
         opencode: opencode_entry(config),
         browser: browser_entry(config),
+        repairs: Vec::new(),
         config_issues: app.issues.iter().map(issue_entry).collect(),
         blocking_problems: false,
     }
@@ -632,6 +642,9 @@ fn print_text(report: &Report) {
         "opencode",
         format!("{} | {}", report.opencode.path, report.opencode.detail),
     );
+    for repaired in &report.repairs {
+        line(Level::Ok.mark(), "repair", repaired);
+    }
     if let Some(browser) = &report.browser {
         line(browser.level.mark(), "browser", &browser.detail);
     }
@@ -752,6 +765,7 @@ model_file = "model.gguf"
                 detail: String::new(),
             },
             browser: None,
+            repairs: Vec::new(),
             config_issues: Vec::new(),
             blocking_problems: false,
         }

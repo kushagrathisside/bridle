@@ -648,27 +648,7 @@ impl BrowserManager {
     /// whose process no longer runs is removed; so is any folder older than a day. A folder of a live process, this one included, is
     /// never touched.
     fn sweep_stale_folders(&self) {
-        let Ok(entries) = std::fs::read_dir(self.layout.sessions_dir()) else {
-            return;
-        };
-        let mut system = sysinfo::System::new();
-        system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            let owner = name.split('-').next().and_then(|p| p.parse::<u32>().ok());
-            let owner_gone = owner.is_some_and(|pid| {
-                pid != std::process::id() && system.process(sysinfo::Pid::from_u32(pid)).is_none()
-            });
-            let old = entry
-                .metadata()
-                .and_then(|m| m.modified())
-                .ok()
-                .and_then(|t| t.elapsed().ok())
-                .is_some_and(|age| age > STALE_SESSION_DIR);
-            if owner_gone || old {
-                remove_folder(&entry.path());
-            }
-        }
+        sweep_session_folders(&self.layout.sessions_dir());
     }
 
     /// Closes sessions that have not been used for `session_idle_secs`.
@@ -899,6 +879,35 @@ impl BrowserManager {
         ids.sort();
         ids
     }
+}
+
+/// Removes the session folders in `sessions_dir` whose process is gone or that are over a day old, and returns how many it removed. A
+/// folder of a live process, this one included, is never touched. (`bridle doctor --repair` calls this too.)
+pub fn sweep_session_folders(sessions_dir: &Path) -> usize {
+    let Ok(entries) = std::fs::read_dir(sessions_dir) else {
+        return 0;
+    };
+    let mut system = sysinfo::System::new();
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let owner = name.split('-').next().and_then(|p| p.parse::<u32>().ok());
+        let owner_gone = owner.is_some_and(|pid| {
+            pid != std::process::id() && system.process(sysinfo::Pid::from_u32(pid)).is_none()
+        });
+        let old = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age > STALE_SESSION_DIR);
+        if owner_gone || old {
+            remove_folder(&entry.path());
+            removed += 1;
+        }
+    }
+    removed
 }
 
 impl Drop for BrowserManager {

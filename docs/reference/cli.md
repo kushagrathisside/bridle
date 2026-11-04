@@ -64,7 +64,7 @@ is the result: `result: pass`, `result: warn` or `result: fail`. The command exi
 
 Reports the host, the configured runtimes and model files, the endpoints, the OpenCode version and the configuration
 issues. Warnings are informational. It exits with code 1 only for a missing configured runtime or a configuration error.
-Its options are `--json` and the global options.
+Its options are `--json`, `--repair` and the global options. `--repair` first puts right what a crash left behind (ended leases, runs cut short, `bridle-index-*` files, unfinished downloads, old temporary files, browser session folders of processes that are gone), says what it did, and does nothing to a run that is alive; see [Runs, checkpoints and recovery](run-recovery.md).
 
 ## Tasks
 

@@ -13,6 +13,7 @@ pub mod http;
 pub mod jev;
 pub mod launcher;
 pub mod laya;
+pub mod leases;
 pub mod manifest;
 pub mod mcp;
 pub mod memory;

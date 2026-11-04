@@ -29,6 +29,9 @@ enum Command {
     Doctor {
         #[arg(long)]
         json: bool,
+        /// First put right what a crash or a kill left behind: ended leases, runs cut short, temporary files, browser session folders.
+        #[arg(long)]
+        repair: bool,
     },
     /// Run functional health checks against model endpoints.
     Health {
@@ -155,7 +158,7 @@ pub fn run() -> ExitCode {
         }),
         command => match app::App::load(cli.config.as_deref(), cli.workspace.as_deref()) {
             Ok(app) => match command {
-                Command::Doctor { json } => commands::doctor::run(&app, json),
+                Command::Doctor { json, repair } => commands::doctor::run(&app, json, repair),
                 Command::Health { slot, quick, json } => {
                     commands::health::run(&app, slot.as_deref(), quick, json)
                 }
