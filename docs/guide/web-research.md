@@ -90,6 +90,10 @@ records and the browser one names the other (`rendition_of`).
 ## Limits, stated plainly
 
 - **Providers are verified against fake servers, not the real services.** There is no Brave key or SearXNG instance on the tested machine.
+  The requests were checked against the providers' published documentation (Brave: the endpoint, `X-Subscription-Token`, `q`, `count` up
+  to 20, `freshness` `pd`/`pw`/`pm`/`py`; SearXNG: `q`, `format=json`, `categories`, `time_range` of `day`, `month` or `year`, and that
+  JSON may be disabled), which found one error (a week was sent as `week`). The documentation pages read did not list the fields of a
+  result, so how an answer is read is checked only against the formats the code was written for.
   Opening pages and downloading files were verified live through the proxy (a GitHub raw file downloaded and read back by its id).
 - **Names are resolved twice** (once to check, once to connect), so a hostile DNS server could change its answer in between. Every redirect
   hop is checked, and when a proxy carries the request the proxy resolves the name and applies its own rules. The browser's egress proxy

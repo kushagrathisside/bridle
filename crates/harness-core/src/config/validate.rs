@@ -884,6 +884,39 @@ fn check_browser(cfg: &Config, report: &mut Report) {
             "must be between 1000 and 100000",
         );
     }
+    for (key, list) in [
+        ("allowed_hosts", &b.allowed_hosts),
+        ("blocked_hosts", &b.blocked_hosts),
+    ] {
+        if list.len() > 200 {
+            report.error("V49", format!("web.browser.{key}"), "at most 200 entries");
+        }
+        for entry in list {
+            if !valid_host_pattern(entry) {
+                report.error(
+                    "V49",
+                    format!("web.browser.{key}"),
+                    format!("`{entry}` is not a host name: use lowercase letters, digits, - and . (for example `arxiv.org`); it matches the name and everything under it"),
+                );
+            }
+        }
+    }
+}
+
+/// A host pattern: labels of lowercase letters, digits and `-`, joined by dots, with at least one dot. A leading `*.` is allowed.
+pub fn valid_host_pattern(entry: &str) -> bool {
+    let name = entry.strip_prefix("*.").unwrap_or(entry);
+    name.len() <= 253
+        && name.contains('.')
+        && name.split('.').all(|label| {
+            !label.is_empty()
+                && label.len() <= 63
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        })
+        // A number is not a host name: addresses are judged by their own rules, not named in a list.
+        && !name.rsplit('.').next().is_some_and(|tld| tld.chars().all(|c| c.is_ascii_digit()))
 }
 
 /// The proxy setting: a custom mode needs a well-formed proxy URL, and the URL must not carry a password (the file may be
@@ -1296,6 +1329,18 @@ mod tests {
                 "web.browser.max_page_content_chars",
             ),
             (|c| c.web.browser.headless = false, "web.browser.headless"),
+            (
+                |c| c.web.browser.allowed_hosts = vec!["Example.org".into()],
+                "web.browser.allowed_hosts",
+            ),
+            (
+                |c| c.web.browser.blocked_hosts = vec!["10.0.0.1".into()],
+                "web.browser.blocked_hosts",
+            ),
+            (
+                |c| c.web.browser.blocked_hosts = vec!["localhost".into()],
+                "web.browser.blocked_hosts",
+            ),
         ] {
             let mut cfg = baseline();
             set(&mut cfg);

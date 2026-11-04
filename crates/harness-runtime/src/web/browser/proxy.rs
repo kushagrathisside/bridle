@@ -101,18 +101,21 @@ impl Upstream {
         })
     }
 
-    pub fn describe(&self) -> &'static str {
-        match self {
-            Self::Direct => {
-                "direct: names are resolved here once and the connection goes to the address that was checked"
+    pub fn describe(&self, allow_unpinned: bool) -> &'static str {
+        match (self, allow_unpinned) {
+            (Self::Direct, _) => {
+                "direct: each name is resolved here once and the connection goes to the address that was checked"
             }
-            Self::Http { .. } => {
-                "through your proxy: it resolves names, so the address cannot be pinned here; numbers and local names are still refused"
+            (Self::Http { .. }, false) => {
+                "through your proxy: each name is resolved here first and the tunnel is asked for at the address that was checked; a name this machine cannot resolve is refused"
+            }
+            (Self::Http { .. }, true) => {
+                "through your proxy: each name is resolved here first and the tunnel is asked for at the address that was checked; a name this machine cannot resolve is handed to your proxy by name (allow_unpinned_destinations), and for those your proxy is the boundary"
             }
         }
     }
 
-    pub fn pins_addresses(&self) -> bool {
+    pub fn is_direct(&self) -> bool {
         matches!(self, Self::Direct)
     }
 }
@@ -149,6 +152,12 @@ pub struct Traffic {
     /// Every refusal since the session began (never reset), and how many of them have been told to the caller.
     blocked_total: AtomicU64,
     blocked_told: AtomicU64,
+    /// Connections handed to the person's proxy by name because this machine could not resolve them (only with
+    /// `allow_unpinned_destinations`), and how many of those have been told to the caller.
+    unpinned: AtomicU64,
+    unpinned_told: AtomicU64,
+    /// Chromium's own service endpoints that were refused.
+    internal: AtomicU64,
     hosts: Mutex<BTreeSet<String>>,
     /// The most recent refusals, newest last.
     blocked: Mutex<Vec<Blocked>>,
@@ -208,6 +217,17 @@ impl Traffic {
         (new, list[list.len() - take..].to_vec())
     }
 
+    /// How many connections were handed on by name since the last time this was asked.
+    pub fn take_unpinned(&self) -> u64 {
+        let total = self.unpinned.load(Ordering::SeqCst);
+        total.saturating_sub(self.unpinned_told.swap(total, Ordering::SeqCst))
+    }
+
+    /// How many of Chromium's own service requests were refused (never reported to the model; they are noise).
+    pub fn internal_refused(&self) -> u64 {
+        self.internal.load(Ordering::SeqCst)
+    }
+
     fn note_host(&self, host: &str, port: u16) {
         let mut hosts = self.hosts.lock().unwrap_or_else(PoisonError::into_inner);
         if hosts.len() < MAX_HOSTS {
@@ -250,6 +270,11 @@ pub struct ProxyConfig {
     /// `(host, port)` pairs that skip the address check: the self-test page that Bridle serves itself, and the tests' own servers.
     /// Set only by Bridle's own code, never from a URL, the configuration or the model.
     pub exempt: Vec<(String, u16)>,
+    /// The person's `web.browser.allowed_hosts` and `blocked_hosts`.
+    pub allow_hosts: Vec<String>,
+    pub deny_hosts: Vec<String>,
+    /// `web.browser.allow_unpinned_destinations`.
+    pub allow_unpinned: bool,
 }
 
 impl std::fmt::Debug for ProxyConfig {
@@ -257,6 +282,9 @@ impl std::fmt::Debug for ProxyConfig {
         f.debug_struct("ProxyConfig")
             .field("upstream", &self.upstream)
             .field("exempt", &self.exempt)
+            .field("allow_hosts", &self.allow_hosts)
+            .field("deny_hosts", &self.deny_hosts)
+            .field("allow_unpinned", &self.allow_unpinned)
             .finish_non_exhaustive()
     }
 }
@@ -268,6 +296,9 @@ impl ProxyConfig {
             resolver: Arc::new(guard::SystemResolver),
             dialer: Arc::new(TcpDialer),
             exempt: Vec::new(),
+            allow_hosts: Vec::new(),
+            deny_hosts: Vec::new(),
+            allow_unpinned: false,
         }
     }
 }
@@ -651,30 +682,146 @@ fn is_exempt(shared: &Shared, host: &str, port: u16) -> bool {
         .any(|(h, p)| *p == port && h.eq_ignore_ascii_case(&host_lower))
 }
 
-/// What a connection may do: the addresses it may be made to (empty when an upstream proxy resolves the name).
-fn admit(shared: &Shared, host: &str, port: u16) -> Result<Vec<IpAddr>, String> {
+/// Chromium's own service endpoints: updates, accounts, safe browsing, translation, autofill, telemetry. A page never needs them, and
+/// the browser has no business with them here, so they are refused without a word to the model (they are counted and logged).
+const BROWSER_INTERNAL_HOSTS: &[&str] = &[
+    "update.googleapis.com",
+    "accounts.google.com",
+    "clients1.google.com",
+    "clients2.google.com",
+    "clients3.google.com",
+    "clients4.google.com",
+    "clients5.google.com",
+    "clients6.google.com",
+    "clientservices.googleapis.com",
+    "safebrowsing.googleapis.com",
+    "safebrowsing.google.com",
+    "optimizationguide-pa.googleapis.com",
+    "content-autofill.googleapis.com",
+    "translate.googleapis.com",
+    "redirector.gvt1.com",
+    "edgedl.me.gvt1.com",
+    "dl.google.com",
+    "mtalk.google.com",
+    "android.clients.google.com",
+];
+
+/// Whether `host` is `pattern` or a name under it (`arxiv.org` matches `export.arxiv.org`). A leading `*.` is allowed and means the same.
+pub fn host_matches(pattern: &str, host: &str) -> bool {
+    let pattern = pattern
+        .strip_prefix("*.")
+        .unwrap_or(pattern)
+        .to_ascii_lowercase();
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    host == pattern || host.ends_with(&format!(".{pattern}"))
+}
+
+/// Why a connection was refused, for counting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Refusal {
+    /// The address, the name or the port is not one the web tools may contact.
+    Unsafe,
+    /// The person's `allowed_hosts` or `blocked_hosts`.
+    Policy,
+    /// One of Chromium's own service endpoints.
+    Internal,
+}
+
+/// A destination that may be contacted: the addresses it was judged at (empty when it is handed on by name).
+struct Admitted {
+    addresses: Vec<IpAddr>,
+    pinned: bool,
+}
+
+/// What a connection may do. Policy lists are applied before any name is looked up.
+fn admit(shared: &Shared, host: &str, port: u16) -> Result<Admitted, (Refusal, String)> {
     if DENIED_PORTS.contains(&port) {
-        return Err(format!(
-            "port {port} is not a web port; the browser may not use it"
+        return Err((
+            Refusal::Unsafe,
+            format!("port {port} is not a web port; the browser may not use it"),
         ));
     }
     let host_lower = host.trim_end_matches('.').to_ascii_lowercase();
     if is_exempt(shared, host, port) {
-        return match host_lower.parse::<IpAddr>() {
-            Ok(ip) => Ok(vec![ip]),
+        let addresses = match host_lower.parse::<IpAddr>() {
+            Ok(ip) => vec![ip],
             Err(_) => shared
                 .config
                 .resolver
                 .resolve(&host_lower, port)
-                .map_err(|e| format!("cannot resolve {host}: {e}")),
+                .map_err(|e| (Refusal::Unsafe, format!("cannot resolve {host}: {e}")))?,
         };
+        return Ok(Admitted {
+            addresses,
+            pinned: true,
+        });
     }
-    let resolver: Option<&dyn Resolver> = if shared.config.upstream.pins_addresses() {
-        Some(shared.config.resolver.as_ref())
-    } else {
-        None
-    };
-    guard::resolve_pinned(&host_lower, port, resolver)
+    if BROWSER_INTERNAL_HOSTS
+        .iter()
+        .any(|p| host_matches(p, &host_lower))
+    {
+        return Err((
+            Refusal::Internal,
+            format!("{host_lower} is a Chromium service endpoint"),
+        ));
+    }
+    if let Some(p) = shared
+        .config
+        .deny_hosts
+        .iter()
+        .find(|p| host_matches(p, &host_lower))
+    {
+        return Err((
+            Refusal::Policy,
+            format!("{host_lower} is under `{p}` in web.browser.blocked_hosts"),
+        ));
+    }
+    if !shared.config.allow_hosts.is_empty()
+        && !shared
+            .config
+            .allow_hosts
+            .iter()
+            .any(|p| host_matches(p, &host_lower))
+    {
+        return Err((
+            Refusal::Policy,
+            format!("{host_lower} is not on web.browser.allowed_hosts"),
+        ));
+    }
+    let resolver = shared.config.resolver.as_ref();
+    match &shared.config.upstream {
+        Upstream::Direct => guard::resolve_pinned(&host_lower, port, Some(resolver))
+            .map(|addresses| Admitted {
+                addresses,
+                pinned: true,
+            })
+            .map_err(|e| (Refusal::Unsafe, e)),
+        Upstream::Http { .. } => match guard::resolve_or_defer(&host_lower, port, resolver) {
+            Ok(Some(addresses)) => Ok(Admitted {
+                addresses,
+                pinned: true,
+            }),
+            Ok(None) if shared.config.allow_unpinned => Ok(Admitted {
+                addresses: Vec::new(),
+                pinned: false,
+            }),
+            Ok(None) => Err((
+                Refusal::Unsafe,
+                format!(
+                    "{host_lower} cannot be resolved on this machine, so the connection cannot be tied to an address that was checked; set web.browser.allow_unpinned_destinations = true to hand such names to your proxy"
+                ),
+            )),
+            Err(e) => Err((Refusal::Unsafe, e)),
+        },
+    }
+}
+
+/// `host:port` with brackets around an IPv6 address.
+fn authority(ip: &IpAddr, port: u16) -> String {
+    match ip {
+        IpAddr::V4(v4) => format!("{v4}:{port}"),
+        IpAddr::V6(v6) => format!("[{v6}]:{port}"),
+    }
 }
 
 fn handle(shared: &Shared, mut client: TcpStream) {
@@ -715,10 +862,14 @@ fn handle(shared: &Shared, mut client: TcpStream) {
     let (host, port) = match &kind {
         Kind::Tunnel { host, port } | Kind::Plain { host, port, .. } => (host.clone(), *port),
     };
-    let addresses = match admit(shared, &host, port) {
+    let admitted = match admit(shared, &host, port) {
         Ok(a) => a,
-        Err(reason) => {
-            traffic.note_blocked(&host, port, &reason);
+        Err((refusal, reason)) => {
+            if refusal == Refusal::Internal {
+                traffic.internal.fetch_add(1, Ordering::SeqCst);
+            } else {
+                traffic.note_blocked(&host, port, &reason);
+            }
             return respond(
                 &client,
                 403,
@@ -729,16 +880,13 @@ fn handle(shared: &Shared, mut client: TcpStream) {
         }
     };
     traffic.note_host(&host, port);
+    if !admitted.pinned {
+        traffic.unpinned.fetch_add(1, Ordering::SeqCst);
+    }
     // An exempt destination (Bridle's own test site) is on this machine, which an upstream proxy cannot reach: it is dialled directly.
-    let via_upstream = !shared.config.upstream.pins_addresses() && !is_exempt(shared, &host, port);
-    let remote = match connect(
-        shared,
-        &host,
-        port,
-        &addresses,
-        matches!(kind, Kind::Tunnel { .. }),
-        via_upstream,
-    ) {
+    let via_upstream = !shared.config.upstream.is_direct() && !is_exempt(shared, &host, port);
+    let tunnel = matches!(kind, Kind::Tunnel { .. });
+    let mut remote = match connect(shared, &host, port, &admitted, tunnel, via_upstream) {
         Ok(r) => r,
         Err(error) => {
             return respond(
@@ -750,7 +898,6 @@ fn handle(shared: &Shared, mut client: TcpStream) {
             );
         }
     };
-    let mut remote = remote;
     match kind {
         Kind::Tunnel { .. } => {
             if client
@@ -763,7 +910,11 @@ fn handle(shared: &Shared, mut client: TcpStream) {
         }
         Kind::Plain { host, port, path } => {
             let target = if via_upstream {
-                head.target.clone()
+                // Through the person's proxy, to the address that was checked (the `Host` header still names the site).
+                match admitted.addresses.first() {
+                    Some(ip) => format!("http://{}{path}", authority(ip, port)),
+                    None => head.target.clone(),
+                }
             } else {
                 path
             };
@@ -805,30 +956,41 @@ fn handle(shared: &Shared, mut client: TcpStream) {
     pump(shared, client, remote, traffic);
 }
 
-/// Opens the connection to the destination: at the address that was judged, or through the upstream proxy.
+/// Opens the connection to the destination: at an address that was judged, directly or through the upstream proxy. Behind an upstream
+/// proxy a tunnel is asked for **at the checked address**, not at the name; if the proxy refuses that, the connection fails, and the
+/// name is not tried instead.
 fn connect(
     shared: &Shared,
     host: &str,
     port: u16,
-    addresses: &[IpAddr],
+    admitted: &Admitted,
     tunnel: bool,
     via_upstream: bool,
 ) -> Result<TcpStream, String> {
     match &shared.config.upstream {
-        Upstream::Direct => direct(shared, addresses, port),
-        Upstream::Http { .. } if !via_upstream => direct(shared, addresses, port),
+        Upstream::Direct => direct(shared, &admitted.addresses, port),
+        Upstream::Http { .. } if !via_upstream => direct(shared, &admitted.addresses, port),
         Upstream::Http { address, auth } => {
-            let mut stream = std::net::ToSocketAddrs::to_socket_addrs(address.as_str())
-                .map_err(|e| format!("the upstream proxy {address} cannot be found: {e}"))?
-                .find_map(|a| shared.config.dialer.dial(a, DIAL_TIMEOUT).ok())
-                .ok_or_else(|| format!("the upstream proxy {address} cannot be reached"))?;
-            if tunnel {
-                let shown = if host.contains(':') {
+            if !tunnel {
+                return dial_upstream(shared, address);
+            }
+            let targets: Vec<String> = if admitted.addresses.is_empty() {
+                vec![if host.contains(':') {
                     format!("[{host}]:{port}")
                 } else {
                     format!("{host}:{port}")
-                };
-                let mut request = format!("CONNECT {shown} HTTP/1.1\r\nHost: {shown}\r\n");
+                }]
+            } else {
+                admitted
+                    .addresses
+                    .iter()
+                    .map(|ip| authority(ip, port))
+                    .collect()
+            };
+            let mut last = "no address".to_owned();
+            for target in targets {
+                let mut stream = dial_upstream(shared, address)?;
+                let mut request = format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n");
                 if let Some(auth) = auth {
                     request.push_str(&format!("Proxy-Authorization: Basic {auth}\r\n"));
                 }
@@ -846,15 +1008,23 @@ fn connect(
                     .nth(1)
                     .and_then(|c| c.parse::<u16>().ok())
                     .unwrap_or(0);
-                if !(200..300).contains(&status) || !rest.is_empty() {
-                    return Err(format!(
-                        "the upstream proxy answered {status} to the tunnel request"
-                    ));
+                if (200..300).contains(&status) && rest.is_empty() {
+                    return Ok(stream);
                 }
+                last = format!(
+                    "the upstream proxy answered {status} to the tunnel request for {target}"
+                );
             }
-            Ok(stream)
+            Err(last)
         }
     }
+}
+
+fn dial_upstream(shared: &Shared, address: &str) -> Result<TcpStream, String> {
+    std::net::ToSocketAddrs::to_socket_addrs(address)
+        .map_err(|e| format!("the upstream proxy {address} cannot be found: {e}"))?
+        .find_map(|a| shared.config.dialer.dial(a, DIAL_TIMEOUT).ok())
+        .ok_or_else(|| format!("the upstream proxy {address} cannot be reached"))
 }
 
 /// Dials one of the addresses that were judged, in order, and no other.
@@ -1306,25 +1476,49 @@ mod tests {
         assert!(other.starts_with("HTTP/1.1 403"), "{other}");
     }
 
+    /// A resolver for a machine that has no DNS for the name.
+    struct Deaf;
+    impl Resolver for Deaf {
+        fn resolve(&self, _: &str, _: u16) -> io::Result<Vec<IpAddr>> {
+            Err(io::Error::other("no such host"))
+        }
+    }
+
+    fn behind(
+        upstream: SocketAddr,
+        resolver: Arc<dyn Resolver>,
+        tweak: impl FnOnce(&mut ProxyConfig),
+    ) -> Rig {
+        let mut config = ProxyConfig {
+            resolver,
+            ..ProxyConfig::new(Upstream::Http {
+                address: upstream.to_string(),
+                auth: Some("dXNlcjpwdw==".to_owned()),
+            })
+        };
+        tweak(&mut config);
+        rig(config)
+    }
+
     #[test]
-    fn through_an_upstream_proxy_names_are_forwarded_and_numbers_are_still_refused() {
-        // A stand-in for the person's proxy: accepts a tunnel request and echoes.
+    fn behind_an_upstream_proxy_the_tunnel_is_asked_for_at_the_checked_address_and_numbers_are_still_refused()
+     {
+        // A stand-in for the person's proxy: accepts a tunnel request.
         let (upstream, seen) = server(b"HTTP/1.1 200 Connection established\r\n\r\n");
-        let rig = rig(ProxyConfig::new(Upstream::Http {
-            address: upstream.to_string(),
-            auth: Some("dXNlcjpwdw==".to_owned()),
-        }));
+        let rig = behind(upstream, Script::new(vec![vec![public()]]), |_| {});
         let allowed = ask_first_line(&rig, "example.org:443");
         assert!(allowed.contains("200"), "{allowed}");
         let request = String::from_utf8_lossy(&seen.lock().unwrap()).into_owned();
         assert!(
-            request.starts_with("CONNECT example.org:443 HTTP/1.1"),
-            "{request}"
+            request.starts_with("CONNECT 93.184.216.34:443 HTTP/1.1"),
+            "the tunnel was asked for by name: {request}"
         );
+        assert!(!request.contains("example.org"), "{request}");
         assert!(
             request.contains("Proxy-Authorization: Basic dXNlcjpwdw=="),
             "{request}"
         );
+        assert_eq!(rig.traffic.take_unpinned(), 0);
         let before = seen.lock().unwrap().len();
         for authority in [
             "127.0.0.1:80",
@@ -1343,7 +1537,190 @@ mod tests {
             before,
             "the upstream proxy was not asked about an inner address"
         );
-        assert!(!rig.proxy.upstream().pins_addresses());
+        assert!(!rig.proxy.upstream().is_direct());
+    }
+
+    #[test]
+    fn behind_an_upstream_proxy_a_name_that_starts_answering_with_an_inner_address_is_refused() {
+        let (upstream, seen) = server(b"HTTP/1.1 200 Connection established\r\n\r\n");
+        let resolver = Script::new(vec![vec![public()], vec!["127.0.0.1".parse().unwrap()]]);
+        let rig = behind(upstream, resolver, |_| {});
+        assert!(ask_first_line(&rig, "rebind.example.org:443").contains("200"));
+        let asked_once = String::from_utf8_lossy(&seen.lock().unwrap())
+            .matches("CONNECT")
+            .count();
+        assert_eq!(asked_once, 1);
+        assert!(ask_first_line(&rig, "rebind.example.org:443").contains("403"));
+        assert_eq!(
+            String::from_utf8_lossy(&seen.lock().unwrap())
+                .matches("CONNECT")
+                .count(),
+            1,
+            "the hostile answer never reached the upstream proxy"
+        );
+    }
+
+    #[test]
+    fn a_name_this_machine_cannot_resolve_is_refused_unless_the_person_allows_handing_it_on() {
+        let (upstream, seen) = server(b"HTTP/1.1 200 Connection established\r\n\r\n");
+        let strict = behind(upstream, Arc::new(Deaf), |_| {});
+        let refused = ask(
+            &strict,
+            &connect_request(&strict, "only-the-proxy-knows.example.org:443"),
+        );
+        assert!(
+            refused.starts_with("HTTP/1.1 403") && refused.contains("allow_unpinned_destinations"),
+            "{refused}"
+        );
+        assert!(
+            seen.lock().unwrap().is_empty(),
+            "nothing went to the upstream proxy"
+        );
+        let lenient = behind(upstream, Arc::new(Deaf), |c| c.allow_unpinned = true);
+        assert!(ask_first_line(&lenient, "only-the-proxy-knows.example.org:443").contains("200"));
+        let request = String::from_utf8_lossy(&seen.lock().unwrap()).into_owned();
+        assert!(
+            request.starts_with("CONNECT only-the-proxy-knows.example.org:443 HTTP/1.1"),
+            "{request}"
+        );
+        assert_eq!(
+            lenient.traffic.take_unpinned(),
+            1,
+            "the unpinned connection is counted so it can be told"
+        );
+        // Even then, numbers and local names are refused without asking anyone.
+        assert!(ask_first_line(&lenient, "127.0.0.1:80").contains("403"));
+        assert!(ask_first_line(&lenient, "localhost:80").contains("403"));
+    }
+
+    #[test]
+    fn a_proxy_that_refuses_the_tunnel_to_the_address_gets_no_second_try_by_name() {
+        let (upstream, seen) = server(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n");
+        let rig = behind(upstream, Script::new(vec![vec![public()]]), |c| {
+            c.allow_unpinned = true
+        });
+        let answer = ask_first_line(&rig, "example.org:443");
+        assert!(answer.contains("502"), "{answer}");
+        let request = String::from_utf8_lossy(&seen.lock().unwrap()).into_owned();
+        assert_eq!(request.matches("CONNECT").count(), 1, "{request}");
+        assert!(!request.contains("CONNECT example.org"), "{request}");
+    }
+
+    #[test]
+    fn plain_http_behind_an_upstream_proxy_goes_to_the_checked_address() {
+        let (upstream, seen) = server(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
+        let rig = behind(upstream, Script::new(vec![vec![public()]]), |_| {});
+        let answer = ask(
+            &rig,
+            &format!(
+                "GET http://example.org/a?b=1 HTTP/1.1\r\nHost: example.org\r\n{}\r\n",
+                auth(&rig)
+            ),
+        );
+        assert!(
+            answer.starts_with("HTTP/1.1 200") && answer.ends_with("ok"),
+            "{answer}"
+        );
+        let request = String::from_utf8_lossy(&seen.lock().unwrap()).into_owned();
+        assert!(
+            request.starts_with("GET http://93.184.216.34:80/a?b=1 HTTP/1.1\r\n"),
+            "{request}"
+        );
+        assert!(request.contains("Host: example.org\r\n"), "{request}");
+        assert!(
+            request.contains("Proxy-Authorization: Basic dXNlcjpwdw=="),
+            "{request}"
+        );
+    }
+
+    #[test]
+    fn host_lists_are_applied_before_any_lookup_and_blocked_wins() {
+        let (fixture, _) = server(b"");
+        let resolver = Script::new(vec![vec![public()]]);
+        let rig = rig(ProxyConfig {
+            resolver: resolver.clone(),
+            dialer: Arc::new(Redirect {
+                to: fixture,
+                seen: Mutex::new(Vec::new()),
+            }),
+            allow_hosts: vec!["example.org".to_owned()],
+            deny_hosts: vec!["*.bad.example.org".to_owned()],
+            ..ProxyConfig::new(Upstream::Direct)
+        });
+        assert!(ask_first_line(&rig, "example.org:443").contains("200"));
+        assert!(
+            ask_first_line(&rig, "www.example.org:443").contains("200"),
+            "a subdomain of an allowed name is allowed"
+        );
+        let before = resolver.asked.load(Ordering::SeqCst);
+        let denied = ask(&rig, &connect_request(&rig, "x.bad.example.org:443"));
+        assert!(
+            denied.starts_with("HTTP/1.1 403") && denied.contains("blocked_hosts"),
+            "{denied}"
+        );
+        let outside = ask(&rig, &connect_request(&rig, "other.test:443"));
+        assert!(
+            outside.starts_with("HTTP/1.1 403") && outside.contains("allowed_hosts"),
+            "{outside}"
+        );
+        let lookalike = ask(&rig, &connect_request(&rig, "notexample.org:443"));
+        assert!(
+            lookalike.starts_with("HTTP/1.1 403"),
+            "a name that only ends in the same letters is not under it: {lookalike}"
+        );
+        let literal = ask(&rig, &connect_request(&rig, "93.184.216.34:443"));
+        assert!(
+            literal.starts_with("HTTP/1.1 403"),
+            "with a list, a bare address is not on it: {literal}"
+        );
+        assert_eq!(
+            resolver.asked.load(Ordering::SeqCst),
+            before,
+            "a refused host was not looked up"
+        );
+        let (count, list) = rig.traffic.blocked();
+        assert_eq!(count, 4, "{list:?}");
+    }
+
+    #[test]
+    fn chromium_s_own_service_hosts_are_refused_quietly_and_counted() {
+        let (fixture, _) = server(b"");
+        let rig = rig(ProxyConfig {
+            resolver: Script::new(vec![vec![public()]]),
+            dialer: Arc::new(Redirect {
+                to: fixture,
+                seen: Mutex::new(Vec::new()),
+            }),
+            ..ProxyConfig::new(Upstream::Direct)
+        });
+        for authority in [
+            "update.googleapis.com:443",
+            "accounts.google.com:443",
+            "clients2.google.com:80",
+            "safebrowsing.googleapis.com:443",
+        ] {
+            let answer = ask(&rig, &connect_request(&rig, authority));
+            assert!(answer.starts_with("HTTP/1.1 403"), "{authority}: {answer}");
+        }
+        assert_eq!(rig.traffic.internal_refused(), 4);
+        assert_eq!(
+            rig.traffic.blocked().0,
+            0,
+            "these are not a security finding and are not told to the model"
+        );
+        assert_eq!(rig.traffic.take_blocked().0, 0);
+        // An ordinary Google page is still a page.
+        assert!(ask_first_line(&rig, "www.google.com:443").contains("200"));
+    }
+
+    #[test]
+    fn a_host_pattern_matches_the_name_and_what_is_under_it_only() {
+        assert!(host_matches("arxiv.org", "arxiv.org"));
+        assert!(host_matches("arxiv.org", "export.ARXIV.org."));
+        assert!(host_matches("*.arxiv.org", "arxiv.org"));
+        assert!(!host_matches("arxiv.org", "notarxiv.org"));
+        assert!(!host_matches("arxiv.org", "arxiv.org.evil.test"));
+        assert!(!host_matches("export.arxiv.org", "arxiv.org"));
     }
 
     #[test]

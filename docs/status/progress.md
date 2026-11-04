@@ -28,6 +28,27 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-11-04 (closing the browser's open items)
+
+Branch `main` after the merge `36c58f6`. This entry **supersedes the "Not verified, plainly" bullet** of the browser entry below. The five
+items that were left open were taken one by one:
+
+| Open item | What was done | Evidence |
+|---|---|---|
+| DNS rebinding closed only in direct mode | Behind the person's proxy Bridle now resolves the name itself, judges every answer, and asks the proxy for a tunnel **at the checked address**; a proxy that refuses it gets no second try by name; a name this machine cannot resolve is refused unless `allow_unpinned_destinations` is set (then it is counted and told to the model) | 5 new proxy tests with real sockets (the tunnel and plain request go to `93.184.216.34`, a name that turns `127.0.0.1` is refused, strict and lenient modes, refused tunnel); live: Chromium read `https://example.com` through the campus proxy this way, "Contacted: example.com:443" |
+| ... against a live hostile DNS server | **Not done.** The system resolver cannot be aimed at one without changing the machine's DNS settings | still a scripted resolver |
+| Chromium's own connection to `www.google.com` and no host list | Cause found with a net log: the worker's `--disable-features` replaced Playwright's list (Chromium keeps the last flag), re-enabling a time query and an "AI mode" check; fixed with the union plus three search-preconnect features. Chromium's service endpoints (`update.googleapis.com`, `accounts.google.com`, ...) are refused quietly by the proxy. New `web.browser.allowed_hosts`, `blocked_hosts` | self-test check "the browser contacted nothing of its own" (8 s on a local page) passes; 4 new proxy tests (lists applied before any lookup, blocked wins, subdomain rule, quiet refusals) |
+| Chromium not hash-pinned by its publisher | The SHA-256 of the whole installed folder (304 files) is pinned in Bridle's source; `setup` refuses a different Chromium; `chrome.dll` (where the code is) is re-checked before every start next to `chrome.exe` and `node.exe` | a third clean install, from a fresh download, matched the pin; 2 new tests. It is Bridle's pin, not the publisher's |
+| Hard kill relies on the pipe | A test makes a child process open a session and `abort()` without clean-up | `chromium_goes_away_by_itself_when_bridle_is_ended_without_clean_up` passed; the dead process's session folder is removed by the next start (new `<pid>-<id>` folder names and sweep, 1 test) |
+| One machine, one proxy; providers fake only | **Cannot be closed here.** The provider requests were checked against the published Brave and SearXNG documentation, which found one error (SearXNG `time_range` of `week` is not defined; now `month`). The pages did not list result fields | no live key or instance; one machine and one proxy remain |
+
+- **Gate.** fmt, clippy `-D warnings`, **1,101 tests passed, 0 failed, 5 ignored** (`D:\e2e\gate4.out`).
+- **Real Chromium, final run.** `bridle web browser test --live https://example.com` (through the campus proxy, address-pinned tunnels):
+  **73 of 73 checks**. `cargo test -p harness-runtime --test browser_live` with a direct route (the proxy dials the checked address
+  itself): the self-test and the hard-kill test passed (51 s).
+- **Still true.** Windows x64 only; the Brave and SearXNG providers have never talked to the real services; the browser has been run
+  on one machine and one proxy.
+
 ## 2026-11-04 (latest): the managed browser (ADR-0020)
 
 Branch `web-research`, on top of `d28b0a2` and `e49df81`. Windows only; the tested machine (Windows 11, x64). Design, alternatives and

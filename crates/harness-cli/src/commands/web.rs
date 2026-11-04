@@ -125,7 +125,10 @@ fn run_browser(app: &App, action: &BrowserAction) -> Result<ExitCode> {
             let route = http::remote_route();
             println!("route: {}", route.describe());
             match harness_runtime::web::browser::proxy::Upstream::from_route(&route, &env) {
-                Ok(upstream) => println!("egress: {}", upstream.describe()),
+                Ok(upstream) => println!(
+                    "egress: {}",
+                    upstream.describe(b.allow_unpinned_destinations)
+                ),
                 Err(error) => {
                     println!("egress: the browser cannot start with this proxy setting: {error}")
                 }

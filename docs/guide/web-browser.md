@@ -48,6 +48,9 @@ Three steps, all yours. Nothing is installed by using Bridle.
    max_page_content_chars = 20000
    screenshots_enabled = false  # off until you want pictures
    downloads_enabled = false    # off until you want files the page offers
+   allowed_hosts = []           # e.g. ["arxiv.org", "doi.org"]: if not empty, ONLY these names and what is under them
+   blocked_hosts = []           # names the browser may never reach; wins over allowed_hosts
+   allow_unpinned_destinations = false   # see "Behind your own proxy" below
 
    [security]
    network = "allow"            # lets the MODEL use the browser; the default `ask` is never allowed
@@ -147,7 +150,7 @@ address was read earlier without the browser, the new record names it (`renditio
 |---|---|
 | Who may call a tool? | Only a call the policy allows (`security.network = "allow"`), checked **inside** each tool, so a client that talks to the MCP server directly cannot skip it. The default `ask` is never allowed. Unknown tool names stay blocked. |
 | Can the model give Chromium a flag, a script or a path? | No. The protocol has no such field, and the worker holds the launch flags as constants. |
-| Where can the browser connect? | Only through Bridle's egress proxy, which judges each connection, per session. See below. |
+| Where can the browser connect? | Only through Bridle's egress proxy, which judges each connection, per session, and only where `allowed_hosts` / `blocked_hosts` let it. See below. |
 | Whose profile does it use? | None of yours. Each session has a throw-away profile under its own folder, no persistent cookies, no service workers, no permissions, no extensions, and Chromium's sandbox stays on. Two sessions share nothing (tested: a cookie and local storage in one are invisible in the other). |
 | Can one task use another's session? | A session id is 64 random bits and belongs to the server instance and the workspace that made it. A wrong id, a closed one and an expired one give the same answer. |
 | What if it crashes or hangs? | Every request has a deadline. A silent, crashed, malformed or exited worker is killed and the session says why on the next call; the model can open a new one. When Bridle ends, every session is closed and no Chromium is left (checked). |
@@ -158,6 +161,10 @@ address was read earlier without the browser, the new record names it (`renditio
 Chromium is started with `--proxy-server` pointing at Bridle's proxy on `127.0.0.1`, name lookup switched off outside it, QUIC off and
 WebRTC limited to the proxy. The proxy signs each session in with a secret, then for every connection:
 
+- refuses Chromium's own service endpoints (updates, accounts, safe browsing, translation, autofill) quietly: they are counted in the log
+  (`browser_internal_refused`), not reported to the model;
+- applies your `blocked_hosts` and `allowed_hosts` before any lookup (a name matches itself and what is under it; with `allowed_hosts`
+  set, a bare address is refused too);
 - refuses numbers and names that mean this machine or its network, in any spelling: `127.0.0.1`, `localhost`, `localhost.`, `[::1]`,
   `[::ffff:127.0.0.1]`, `fe80::`, `169.254.169.254`, `10.x`, `192.168.x`, `2130706433`, `0x7f.1`, `0177.0.0.1`, `127.1`, `*.local`,
   `*.internal`; and ports of mail, shells and databases;
@@ -166,21 +173,31 @@ WebRTC limited to the proxy. The proxy signs each session in with a secret, then
 - applies to everything the browser does: the page, scripts, images, frames, redirects, WebSockets and `fetch`;
 - cuts a call that moves more bytes than its limit.
 
-**Behind your own proxy** (the only way out on some networks) the proxy cannot pin the address, because your proxy resolves the name.
-It still refuses numbers and local names, and forwards the rest by name. Then your proxy is the boundary for what a name resolves to.
+**Behind your own proxy** (the only way out on some networks) Bridle still resolves the name first, judges every answer, and asks your
+proxy for a tunnel **to the address it checked** (`CONNECT 93.184.216.34:443`), not to the name; TLS inside the tunnel still verifies the
+real name. A name that turns hostile between two requests is refused, and a proxy that refuses the tunnel to the address gets no second
+try by name. If this machine **cannot resolve** the name (some company networks resolve only at the proxy), the connection is refused
+and the answer says why. Setting `allow_unpinned_destinations = true` hands such names to your proxy instead: it is counted, told to
+the model ("N connection(s) could not be tied to an address Bridle checked"), and for those connections your proxy is the boundary.
 `bridle web browser status` says which mode is in force. Requests the proxy refuses are counted and described in the next tool answer.
 
 ## Limits, stated plainly
 
-- **Real Chromium results are from one machine** (Windows 11, x64). The self-test passed 72 of 72 checks and the live check read
+- **Real Chromium results are from one machine** (Windows 11, x64). The self-test passed 73 of 73 checks and the live check read
   `https://example.com` through the machine's company proxy. It has not been run on another machine, another proxy or another Windows.
-- **DNS rebinding is closed only when Bridle connects directly.** It is demonstrated against a scripted resolver, not a live hostile DNS
-  server, and it is not closed behind an upstream proxy (above).
-- **Chromium makes some connections of its own** to public hosts (it contacted `www.google.com:443` in the live check). They go through
-  the proxy and are listed under "Contacted"; they are not blocked.
-- **No host allow or deny list**, no persistent login, no uploads, no frames in the snapshot (their number is shown), no PDF viewer.
+- **DNS rebinding is shown against a scripted resolver, not a hostile DNS server.** Aiming the system resolver at one means changing
+  the machine's DNS settings, which was not done. In both modes (direct and behind a proxy) the connection goes to an address Bridle
+  judged, once per request; the exception is `allow_unpinned_destinations`, which you must turn on yourself.
+- **Chromium's own connections.** A net log showed Chromium reaching `www.google.com` (a search-engine preconnect and an "AI mode"
+  check), `clients2.google.com` (a time query), `update.googleapis.com` and `accounts.google.com` by itself. The first three are
+  switched off by flags (Playwright's list plus three more; a self-test check fails if Chromium contacts anything of its own in the
+  first seconds), and the service endpoints are refused by the proxy whatever the flags do. A future Chromium may add new ones;
+  `allowed_hosts` is the strict answer.
+- **No persistent login, no uploads, no frames in the snapshot (their number is shown), no PDF viewer.**
 - **Full-page screenshots, video and tracing are not offered.**
-- **A hard kill of Bridle** is cleaned up by the pipe closing (Chromium exits when the worker's pipe closes), not by a job object.
-- **The install is Windows x64 only.** Chromium's own download is not hash-pinned by its publisher; Bridle records and re-checks the hash
-  of what was installed.
+- **A hard kill of Bridle** is cleaned up by the pipe closing, not by a job object: a test aborts a Bridle process that holds a session
+  and Chromium is gone within seconds. The dead process's session folder is removed by the next Bridle that starts.
+- **The install is Windows x64 only.** Chromium's download is not hash-pinned by its publisher; the pin is Bridle's own, of the whole
+  installed folder (taken from a clean install and reproduced by two later ones), and `setup` refuses a Chromium that differs. It is not an
+  independent attestation.
 - The runtime is about 560 MB on disk (measured: Node.js, playwright-core and the full Chromium; the separate headless shell is not installed).

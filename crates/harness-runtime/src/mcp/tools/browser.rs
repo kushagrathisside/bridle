@@ -289,6 +289,19 @@ fn blocked_note(session: &Session) -> Option<(u64, String)> {
     ))
 }
 
+/// How many connections since the last call were handed to the person's proxy by name (only with `allow_unpinned_destinations`).
+fn pin_note(session: &Session) -> Option<(u64, String)> {
+    let count = session.traffic().take_unpinned();
+    (count > 0).then(|| {
+        (
+            count,
+            format!(
+                "{count} connection(s) could not be tied to an address Bridle checked (this machine could not resolve the name; web.browser.allow_unpinned_destinations is on), so your proxy decided where they went."
+            ),
+        )
+    })
+}
+
 /// Hosts the session contacted that it had not before this call.
 fn new_hosts(session: &Session, before: &BTreeSet<String>) -> Vec<String> {
     session
@@ -392,6 +405,12 @@ fn navigate(
     );
     let blocked = blocked_note(&session);
     record.note("blocked_requests", blocked.as_ref().map_or(0, |b| b.0));
+    let unpinned = pin_note(&session);
+    record.note("unpinned_connections", unpinned.as_ref().map_or(0, |b| b.0));
+    record.note(
+        "browser_internal_refused",
+        session.traffic().internal_refused(),
+    );
     let nav = match outcome {
         Ok(n) => n,
         Err(e) => {
@@ -440,6 +459,9 @@ fn navigate(
         ));
     }
     if let Some((_, note)) = blocked {
+        text.push_str(&format!("{note}\n"));
+    }
+    if let Some((_, note)) = unpinned {
         text.push_str(&format!("{note}\n"));
     }
     if nav.status.is_some_and(|s| s >= 400) {
@@ -840,6 +862,8 @@ fn act(
     );
     let blocked = blocked_note(&session);
     record.note("blocked_requests", blocked.as_ref().map_or(0, |b| b.0));
+    let unpinned = pin_note(&session);
+    record.note("unpinned_connections", unpinned.as_ref().map_or(0, |b| b.0));
     let result: ActionResult = outcome.map_err(|e| {
         let mut message = browser_error(&e);
         if let Some((_, why)) = &blocked {
@@ -891,6 +915,9 @@ fn act(
         ));
     }
     if let Some((_, note)) = blocked {
+        text.push_str(&format!("{note}\n"));
+    }
+    if let Some((_, note)) = unpinned {
         text.push_str(&format!("{note}\n"));
     }
     text.push_str("Next: browser_snapshot to read the new state.\n");

@@ -595,6 +595,9 @@ impl BrowserManager {
         let upstream = Upstream::from_route(route, env).map_err(BrowserError::Start)?;
         let mut proxy_config = ProxyConfig::new(upstream);
         proxy_config.exempt = exempt.unwrap_or_default();
+        proxy_config.allow_hosts = config.allowed_hosts.clone();
+        proxy_config.deny_hosts = config.blocked_hosts.clone();
+        proxy_config.allow_unpinned = config.allow_unpinned_destinations;
         let proxy = EgressProxy::start(proxy_config)
             .map_err(|e| BrowserError::Start(format!("the egress proxy: {e}")))?;
         let spawner = Box::new(ProcessSpawner {
@@ -641,19 +644,29 @@ impl BrowserManager {
         self.manifest.as_ref()
     }
 
+    /// Removes the session folders of Bridle processes that are gone (a crash, a kill): a folder is named `<pid>-<session id>`, and one
+    /// whose process no longer runs is removed; so is any folder older than a day. A folder of a live process, this one included, is
+    /// never touched.
     fn sweep_stale_folders(&self) {
         let Ok(entries) = std::fs::read_dir(self.layout.sessions_dir()) else {
             return;
         };
+        let mut system = sysinfo::System::new();
+        system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
         for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let owner = name.split('-').next().and_then(|p| p.parse::<u32>().ok());
+            let owner_gone = owner.is_some_and(|pid| {
+                pid != std::process::id() && system.process(sysinfo::Pid::from_u32(pid)).is_none()
+            });
             let old = entry
                 .metadata()
                 .and_then(|m| m.modified())
                 .ok()
                 .and_then(|t| t.elapsed().ok())
                 .is_some_and(|age| age > STALE_SESSION_DIR);
-            if old {
-                let _ = std::fs::remove_dir_all(entry.path());
+            if owner_gone || old {
+                remove_folder(&entry.path());
             }
         }
     }
@@ -688,7 +701,10 @@ impl BrowserManager {
             return Err(BrowserError::TooMany(self.config.max_sessions));
         }
         let id = format!("br-{}", super::random_hex(8));
-        let dir = self.layout.sessions_dir().join(&id);
+        let dir = self
+            .layout
+            .sessions_dir()
+            .join(format!("{}-{id}", std::process::id()));
         std::fs::create_dir_all(dir.join("downloads"))
             .map_err(|e| BrowserError::Start(format!("cannot create the session folder: {e}")))?;
         std::fs::create_dir_all(dir.join("shots"))
@@ -1319,6 +1335,32 @@ mod tests {
         m.reap_idle();
         assert_eq!(m.open_count(), 0);
         assert!(matches!(m.get(session.id()), Err(BrowserError::NoSession)));
+    }
+
+    #[test]
+    fn folders_of_processes_that_are_gone_are_swept_and_live_ones_are_left() {
+        let dir = tempfile::tempdir().unwrap();
+        let m = manager(dir.path(), &config(), FakeSpawner::new(ordinary));
+        let sessions = dir.path().join("browser-runtime").join("sessions");
+        let mine = m.open().unwrap();
+        let dead = sessions.join("4294967-br-deadbeefdeadbeef");
+        std::fs::create_dir_all(dead.join("downloads")).unwrap();
+        std::fs::write(dead.join("downloads").join("dl-1.bin"), b"left behind").unwrap();
+        let unrelated = sessions.join("not-a-session-folder");
+        std::fs::create_dir_all(&unrelated).unwrap();
+        m.sweep_stale_folders();
+        assert!(
+            !dead.exists(),
+            "the folder of a process that is gone is removed"
+        );
+        assert!(
+            mine.dir().exists(),
+            "this process's own session is not touched"
+        );
+        assert!(
+            unrelated.exists(),
+            "a folder that is not ours and not a day old is left alone"
+        );
     }
 
     #[test]

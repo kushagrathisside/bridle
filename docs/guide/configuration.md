@@ -158,7 +158,7 @@ The shipped profiles satisfy these rules, so `bridle init` output loads as a pro
 | V43 | `external.laya.timeout_ms` is outside 100 to 60000 |
 | V44 | warning: `routing.auto_slot` is on while `external.laya` is off, so requests the rules cannot place go to `main` |
 | V48 | `[web]`: an enabled provider needs what it needs (a SearXNG `base_url` without credentials, a Brave key variable name), `web.enabled` needs a usable provider, and the limits are inside their ranges |
-| V49 | `[web.browser]`: it needs `web.enabled`, `headless` stays `true`, 1 to 4 sessions, a navigation timeout of 1 to 120 s, an action timeout of 0.5 to 60 s, an idle time of 1 to 60 minutes, and 1,000 to 100,000 characters of page text |
+| V49 | `[web.browser]`: it needs `web.enabled`, `headless` stays `true`, 1 to 4 sessions, a navigation timeout of 1 to 120 s, an action timeout of 0.5 to 60 s, an idle time of 1 to 60 minutes, and 1,000 to 100,000 characters of page text; host lists hold lowercase names such as `arxiv.org`, never addresses |
 
 ## Workflow and loop limits
 
@@ -417,6 +417,9 @@ browser in [The managed browser](web-browser.md).
 | `web.browser.max_page_content_chars` | 20000 | The most page text one snapshot returns. |
 | `web.browser.screenshots_enabled` | `false` | Whether `browser_snapshot` may keep a screenshot. |
 | `web.browser.downloads_enabled` | `false` | Whether a file a page offers is kept (through the download manager). Off: such a download is refused and nothing is written. |
+| `web.browser.allowed_hosts` | `[]` | If not empty, the browser reaches only these names and what is under them (`"arxiv.org"` also allows `export.arxiv.org`). A bare address is then refused. At most 200. |
+| `web.browser.blocked_hosts` | `[]` | Names (and what is under them) the browser never reaches. Wins over `allowed_hosts`. |
+| `web.browser.allow_unpinned_destinations` | `false` | Behind a proxy, Bridle resolves a name itself and tunnels to the address it checked. If this machine cannot resolve the name, the connection is refused; `true` hands such names to your proxy instead (for those, the proxy is the only boundary). |
 
 There is no key for a browser program, a launch flag, a profile or a download folder: those are not configurable. The runtime lives in
 `browser-runtime\` next to the machine configuration.
