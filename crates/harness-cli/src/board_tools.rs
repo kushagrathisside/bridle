@@ -22,6 +22,47 @@ part of the work to another team; to split a piece of work into several issues, 
 together, so none is forgotten) instead of calling board_create several times; give each issue a clear title, what must be true for it to be done (acceptance), and what it \
 waits for (blocked_by). Do not create an issue that already exists.";
 
+/// The note on an issue whose project manager ended a turn without creating any issue.
+pub const NOT_PLANNED: &str = "The plan was not made: no issues were created.";
+
+/// What a member is told when an issue is given to them.
+pub fn brief(issue: &Issue) -> String {
+    let mut text = format!("You hold issue {}: {}\n", issue.id, issue.title);
+    if !issue.body.is_empty() {
+        text.push_str(&format!("\n{}\n", issue.body));
+    }
+    if !issue.acceptance.is_empty() {
+        text.push_str("\nIt is done when:\n");
+        for item in &issue.acceptance {
+            text.push_str(&format!("- {item}\n"));
+        }
+    }
+    if issue
+        .comments
+        .iter()
+        .any(|c| c.text.starts_with(NOT_PLANNED))
+    {
+        text.push_str("\nIMPORTANT: your last attempt created no issues. Call board_plan once now, with every step, before you answer.\n");
+    }
+    text.push_str("\nDo the work, say what you did with board_comment, and move the issue on with board_update.");
+    text
+}
+
+/// Tells the member whose turn is running on `active` that something changed on issue `issue`: a notice follows their next tool result
+/// (ADR-0023). Nothing is posted when no turn runs, or when the turn is on a different issue. Returns whether a notice was posted.
+pub fn notify_active(
+    workspace: &std::path::Path,
+    active: Option<&str>,
+    issue: &str,
+    what: &str,
+) -> bool {
+    if active != Some(issue) {
+        return false;
+    }
+    harness_runtime::notices::post(workspace, "board_change", what);
+    true
+}
+
 /// The tools of one member for one run.
 pub fn member_tools(
     store: BoardStore,
@@ -995,5 +1036,34 @@ mod tests {
         );
         assert!(call(&maya, "board_list", json!({"status": "nonsense"}), &ctx).is_err());
         assert!(call(&maya, "board_show", json!({"id": "B-none"}), &ctx).is_err());
+    }
+
+    #[test]
+    fn the_member_working_on_an_issue_is_told_when_the_person_changes_it_and_nobody_else_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        // A turn runs on B-1: a change to B-1 becomes a notice for the next tool result; a change to B-2 or with no turn does not.
+        assert!(notify_active(
+            ws,
+            Some("B-1"),
+            "B-1",
+            "The person commented on issue B-1: use the old API"
+        ));
+        assert!(!notify_active(
+            ws,
+            Some("B-1"),
+            "B-2",
+            "The person set issue B-2 to done."
+        ));
+        assert!(!notify_active(
+            ws,
+            None,
+            "B-1",
+            "The person set issue B-1 to done."
+        ));
+        let taken = harness_runtime::notices::take(ws);
+        assert_eq!(taken.shown.len(), 1, "{taken:?}");
+        assert_eq!(taken.shown[0].kind, "board_change");
+        assert!(taken.shown[0].text.contains("use the old API"));
     }
 }

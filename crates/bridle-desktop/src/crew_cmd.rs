@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use harness_cli::board::{BoardStore, Issue, NewIssue, Status};
-use harness_cli::board_tools;
+use harness_cli::board_tools::{self, NOT_PLANNED, brief};
 use harness_cli::chat::{Agent, TurnEnd};
 use harness_cli::crew::{Roster, Target, TeamStore};
 use harness_cli::gitlayer::{self, RunGuard};
@@ -232,6 +232,18 @@ pub fn get_board(bridge: State<'_, Bridge>) -> Value {
 }
 
 /// Runs a board change for the person (the actor is `user`) and answers with the issue, or with the reason it was refused.
+/// Tells the member whose turn is running on `issue` that the person changed it: a notice follows their next tool result (ADR-0023).
+/// Only one turn runs at a time, so the next tool call in the project's workspace is that member's.
+fn tell_active_member(bridge: &Bridge, issue: &str, what: &str) {
+    let active_issue = locked(&bridge.inner)
+        .active
+        .as_ref()
+        .map(|a| a.issue.clone());
+    if let Ok(workspace) = workspace_of(&bridge.args()) {
+        board_tools::notify_active(&workspace, active_issue.as_deref(), issue, what);
+    }
+}
+
 fn user_change(
     bridge: &Bridge,
     change: impl FnOnce(&BoardStore, &Roster) -> anyhow::Result<Issue>,
@@ -301,11 +313,23 @@ pub fn board_set_status(
     status: String,
     note: Option<String>,
 ) -> Value {
-    user_change(&bridge, |store, _| {
+    let result = user_change(&bridge, |store, _| {
         let to =
             Status::parse(&status).ok_or_else(|| anyhow::anyhow!("unknown status `{status}`"))?;
         store.set_status("user", &id, to, note.as_deref())
-    })
+    });
+    if result["ok"] == json!(true) {
+        let why = note.as_deref().filter(|n| !n.trim().is_empty());
+        tell_active_member(
+            &bridge,
+            &id,
+            &format!(
+                "The person set issue {id} to {status}{}.",
+                why.map_or(String::new(), |n| format!(": {n}"))
+            ),
+        );
+    }
+    result
 }
 
 #[tauri::command(async)]
@@ -328,7 +352,15 @@ pub fn board_assign(bridge: State<'_, Bridge>, id: String, assignee: Option<Stri
 
 #[tauri::command(async)]
 pub fn board_comment(bridge: State<'_, Bridge>, id: String, text: String) -> Value {
-    user_change(&bridge, |store, _| store.comment("user", &id, &text))
+    let result = user_change(&bridge, |store, _| store.comment("user", &id, &text));
+    if result["ok"] == json!(true) {
+        tell_active_member(
+            &bridge,
+            &id,
+            &format!("The person commented on issue {id}: {text}"),
+        );
+    }
+    result
 }
 
 #[tauri::command(async)]
@@ -337,32 +369,6 @@ pub fn board_export(bridge: State<'_, Bridge>) -> Value {
         Ok(text) => json!({"ok": true, "markdown": text}),
         Err(error) => fail(error),
     }
-}
-
-/// The note on an issue whose project manager ended a turn without creating any issue.
-const NOT_PLANNED: &str = "The plan was not made: no issues were created.";
-
-/// What a member is told when an issue is given to them.
-fn brief(issue: &Issue) -> String {
-    let mut text = format!("You hold issue {}: {}\n", issue.id, issue.title);
-    if !issue.body.is_empty() {
-        text.push_str(&format!("\n{}\n", issue.body));
-    }
-    if !issue.acceptance.is_empty() {
-        text.push_str("\nIt is done when:\n");
-        for item in &issue.acceptance {
-            text.push_str(&format!("- {item}\n"));
-        }
-    }
-    if issue
-        .comments
-        .iter()
-        .any(|c| c.text.starts_with(NOT_PLANNED))
-    {
-        text.push_str("\nIMPORTANT: your last attempt created no issues. Call board_plan once now, with every step, before you answer.\n");
-    }
-    text.push_str("\nDo the work, say what you did with board_comment, and move the issue on with board_update.");
-    text
 }
 
 /// Starts a member's turn on a ready issue: the issue is taken for them, and the turn runs under their prompt with the board

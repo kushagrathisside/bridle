@@ -11,6 +11,7 @@
 //! | `.part-*` files in the web downloads and screenshots folders | Removed (a transfer that never finished) |
 //! | `*.tmp-*` files in the state folders | Removed when they are over an hour old |
 //! | Browser session folders of processes that are gone | Removed |
+//! | Background commands whose Bridle is gone | Stopped, after checking the process id still belongs to that program; the record is removed |
 
 use std::fs;
 use std::path::Path;
@@ -80,6 +81,9 @@ pub fn repair_project(workspace: &Path) -> Vec<String> {
             swap.stopped
         ));
     }
+    lines.extend(harness_runtime::mcp::tools::background::sweep_orphans(
+        workspace,
+    ));
     let state = identity::state_dir(workspace);
     let web = state.join("web");
     let parts = remove_parts(&web.join("downloads"), Duration::from_secs(300))

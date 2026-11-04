@@ -136,6 +136,11 @@ enum Command {
         #[arg(long)]
         text: Option<String>,
     },
+    /// Run a real model through the chat loop on scripted scenarios and score it (for evaluating Bridle).
+    EvalAgent {
+        #[command(subcommand)]
+        action: commands::eval_agent::EvalAgentAction,
+    },
     /// Run a task corpus under a condition, or summarise the results.
     Bench {
         #[command(subcommand)]
@@ -166,6 +171,7 @@ pub fn run() -> ExitCode {
             commands::init::run(&args, cli.config.as_deref(), cli.workspace.as_deref())
         }
         Command::Bench { action } => commands::bench::run(&action),
+        Command::EvalAgent { action } => commands::eval_agent::run(&action, cli.config.as_deref()),
         // The TUI loads the configuration itself: a broken config is a state to show, not a crash.
         Command::Tui => tui::run(tui::data::LoadArgs {
             config: cli.config.clone(),
@@ -204,7 +210,11 @@ pub fn run() -> ExitCode {
                 Command::EvalDecisions { cases, slot, out } => {
                     commands::eval::run(&app, &slot, &cases, out.as_deref())
                 }
-                Command::Hook { .. } | Command::Init(_) | Command::Bench { .. } | Command::Tui => {
+                Command::Hook { .. }
+                | Command::Init(_)
+                | Command::Bench { .. }
+                | Command::EvalAgent { .. }
+                | Command::Tui => {
                     unreachable!("handled above")
                 }
             },

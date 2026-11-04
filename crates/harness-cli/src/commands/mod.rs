@@ -6,6 +6,7 @@ pub mod desktop;
 pub mod doctor;
 pub mod egress;
 pub mod eval;
+pub mod eval_agent;
 pub mod fleet;
 pub mod health;
 pub mod hook;

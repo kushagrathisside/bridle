@@ -870,6 +870,37 @@ pub fn setup_machine(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// Shows the machine configuration file in Windows Explorer (selected), so the person can open it in an editor. Runs `explorer.exe`
+/// with a path that Bridle computed; nothing the model says reaches it.
+#[tauri::command]
+pub fn reveal_machine_config() -> Result<String, String> {
+    let path = harness_core::config::machine_config_path()
+        .ok_or("this machine has no machine configuration folder")?;
+    let target = if path.exists() {
+        path.clone()
+    } else {
+        path.parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| path.clone())
+    };
+    if !target.exists() {
+        return Err(format!(
+            "{} does not exist yet: run the first-run setup, or `bridle init --machine`",
+            target.display()
+        ));
+    }
+    let mut command = std::process::Command::new("explorer.exe");
+    if path.exists() {
+        command.arg(format!("/select,{}", target.display()));
+    } else {
+        command.arg(&target);
+    }
+    command
+        .spawn()
+        .map_err(|e| format!("cannot open Explorer: {e}"))?;
+    Ok(path.display().to_string())
+}
+
 /// The folders a first run would propose, for the setup form: those that exist on this machine.
 #[tauri::command]
 pub fn suggest_machine_paths() -> Value {

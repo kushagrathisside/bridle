@@ -52,6 +52,7 @@ $("new-folder").addEventListener("click", () => createEntry(true));
 $("tree-refresh").addEventListener("click", refreshTree);
 $("changes-refresh").addEventListener("click", loadChanges);
 $("run-doctor").addEventListener("click", () => invoke("run_doctor"));
+$("models-refresh").addEventListener("click", () => { invoke("refresh_snapshot"); toast("Configuration read again", "ok"); });
 $("search-input").addEventListener("input", scheduleSearch);
 $("search-case").addEventListener("change", runSearch);
 $("search-regex").addEventListener("change", runSearch);

@@ -327,6 +327,11 @@ impl Agent {
         })
     }
 
+    /// The conversation so far, oldest first (for evaluation tools).
+    pub fn history(&self) -> &[ChatMessage] {
+        &self.messages
+    }
+
     /// The text of the newest answer the model gave, if any. The board uses it as the note on a finished issue.
     pub fn last_answer(&self) -> Option<String> {
         self.messages
