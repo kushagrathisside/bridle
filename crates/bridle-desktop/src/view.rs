@@ -234,10 +234,16 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         std::thread::spawn(move || {
             for status in statuses {
-                let Ok((mut stream, _)) = listener.accept() else { return };
+                let Ok((mut stream, _)) = listener.accept() else {
+                    return;
+                };
                 let mut buffer = [0u8; 1024];
                 let _ = stream.read(&mut buffer);
-                let body = if status == 200 { "{\"status\":\"ok\"}" } else { "{\"error\":\"Loading model\"}" };
+                let body = if status == 200 {
+                    "{\"status\":\"ok\"}"
+                } else {
+                    "{\"error\":\"Loading model\"}"
+                };
                 let reply = format!(
                     "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                     body.len()
@@ -251,7 +257,10 @@ mod tests {
     #[test]
     fn a_loading_server_is_warming_and_a_ready_one_is_not() {
         let endpoint = serve(vec![503, 200]);
-        assert!(!answers_health(&endpoint), "503 means the model is still loading");
+        assert!(
+            !answers_health(&endpoint),
+            "503 means the model is still loading"
+        );
         assert!(answers_health(&endpoint), "200 means it is ready");
     }
 

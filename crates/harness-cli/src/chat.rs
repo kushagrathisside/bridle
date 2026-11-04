@@ -284,11 +284,19 @@ impl Agent {
 
     /// An agent that works as a member of the team: `persona` goes into the system prompt and `extra` are tools added to
     /// the usual ones (the board tools). It goes through the same policy and the same loop as any other agent.
-    pub fn for_member(app: App, persona: String, extra: Vec<Box<dyn McpTool>>) -> Result<Self, String> {
+    pub fn for_member(
+        app: App,
+        persona: String,
+        extra: Vec<Box<dyn McpTool>>,
+    ) -> Result<Self, String> {
         Self::build(app, Some(persona), extra)
     }
 
-    fn build(app: App, persona: Option<String>, extra: Vec<Box<dyn McpTool>>) -> Result<Self, String> {
+    fn build(
+        app: App,
+        persona: Option<String>,
+        extra: Vec<Box<dyn McpTool>>,
+    ) -> Result<Self, String> {
         app.require_valid_config().map_err(|e| format!("{e:#}"))?;
         let policy = app.policy().map_err(|e| format!("{e:#}"))?;
         let ctx = ToolContext {
@@ -324,7 +332,10 @@ impl Agent {
         self.messages
             .iter()
             .rev()
-            .find(|m| m.role == Role::Assistant && m.content.as_deref().is_some_and(|c| !c.trim().is_empty()))
+            .find(|m| {
+                m.role == Role::Assistant
+                    && m.content.as_deref().is_some_and(|c| !c.trim().is_empty())
+            })
             .and_then(|m| m.content.clone())
     }
 

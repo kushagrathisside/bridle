@@ -71,7 +71,8 @@ impl IdeaStore {
             let idea = Idea {
                 id: queue.next_id,
                 text,
-                created: humantime::format_rfc3339_seconds(std::time::SystemTime::now()).to_string(),
+                created: humantime::format_rfc3339_seconds(std::time::SystemTime::now())
+                    .to_string(),
             };
             queue.ideas.push(idea.clone());
             Ok(idea)
@@ -213,7 +214,8 @@ fn read(path: &Path) -> Result<Ideas> {
 /// Writes the queue atomically: a temporary file in the same folder, flushed, then renamed over the real one.
 fn write(path: &Path, queue: &Ideas) -> Result<()> {
     let temporary = path.with_file_name("ideas.json.tmp");
-    let mut file = File::create(&temporary).with_context(|| format!("create {}", temporary.display()))?;
+    let mut file =
+        File::create(&temporary).with_context(|| format!("create {}", temporary.display()))?;
     file.write_all(serde_json::to_string_pretty(queue)?.as_bytes())?;
     file.sync_all()?;
     drop(file);
@@ -232,7 +234,13 @@ mod tests {
     }
 
     fn texts(store: &IdeaStore) -> Vec<String> {
-        store.list().unwrap().ideas.into_iter().map(|i| i.text).collect()
+        store
+            .list()
+            .unwrap()
+            .ideas
+            .into_iter()
+            .map(|i| i.text)
+            .collect()
     }
 
     #[test]
@@ -327,7 +335,10 @@ mod tests {
         let state = dir.path().join(".bridle");
         fs::write(state.join(FILE), "{ this is not json").unwrap();
         assert!(store.list().unwrap().ideas.is_empty());
-        assert!(state.join("ideas.corrupt.json").exists(), "the bad file is kept");
+        assert!(
+            state.join("ideas.corrupt.json").exists(),
+            "the bad file is kept"
+        );
         store.add("fresh").unwrap();
         assert_eq!(texts(&store), ["fresh"]);
     }
@@ -347,7 +358,10 @@ mod tests {
                 })
             })
             .collect();
-        let mut ids: Vec<u64> = handles.into_iter().flat_map(|h| h.join().unwrap()).collect();
+        let mut ids: Vec<u64> = handles
+            .into_iter()
+            .flat_map(|h| h.join().unwrap())
+            .collect();
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), 40, "every idea has its own id");
