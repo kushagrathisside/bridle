@@ -59,6 +59,8 @@ pub struct Report {
     pub(crate) model_files: Vec<ModelFileEntry>,
     pub(crate) endpoints: Vec<EndpointEntry>,
     pub(crate) opencode: OpencodeEntry,
+    /// The managed browser, when it is enabled or installed.
+    pub(crate) browser: Option<BrowserEntry>,
     pub(crate) config_issues: Vec<IssueEntry>,
     /// True when the exit code is a failure: a runtime is missing or the config has errors.
     pub(crate) blocking_problems: bool,
@@ -105,6 +107,14 @@ pub(crate) struct EndpointEntry {
 pub(crate) struct OpencodeEntry {
     pub(crate) path: String,
     pub(crate) version: Option<String>,
+    pub(crate) level: Level,
+    pub(crate) detail: String,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct BrowserEntry {
+    pub(crate) enabled: bool,
+    pub(crate) runtime: String,
     pub(crate) level: Level,
     pub(crate) detail: String,
 }
@@ -170,9 +180,63 @@ pub(crate) fn gather(app: &App) -> Report {
         model_files,
         endpoints,
         opencode: opencode_entry(config),
+        browser: browser_entry(config),
         config_issues: app.issues.iter().map(issue_entry).collect(),
         blocking_problems: false,
     }
+}
+
+/// The managed browser: off, not installed, half installed, the wrong version, or ready. `None` when it is off and nothing is
+/// installed, so a machine that never uses it sees nothing.
+fn browser_entry(config: &Config) -> Option<BrowserEntry> {
+    use harness_runtime::web::browser::runtime::{self, State};
+    let enabled = config.web.browser.enabled;
+    let layout = runtime::Layout::default_location()?;
+    let status = runtime::inspect(&layout);
+    if !enabled && status.state == State::NotInstalled {
+        return None;
+    }
+    let (level, detail) = match (&status.state, enabled) {
+        (State::Ready, true) => {
+            let m = status.manifest.as_ref();
+            (
+                Level::Ok,
+                format!(
+                    "enabled; Chromium {}, Playwright {}, Node.js {} installed",
+                    m.map_or("?", |m| m.chromium_version.as_str()),
+                    m.map_or("?", |m| m.playwright_version.as_str()),
+                    m.map_or("?", |m| m.node_version.as_str()),
+                ),
+            )
+        }
+        (State::Ready, false) => (
+            Level::Info,
+            "installed but off ([web.browser] enabled = false)".to_owned(),
+        ),
+        (State::NotInstalled, true) => (
+            Level::Warn,
+            "enabled, but the runtime is not installed: run `bridle web browser setup`".to_owned(),
+        ),
+        (_, true) => (
+            Level::Warn,
+            format!("enabled, but the runtime is {}", status.describe()),
+        ),
+        (_, false) => (
+            Level::Info,
+            format!("off; the runtime is {}", status.describe()),
+        ),
+    };
+    let detail = if enabled && !config.web.enabled {
+        format!("{detail}; web research is off, so no browser tool is offered")
+    } else {
+        detail
+    };
+    Some(BrowserEntry {
+        enabled,
+        runtime: status.describe(),
+        level,
+        detail,
+    })
 }
 
 fn os_text(sys: &SystemReport) -> String {
@@ -568,6 +632,9 @@ fn print_text(report: &Report) {
         "opencode",
         format!("{} | {}", report.opencode.path, report.opencode.detail),
     );
+    if let Some(browser) = &report.browser {
+        line(browser.level.mark(), "browser", &browser.detail);
+    }
     for issue in &report.config_issues {
         line(
             issue.level.mark(),
@@ -623,6 +690,7 @@ fn count_warnings(report: &Report) -> usize {
         .chain(report.model_files.iter().map(|f| f.level))
         .chain(report.endpoints.iter().map(|e| e.level))
         .chain(std::iter::once(report.opencode.level))
+        .chain(report.browser.iter().map(|b| b.level))
         .chain(report.config_issues.iter().map(|i| i.level));
     levels.filter(|level| *level == Level::Warn).count()
 }
@@ -683,6 +751,7 @@ model_file = "model.gguf"
                 level: Level::Ok,
                 detail: String::new(),
             },
+            browser: None,
             config_issues: Vec::new(),
             blocking_problems: false,
         }

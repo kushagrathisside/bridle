@@ -96,6 +96,8 @@ pub struct WebSection {
     pub max_download_mb: u64,
     /// Search providers by name.
     pub providers: BTreeMap<String, WebProvider>,
+    /// The managed browser (ADR-0020). Off unless `browser.enabled`.
+    pub browser: BrowserSection,
 }
 
 impl Default for WebSection {
@@ -108,8 +110,60 @@ impl Default for WebSection {
             max_fetch_bytes: 2 * 1024 * 1024,
             max_download_mb: 100,
             providers: BTreeMap::new(),
+            browser: BrowserSection::default(),
         }
     }
+}
+
+/// The managed browser: Chromium driven through Playwright by a worker that Bridle starts, supervises and stops (ADR-0020). The
+/// whole section is machine config only, like the rest of `[web]`: it decides what the browser may reach and where the program
+/// that runs it lives, and a repository must not be able to change either. Off unless `enabled`; the runtime is installed on request
+/// (`bridle web browser setup`), never on first use.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct BrowserSection {
+    pub enabled: bool,
+    /// The browser engine. Only Chromium is supported.
+    pub engine: BrowserEngine,
+    /// Run without a window. A visible browser is not offered: nobody watches it, and it would only add attack surface.
+    pub headless: bool,
+    /// The most browser sessions open at once. Each is its own browser process.
+    pub max_sessions: usize,
+    /// How long a page may take to load, in milliseconds.
+    pub navigation_timeout_ms: u64,
+    /// How long one click, fill or wait may take, in milliseconds.
+    pub action_timeout_ms: u64,
+    /// A session unused for this many seconds is closed.
+    pub session_idle_secs: u64,
+    /// The most characters of page text one snapshot returns.
+    pub max_page_content_chars: usize,
+    /// Whether `browser_snapshot` may take screenshots.
+    pub screenshots_enabled: bool,
+    /// Whether a download that a page starts is kept. Off: the download is refused and nothing is written.
+    pub downloads_enabled: bool,
+}
+
+impl Default for BrowserSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            engine: BrowserEngine::Chromium,
+            headless: true,
+            max_sessions: 2,
+            navigation_timeout_ms: 30_000,
+            action_timeout_ms: 10_000,
+            session_idle_secs: 600,
+            max_page_content_chars: 20_000,
+            screenshots_enabled: false,
+            downloads_enabled: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserEngine {
+    Chromium,
 }
 
 /// One search provider.

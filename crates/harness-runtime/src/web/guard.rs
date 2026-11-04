@@ -53,6 +53,8 @@ pub fn parse_url(raw: &str) -> Result<Target, String> {
         .trim_start_matches('[')
         .trim_end_matches(']')
         .to_ascii_lowercase();
+    // `localhost.` and `127.0.0.1.` name the same machines as without the dot; the dot is only a way around a name check.
+    let host = host.trim_end_matches('.').to_owned();
     if host.is_empty() {
         return Err("the URL has no host".to_owned());
     }
@@ -128,6 +130,118 @@ fn blocked_v4(ip: Ipv4Addr) -> Option<&'static str> {
     }
 }
 
+/// Reads a host written the way old resolvers accept an IPv4 address: one to four parts, each decimal, `0x` hexadecimal or
+/// leading-zero octal, the last part filling the rest (`2130706433`, `0x7f.1`, `0177.0.0.1`, `127.1`). A browser or a proxy on the
+/// other side may read the same text as an address, so the guard must as well. `None` when the text is not such a number.
+pub fn parse_loose_ipv4(host: &str) -> Option<Ipv4Addr> {
+    let parts: Vec<&str> = host.split('.').collect();
+    if parts.is_empty() || parts.len() > 4 || parts.iter().any(|p| p.is_empty()) {
+        return None;
+    }
+    let mut numbers = Vec::with_capacity(parts.len());
+    for part in &parts {
+        let (digits, radix) =
+            if let Some(hex) = part.strip_prefix("0x").or_else(|| part.strip_prefix("0X")) {
+                (hex, 16)
+            } else if part.len() > 1 && part.starts_with('0') {
+                (&part[1..], 8)
+            } else {
+                (*part, 10)
+            };
+        if digits.is_empty() && radix == 16 {
+            return None;
+        }
+        numbers.push(u64::from_str_radix(digits, radix).ok()?);
+    }
+    let (last, init) = numbers.split_last()?;
+    if init.iter().any(|n| *n > 255) {
+        return None;
+    }
+    let tail_bits = 8 * (4 - init.len());
+    if tail_bits < 32 && *last >= (1u64 << tail_bits) {
+        return None;
+    }
+    if *last > u64::from(u32::MAX) {
+        return None;
+    }
+    let mut value: u64 = *last;
+    for (i, n) in init.iter().enumerate() {
+        value |= n << (8 * (3 - i));
+    }
+    Some(Ipv4Addr::from(u32::try_from(value).ok()?))
+}
+
+/// The address a host name stands for when it is written as a number rather than a name: a standard IPv4 or IPv6 address, or one
+/// of the old spellings of IPv4 (see [`parse_loose_ipv4`]).
+fn literal_ip(host: &str) -> Option<IpAddr> {
+    let bare = host.trim_start_matches('[').trim_end_matches(']');
+    // A zone (`fe80::1%25eth0`) does not change which network the address is on.
+    let bare = bare.split('%').next().unwrap_or(bare);
+    bare.parse::<IpAddr>()
+        .ok()
+        .or_else(|| parse_loose_ipv4(bare).map(IpAddr::V4))
+}
+
+/// Checks a host (and its port) that something else asked us to contact, and returns the addresses it may be contacted at.
+///
+/// This is the check the browser's egress proxy makes for **every** connection the browser opens. A number is judged by what it
+/// is; a local name is refused without asking DNS; with a `resolver` the name is resolved **once** and every answer is judged
+/// (one blocked answer refuses the host), and the caller must connect to one of the returned addresses and nowhere else, which is
+/// what closes DNS rebinding. Without a `resolver` (a proxy carries the connection and resolves the name) the returned list is
+/// empty and only the name itself was judged.
+pub fn resolve_pinned(
+    host: &str,
+    port: u16,
+    resolver: Option<&dyn Resolver>,
+) -> Result<Vec<IpAddr>, String> {
+    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    if host.is_empty() {
+        return Err("the host is empty".to_owned());
+    }
+    if port == 0 {
+        return Err("port 0 is not allowed".to_owned());
+    }
+    if let Some(ip) = literal_ip(&host) {
+        return match blocked_ip(ip) {
+            Some(why) => Err(format!(
+                "{host} is {why}; the web tools do not contact addresses on this machine or its network"
+            )),
+            None => Ok(vec![ip]),
+        };
+    }
+    // No real top-level domain begins with a digit, so a name that ends in one is a number written in a way we cannot read:
+    // refuse it rather than hand it on to be read some other way.
+    if host
+        .rsplit('.')
+        .next()
+        .and_then(|label| label.chars().next())
+        .is_some_and(|c| c.is_ascii_digit())
+    {
+        return Err(format!("{host} is not a usable address or name"));
+    }
+    if local_name(&host) {
+        return Err(format!(
+            "{host} names this machine or a local network; the web tools do not contact it"
+        ));
+    }
+    let Some(resolver) = resolver else {
+        return Ok(Vec::new());
+    };
+    let addresses = resolver
+        .resolve(&host, port)
+        .map_err(|e| format!("cannot resolve {host}: {e}"))?;
+    if addresses.is_empty() {
+        return Err(format!("{host} has no address"));
+    }
+    if let Some((ip, why)) = addresses
+        .iter()
+        .find_map(|ip| blocked_ip(*ip).map(|why| (ip, why)))
+    {
+        return Err(format!("{host} resolves to {ip}, which is {why}"));
+    }
+    Ok(addresses)
+}
+
 /// Names that mean "this machine or this network", refused without asking DNS.
 fn local_name(host: &str) -> bool {
     host == "localhost"
@@ -165,7 +279,7 @@ pub fn check_target(
     if allow_private {
         return Ok(());
     }
-    if let Ok(ip) = target.host.parse::<IpAddr>() {
+    if let Some(ip) = literal_ip(&target.host) {
         return match blocked_ip(ip) {
             Some(why) => Err(format!(
                 "{} is {why}; the web tools do not contact addresses on this machine or its network",
@@ -207,6 +321,112 @@ mod tests {
         fn resolve(&self, _: &str, _: u16) -> std::io::Result<Vec<IpAddr>> {
             Ok(self.0.clone())
         }
+    }
+
+    #[test]
+    fn old_spellings_of_an_ipv4_address_are_read_as_the_address_they_are() {
+        for (text, ip) in [
+            ("2130706433", "127.0.0.1"),
+            ("0x7f.1", "127.0.0.1"),
+            ("0177.0.0.1", "127.0.0.1"),
+            ("127.1", "127.0.0.1"),
+            ("0x7f000001", "127.0.0.1"),
+            ("169.254.43518", "169.254.169.254"),
+            ("10.1", "10.0.0.1"),
+        ] {
+            assert_eq!(parse_loose_ipv4(text), Some(ip.parse().unwrap()), "{text}");
+            assert!(
+                resolve_pinned(text, 80, None).is_err(),
+                "{text} must be refused"
+            );
+        }
+        // Not numbers in that sense.
+        for text in [
+            "",
+            "1.2.3.4.5",
+            "256.1.1.1",
+            "1..2",
+            "0x",
+            "example.com",
+            "1.1.1.256",
+        ] {
+            assert_eq!(parse_loose_ipv4(text), None, "{text}");
+        }
+        // A public address written the old way is still public.
+        assert_eq!(
+            resolve_pinned("0x08.0x08.0x08.0x08", 443, None).unwrap(),
+            vec!["8.8.8.8".parse::<IpAddr>().unwrap()]
+        );
+    }
+
+    #[test]
+    fn a_trailing_dot_does_not_get_a_local_name_through() {
+        for host in [
+            "localhost.",
+            "LOCALHOST",
+            "printer.local.",
+            "127.0.0.1.",
+            "a.b.localhost.",
+        ] {
+            assert!(
+                resolve_pinned(host, 80, None).is_err(),
+                "{host} must be refused"
+            );
+        }
+        assert!(parse_url("http://localhost./x").is_ok_and(|t| t.host == "localhost"));
+        assert!(check_target(&target("http://localhost./x"), None, false).is_err());
+    }
+
+    #[test]
+    fn every_form_of_a_local_ipv6_address_is_refused() {
+        for host in [
+            "[::1]",
+            "::1",
+            "[::ffff:127.0.0.1]",
+            "[::ffff:7f00:1]",
+            "[fe80::1]",
+            "[fe80::1%25eth0]",
+            "[fc00::1]",
+            "[fd12:3456::1]",
+            "[::]",
+            "[::ffff:169.254.169.254]",
+        ] {
+            assert!(
+                resolve_pinned(host, 443, None).is_err(),
+                "{host} must be refused"
+            );
+        }
+        assert!(resolve_pinned("[2606:4700:4700::1111]", 443, None).is_ok());
+    }
+
+    #[test]
+    fn a_name_is_resolved_once_and_one_bad_answer_refuses_it() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        struct Counting(AtomicUsize, Vec<IpAddr>);
+        impl Resolver for Counting {
+            fn resolve(&self, _: &str, _: u16) -> std::io::Result<Vec<IpAddr>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Ok(self.1.clone())
+            }
+        }
+        let public: IpAddr = "93.184.216.34".parse().unwrap();
+        let ok = Counting(AtomicUsize::new(0), vec![public]);
+        assert_eq!(
+            resolve_pinned("example.org", 443, Some(&ok)).unwrap(),
+            vec![public]
+        );
+        assert_eq!(ok.0.load(Ordering::SeqCst), 1);
+        let mixed = Counting(
+            AtomicUsize::new(0),
+            vec![public, "10.0.0.5".parse().unwrap()],
+        );
+        let error = resolve_pinned("rebind.example.org", 443, Some(&mixed)).unwrap_err();
+        assert!(error.contains("10.0.0.5"), "{error}");
+        let none = Counting(AtomicUsize::new(0), vec![]);
+        assert!(resolve_pinned("nowhere.example.org", 443, Some(&none)).is_err());
+        // Without a resolver the name is judged and nothing is returned.
+        assert!(resolve_pinned("example.org", 443, None).unwrap().is_empty());
+        assert!(resolve_pinned("example.org", 0, None).is_err());
     }
 
     fn target(url: &str) -> Target {

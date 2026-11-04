@@ -96,6 +96,10 @@ pub fn agent_for_redirects(
         .tls_config(
             ureq::tls::TlsConfig::builder()
                 .provider(ureq::tls::TlsProvider::NativeTls)
+                // The system store, as this module's note says. ureq's default is its bundled list of roots with the system's
+                // switched off, which fails behind a proxy that re-signs certificates with a company root and for any site
+                // whose root is newer than that list (found when `bridle web browser setup` could not reach nodejs.org).
+                .root_certs(ureq::tls::RootCerts::PlatformVerifier)
                 .build(),
         );
     if !follow_redirects {

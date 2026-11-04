@@ -28,6 +28,52 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-11-04 (latest): the managed browser (ADR-0020)
+
+Branch `web-research`, on top of `d28b0a2` and `e49df81`. Windows only; the tested machine (Windows 11, x64). Design, alternatives and
+residual risks: [ADR-0020](../decisions/0020-managed-browser-is-a-policy-gated-playwright-worker.md). Use: [web-browser.md](../guide/web-browser.md).
+
+- **Built.** Tools `browser_navigate`, `browser_snapshot`, `browser_action`, `browser_close`; `[web.browser]` (rule V49, machine-only);
+  one Node.js + Playwright worker and one Chromium per session over a closed JSON-line protocol (no path, script, selector, DevTools
+  command or launch flag in it); Bridle's own egress proxy, the only route out of Chromium, with per-session credentials; downloads
+  through the existing download code (`ingest_file`) and screenshots as artifacts; source records with `extraction`, Chromium and
+  Playwright versions, session and `rendition_of`; events in `tool-events.jsonl`; `bridle web browser status / setup / test / remove`;
+  a `browser` line in `bridle doctor` and the browser in `bridle egress`. No new Rust dependency.
+- **Runtime install checked.** `bridle web browser setup` (through the company proxy) installed Node.js 24.22.2 (SHA-256 matches nodejs.org),
+  playwright-core 1.64.1 (SHA-512 matches npm) and Chromium 156.0.8078.4 (revision 1248); 560 MB on disk. A clean `remove` and `setup` again
+  gave the same `chrome.exe` SHA-256 (`7f08161b...`). Chromium's own download is not hash-pinned by its publisher; Bridle records and
+  re-checks the hash.
+- **Verified with a real Chromium.** `bridle web browser test`: **72 of 72 checks** against a site served from this machine: static and
+  script-built pages (a plain fetch does not see the script's text, the snapshot does), forms by label, role and name, select, keys,
+  scroll, back and forward, popups, ambiguity explained and resolved with `index`, a password field refused, redirects, a redirect loop,
+  an HTTP 500, a timeout that leaves the session usable, a PDF kept, a program and an over-limit file refused, a screenshot kept as a
+  PNG, a closed session gone, a third session refused, two sessions sharing no cookie or storage, the profile in a throw-away folder,
+  no Chromium process left after closing, and a **hostile page** (prompt-injection text, forged Bridle markers, `fetch`/image/WebSocket
+  to a second local server and to 169.254.169.254, `file://` fetch and frame, redirect into the inner network): the second server
+  received **0** requests, the proxy refused and reported them, and the forged marker was neutralised. `--live https://example.com`
+  also read a real page through the company proxy (Chromium trusts the proxy's certificate).
+- **Gate.** fmt, clippy with `-D warnings`, **1,089 tests passed, 0 failed, 5 ignored** (`D:\e2e\gate3.out`). About 70 tests are new:
+  protocol, runtime manifest and identity, egress proxy (authentication, every spelling of the inner network, one resolution per name,
+  a name that starts answering `127.0.0.1`, mixed answers, ports, upstream mode, a byte limit, bad requests), manager (open, close,
+  limit, ids, silent, exited, malformed and crashed workers, idle reaping, drop), tools (policy refusal by a direct client and the log,
+  provenance, `rendition_of`, downloads, screenshots, another workspace), guard (numeric spellings, trailing dot, IPv6, pinning), store,
+  policy look-alikes (`browser_evaluate`, `browser_cdp`, ...), V49 and the repository trust rule. The real-Chromium test
+  (`tests/browser_live.rs`) skips when no runtime is installed, so the ordinary suite never needs a download.
+- **Found and fixed on the way.** (1) `ureq` was not using the system certificate store (its default is a bundled root list), so every
+  HTTPS request failed behind a re-signing proxy; this was the unexplained `rfc-editor.org` failure of the web v0.1 entry above, and it
+  also failed `nodejs.org`. (2) The web guard let `localhost.` and old IPv4 spellings (`2130706433`, `0x7f.1`) through when a proxy
+  carried the request. (3) Bridle's own redaction masked a field named `session_id`, which made the first version's session ids
+  unusable. (4) A proxy that answered 400 reset the connection because it left the client's request unread. (5) Playwright installs the
+  headless shell by default (280 MB more); `--no-shell` skips it.
+- **Not verified, plainly.** DNS rebinding is closed only when Bridle connects directly, and is shown against a scripted resolver, not a
+  live hostile DNS server; behind an upstream proxy (this machine) the upstream resolves names and is the boundary. The real-Chromium
+  CLI self-test ran in that upstream mode (only the local test site dialled directly); the cargo test `tests/browser_live.rs` ran the same
+  checks with a direct route, where the proxy pins the address, and passed too (28 s). Chromium made a background connection to
+  `www.google.com:443` in the live check (public, through the proxy, reported, not blocked). No host allow or deny list. One machine,
+  one proxy, one Windows. A hard kill of Bridle relies on the pipe closing, not a job object. The search providers are still tested
+  only against fake servers.
+- **Left alone.** The old untracked benchmark result folders, the model download files, and the running model downloads.
+
 ## 2026-11-04 (later): web research v0.1
 
 Branch `web-research`. Windows only. Design and the answers to the six questions of the owner's plan:
