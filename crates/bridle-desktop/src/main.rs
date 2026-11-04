@@ -215,6 +215,7 @@ fn run_window(raw: &[OsString]) -> ExitCode {
             crew_cmd::board_comment,
             crew_cmd::board_export,
             crew_cmd::run_issue,
+            crew_cmd::undo_issue,
         ])
         .build(tauri::generate_context!());
     let app = match built {
