@@ -10,6 +10,7 @@ use harness_cli::board::{BoardStore, Issue, NewIssue, Status};
 use harness_cli::board_tools;
 use harness_cli::chat::{Agent, TurnEnd};
 use harness_cli::crew::{Roster, Target, TeamStore};
+use harness_cli::gitlayer::{self, RunGuard};
 use harness_cli::tui::chat::Turn;
 use harness_cli::tui::jobs;
 use serde_json::{Value, json};
@@ -33,7 +34,13 @@ fn board(bridge: &Bridge) -> Result<BoardStore, String> {
 
 /// After the window opens a folder no turn is running, so any issue left in progress was cut short by a close or a crash.
 pub fn recover_board(workspace: &std::path::Path) {
-    let _ = BoardStore::open(workspace).recover();
+    // A run whose journal has no end was cut short: its files are saved first, then its issue goes back to ready.
+    let cut_short = gitlayer::recover(workspace);
+    let store = BoardStore::open(workspace);
+    let _ = store.recover();
+    for id in cut_short {
+        let _ = store.comment("bridle", &id, "The files of the interrupted run were saved. Use Undo changes on the board to put them back as they were.");
+    }
 }
 
 fn crew_json(bridge: &Bridge) -> Value {
@@ -217,6 +224,7 @@ pub fn get_board(bridge: State<'_, Bridge>) -> Value {
             "issues": board.issues.values().map(issue_json).collect::<Vec<_>>(),
             "load": board.load_by_member(),
             "ready": board.ready(None).iter().map(|i| i.id.clone()).collect::<Vec<_>>(),
+            "undoable": workspace_of(&bridge.args()).map(|ws| gitlayer::undoable_scopes(&ws).into_iter().collect::<Vec<_>>()).unwrap_or_default(),
             "skipped": board.skipped,
         }),
         Err(error) => fail(error),
@@ -331,6 +339,9 @@ pub fn board_export(bridge: State<'_, Bridge>) -> Value {
     }
 }
 
+/// The note on an issue whose project manager ended a turn without creating any issue.
+const NOT_PLANNED: &str = "The plan was not made: no issues were created.";
+
 /// What a member is told when an issue is given to them.
 fn brief(issue: &Issue) -> String {
     let mut text = format!("You hold issue {}: {}\n", issue.id, issue.title);
@@ -342,6 +353,9 @@ fn brief(issue: &Issue) -> String {
         for item in &issue.acceptance {
             text.push_str(&format!("- {item}\n"));
         }
+    }
+    if issue.comments.iter().any(|c| c.text.starts_with(NOT_PLANNED)) {
+        text.push_str("\nIMPORTANT: your last attempt created no issues. Call board_plan once now, with every step, before you answer.\n");
     }
     text.push_str("\nDo the work, say what you did with board_comment, and move the issue on with board_update.");
     text
@@ -373,6 +387,14 @@ pub fn run_issue(app: AppHandle, bridge: State<'_, Bridge>, id: String, slot: St
         return fail(format!("{member} has no role"));
     };
     let args = bridge.args();
+    if locked(&bridge.inner).running {
+        return fail("a turn is already running; stop it or wait for it to finish");
+    }
+    // The project's lock and a checkpoint of the files, before anything changes. Refuses in the middle of a merge or rebase.
+    let guard = match workspace_of(&args).map_err(|e| format!("{e:#}")).and_then(|ws| RunGuard::begin(&ws, &id)) {
+        Ok(guard) => guard,
+        Err(error) => return fail(error),
+    };
     let (agent, cancel) = {
         let mut inner = locked(&bridge.inner);
         if inner.running {
@@ -409,6 +431,7 @@ pub fn run_issue(app: AppHandle, bridge: State<'_, Bridge>, id: String, slot: St
             member: member.clone(),
             issue: id.clone(),
         });
+        inner.guard = Some(guard);
         (agent, Arc::clone(&inner.cancel))
     };
     // The harness takes the issue for the member; the turn starts only when that succeeds.
@@ -418,6 +441,7 @@ pub fn run_issue(app: AppHandle, bridge: State<'_, Bridge>, id: String, slot: St
             let mut inner = locked(&bridge.inner);
             inner.running = false;
             inner.active = None;
+            inner.guard = None;
             inner.members.insert(member, agent);
             return fail(error);
         }
@@ -440,7 +464,32 @@ pub fn run_issue(app: AppHandle, bridge: State<'_, Bridge>, id: String, slot: St
 }
 
 /// Brings the board in step with how a member's turn ended, when the member did not do it themselves.
-pub fn finish_member_turn(bridge: &Bridge, active: &Active, end: &TurnEnd, answer: Option<&str>) {
+pub fn finish_member_turn(bridge: &Bridge, active: &Active, end: &TurnEnd, answer: Option<&str>, guard: Option<RunGuard>) {
+    settle_issue(bridge, active, end, answer);
+    // The checkpoint after the run, and a note on the issue when the files changed.
+    let Some(guard) = guard else { return };
+    let outcome = match end {
+        TurnEnd::Done => "done",
+        TurnEnd::Stopped => "stopped",
+        TurnEnd::StepLimit => "step_limit",
+        TurnEnd::Failed(_) => "failed",
+    };
+    let finished = guard.finish(outcome);
+    let (Ok(store), Ok(ws)) = (board(bridge), workspace_of(&bridge.args())) else { return };
+    if let Some(note) = finished.note {
+        let _ = store.comment("bridle", &active.issue, &note);
+    } else if let (Some(before), Some(after)) = (&finished.before, &finished.after)
+        && let Ok(files) = gitlayer::changed_paths(&ws, &before.reference, &after.reference)
+        && !files.is_empty()
+    {
+        let shown: Vec<&str> = files.iter().take(8).map(String::as_str).collect();
+        let more = if files.len() > 8 { format!(" and {} more", files.len() - 8) } else { String::new() };
+        let _ = store.comment("bridle", &active.issue, &format!("The run changed {} file(s): {}{more}. Undo changes on the board puts them back.", files.len(), shown.join(", ")));
+    }
+}
+
+/// Brings the board in step with how a member's turn ended, when the member did not do it themselves.
+fn settle_issue(bridge: &Bridge, active: &Active, end: &TurnEnd, answer: Option<&str>) {
     let Ok(store) = board(bridge) else { return };
     let (roster, _) = roster();
     let Ok(current) = store.load() else { return };
@@ -464,7 +513,14 @@ pub fn finish_member_turn(bridge: &Bridge, active: &Active, end: &TurnEnd, answe
         .children(&active.issue)
         .iter()
         .any(|c| c.status.is_open());
+    // A project manager who ends a turn without having split the work did not do the job. The issue is given back to her, up to
+    // twice, with a reminder in her brief; after that it is blocked so a person looks at it.
+    let planner = roster.member(&active.member).and_then(|m| roster.role(&m.role)).is_some_and(|r| r.team == "pm");
+    let no_children = current.children(&active.issue).is_empty();
+    let tries = issue.comments.iter().filter(|c| c.text.starts_with(NOT_PLANNED)).count();
     let (to, note): (Status, Option<String>) = match end {
+        TurnEnd::Done if planner && no_children && tries < 2 => (Status::Ready, Some(format!("{NOT_PLANNED} Trying again."))),
+        TurnEnd::Done if planner && no_children => (Status::Blocked, Some(format!("{NOT_PLANNED} It was tried three times. Split the work by hand or ask again."))),
         TurnEnd::Done if open_children => return, // it is waiting for the issues it created
         TurnEnd::Done if review => (Status::InReview, None),
         TurnEnd::Done => (Status::Done, None),
@@ -476,4 +532,38 @@ pub fn finish_member_turn(bridge: &Bridge, active: &Active, end: &TurnEnd, answe
         TurnEnd::Failed(reason) => (Status::Blocked, Some(format!("The turn failed: {reason}"))),
     };
     let _ = store.set_status("bridle", &active.issue, to, note.as_deref());
+}
+
+/// Puts back what the latest run on an issue changed, from the checkpoints taken before and after it. Files the person changed
+/// since are left alone and listed.
+#[tauri::command(async)]
+pub fn undo_issue(bridge: State<'_, Bridge>, id: String) -> Value {
+    if locked(&bridge.inner).running {
+        return fail("a turn is running; stop it or wait for it to finish before undoing");
+    }
+    let ws = match workspace_of(&bridge.args()) {
+        Ok(ws) => ws,
+        Err(error) => return fail(error),
+    };
+    let _lock = match gitlayer::RepoLock::acquire(&ws) {
+        Ok(lock) => lock,
+        Err(error) => return fail(error),
+    };
+    let Some((before, after)) = gitlayer::latest_pair(&ws, &id) else {
+        return fail(format!("{id} has no saved run to undo"));
+    };
+    match gitlayer::undo(&ws, &before, &after) {
+        Ok(report) => {
+            let mut text = format!("Undid the latest run: put back {} file(s), removed {} file(s) it created.", report.restored.len(), report.removed.len());
+            if !report.skipped.is_empty() {
+                let names: Vec<String> = report.skipped.iter().map(|(p, why)| format!("{p} ({why})")).collect();
+                text.push_str(&format!(" Left alone: {}.", names.join(", ")));
+            }
+            if let Ok(store) = board(&bridge) {
+                let _ = store.comment("user", &id, &text);
+            }
+            json!({"ok": true, "restored": report.restored, "removed": report.removed, "skipped": report.skipped.iter().map(|(p, w)| json!({"path": p, "why": w})).collect::<Vec<_>>()})
+        }
+        Err(error) => fail(error),
+    }
 }

@@ -38,6 +38,8 @@ pub(crate) struct Inner {
     pub(crate) members: BTreeMap<String, Box<Agent>>,
     /// The member and the issue of the turn that runs now, when it is a member's turn.
     pub(crate) active: Option<Active>,
+    /// The project lock and the checkpoint of the member's turn that runs now.
+    pub(crate) guard: Option<harness_cli::gitlayer::RunGuard>,
     pub(crate) running: bool,
     pub(crate) cancel: Arc<AtomicBool>,
 }
@@ -130,9 +132,10 @@ pub fn pump(rx: Receiver<JobMsg>, handle: &AppHandle) {
             }
             JobMsg::Chat(ChatMsg::Finished { agent, end }) => {
                 let answer = agent.as_ref().and_then(|a| a.last_answer());
-                let active = {
+                let (active, guard) = {
                     let mut inner = locked(&bridge.inner);
                     let active = inner.active.take();
+                    let guard = inner.guard.take();
                     match (&active, agent) {
                         (Some(a), Some(agent)) => {
                             inner.members.insert(a.member.clone(), agent);
@@ -141,11 +144,11 @@ pub fn pump(rx: Receiver<JobMsg>, handle: &AppHandle) {
                         (None, agent) => inner.agent = agent,
                     }
                     inner.running = false;
-                    active
+                    (active, guard)
                 };
                 let mut payload = view::turn_end(&end);
                 if let Some(active) = &active {
-                    crate::crew_cmd::finish_member_turn(&bridge, active, &end, answer.as_deref());
+                    crate::crew_cmd::finish_member_turn(&bridge, active, &end, answer.as_deref(), guard);
                     payload["member"] = json!(active.member);
                     payload["issue"] = json!(active.issue);
                 }
@@ -153,9 +156,10 @@ pub fn pump(rx: Receiver<JobMsg>, handle: &AppHandle) {
                 refresh(&bridge);
             }
             JobMsg::Chat(ChatMsg::Failed(reason)) => {
-                let active = {
+                let (active, guard) = {
                     let mut inner = locked(&bridge.inner);
                     let active = inner.active.take();
+                    let guard = inner.guard.take();
                     match &active {
                         Some(a) => {
                             inner.members.remove(&a.member);
@@ -163,7 +167,7 @@ pub fn pump(rx: Receiver<JobMsg>, handle: &AppHandle) {
                         None => inner.agent = None,
                     }
                     inner.running = false;
-                    active
+                    (active, guard)
                 };
                 if let Some(active) = &active {
                     crate::crew_cmd::finish_member_turn(
@@ -171,6 +175,7 @@ pub fn pump(rx: Receiver<JobMsg>, handle: &AppHandle) {
                         active,
                         &harness_cli::chat::TurnEnd::Failed(reason.clone()),
                         None,
+                        guard,
                     );
                 }
                 let mut payload = json!({"type": "turn_end", "end": "failed", "message": reason});
