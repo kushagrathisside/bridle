@@ -4,10 +4,14 @@
 //! Neither is a privileged host: both go through the same policy, loop rules and event log.
 
 pub mod app;
+pub mod board;
+pub mod board_tools;
 pub mod chat;
 pub mod cli;
 pub mod commands;
+pub mod crew;
 pub mod host;
+pub mod ideas;
 pub mod image;
 pub mod output;
 pub mod prompt;

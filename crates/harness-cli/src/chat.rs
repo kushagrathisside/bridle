@@ -128,6 +128,8 @@ pub struct Agent {
     summary: Option<String>,
     session_id: String,
     next_rpc: u64,
+    /// Who this agent is working as, when it is a member of the team: added to the system prompt.
+    persona: Option<String>,
 }
 
 impl std::fmt::Debug for Agent {
@@ -277,6 +279,24 @@ impl Agent {
     /// Builds the agent for a loaded application. Refuses a configuration with errors, as the hook and
     /// `bridle mcp` do.
     pub fn new(app: App) -> Result<Self, String> {
+        Self::build(app, None, Vec::new())
+    }
+
+    /// An agent that works as a member of the team: `persona` goes into the system prompt and `extra` are tools added to
+    /// the usual ones (the board tools). It goes through the same policy and the same loop as any other agent.
+    pub fn for_member(
+        app: App,
+        persona: String,
+        extra: Vec<Box<dyn McpTool>>,
+    ) -> Result<Self, String> {
+        Self::build(app, Some(persona), extra)
+    }
+
+    fn build(
+        app: App,
+        persona: Option<String>,
+        extra: Vec<Box<dyn McpTool>>,
+    ) -> Result<Self, String> {
         app.require_valid_config().map_err(|e| format!("{e:#}"))?;
         let policy = app.policy().map_err(|e| format!("{e:#}"))?;
         let ctx = ToolContext {
@@ -288,6 +308,7 @@ impl Agent {
         };
         let mut tools = tools_for(&app);
         tools.extend(file_tools());
+        tools.extend(extra);
         let specs = tools.iter().map(|tool| spec_of(tool.as_ref())).collect();
         let info = ServerInfo {
             name: identity::MCP_SERVER_NAME.to_owned(),
@@ -301,8 +322,21 @@ impl Agent {
             summary: None,
             session_id: new_session_id(),
             next_rpc: 1,
+            persona,
             app,
         })
+    }
+
+    /// The text of the newest answer the model gave, if any. The board uses it as the note on a finished issue.
+    pub fn last_answer(&self) -> Option<String> {
+        self.messages
+            .iter()
+            .rev()
+            .find(|m| {
+                m.role == Role::Assistant
+                    && m.content.as_deref().is_some_and(|c| !c.trim().is_empty())
+            })
+            .and_then(|m| m.content.clone())
     }
 
     /// The provider and the configuration of a model slot.
@@ -500,6 +534,10 @@ impl Agent {
             "{SYSTEM_PROMPT}\nWorkspace: {}",
             self.app.workspace.display()
         );
+        if let Some(persona) = &self.persona {
+            system.push_str("\n\n");
+            system.push_str(persona);
+        }
         // The same answer the OpenCode hook gives for the system prompt: the repository memory and the task state.
         // A part that cannot be read is logged by the hook path and left out, so the chat and the hook agree.
         let answer = hook::answer_with(

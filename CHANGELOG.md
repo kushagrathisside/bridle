@@ -7,6 +7,12 @@ The project has not been published, so the version below is for the repository o
 
 ### Added
 
+- The window shows a crew rail (an avatar for each member of the team), a board popup (issues by state, with the saved ideas as the
+  first column, a detail panel and a runner), `@` tags for a member, a role or a team, and an ideas queue. The roster is `team.json`
+  in the machine config folder; the board is `.bridle/board/events.jsonl`; ideas are `.bridle/ideas.json`. Members work through
+  harness board tools (`board_ready`, `board_list`, `board_show`, `board_create`, `board_claim`, `board_comment`, `board_update`)
+  whose use is limited by role, and classed by the policy as harness tools. See [the guide](docs/guide/team-and-board.md).
+- A slot whose server is still loading shows as `warming` and the chat does not send to it.
 - Harness core: configuration with validation rules V1 to V36, a path guard, a command-risk classifier, a tool policy,
   output redaction, and a fail-closed hook for OpenCode 1.19.3 (M0 to M2).
 - Deterministic MCP tools: git, code navigation (tree-sitter), dependency search, verification with failure parsing,

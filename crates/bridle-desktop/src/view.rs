@@ -40,7 +40,15 @@ pub fn snapshot(snap: &Snapshot) -> Value {
 fn slot(row: &harness_cli::tui::data::SlotRow) -> Value {
     let (server, pid) = match &row.server {
         ServerState::NotManaged => ("stopped", None),
-        ServerState::Running { pid } => ("running", Some(*pid)),
+        // A server whose process is alive can still be loading its model; it answers HTTP 503 until it is ready.
+        ServerState::Running { pid } => (
+            if answers_health(&row.endpoint) {
+                "running"
+            } else {
+                "warming"
+            },
+            Some(*pid),
+        ),
         ServerState::Stale { pid } => ("stale", Some(*pid)),
         ServerState::Reused { pid, .. } => ("reused", Some(*pid)),
         ServerState::Unreadable(_) => ("unreadable", None),
@@ -68,6 +76,18 @@ fn slot(row: &harness_cli::tui::data::SlotRow) -> Value {
             && !matches!(row.runtime_state, FileState::Missing | FileState::Unresolved)
             && !matches!(row.mmproj_state, FileState::Missing | FileState::Unresolved),
     })
+}
+
+/// Whether the model server at `endpoint` (an OpenAI-style base such as `http://127.0.0.1:8001/v1`) answers its health
+/// check with 200. llama-server answers 503 while it loads the model, so a live process is not yet a usable server.
+/// The check is on loopback, has no proxy and gives up after 400 ms.
+fn answers_health(endpoint: &str) -> bool {
+    let base = endpoint.trim_end_matches('/');
+    let base = base.strip_suffix("/v1").unwrap_or(base);
+    harness_runtime::http::local_agent(std::time::Duration::from_millis(400))
+        .get(&format!("{base}/health"))
+        .call()
+        .is_ok_and(|response| response.status().as_u16() == 200)
 }
 
 fn file_state(state: &FileState) -> &'static str {
@@ -198,5 +218,55 @@ fn status_word(status: Status) -> &'static str {
         Status::Skip => "skip",
         Status::Warn => "warn",
         Status::Fail => "fail",
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    /// A server that answers each request with the next status in `statuses`, then stops.
+    fn serve(statuses: Vec<u16>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for status in statuses {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    return;
+                };
+                let mut buffer = [0u8; 1024];
+                let _ = stream.read(&mut buffer);
+                let body = if status == 200 {
+                    "{\"status\":\"ok\"}"
+                } else {
+                    "{\"error\":\"Loading model\"}"
+                };
+                let reply = format!(
+                    "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(reply.as_bytes());
+            }
+        });
+        format!("http://127.0.0.1:{port}/v1")
+    }
+
+    #[test]
+    fn a_loading_server_is_warming_and_a_ready_one_is_not() {
+        let endpoint = serve(vec![503, 200]);
+        assert!(
+            !answers_health(&endpoint),
+            "503 means the model is still loading"
+        );
+        assert!(answers_health(&endpoint), "200 means it is ready");
+    }
+
+    #[test]
+    fn nothing_listening_is_not_ready() {
+        // Port 9 (discard) is not served on loopback in the test environment.
+        assert!(!answers_health("http://127.0.0.1:9/v1"));
     }
 }
