@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-//! Black-box tests of the orchestrator: the real `agent` binary, a fresh repository,
+//! Black-box tests of the orchestrator: the real `bridle-cli` binary, a fresh repository,
 //! hook payloads on stdin, and the `task`, `trace` and `explain` commands.
 
 use std::io::Write;
@@ -15,7 +15,7 @@ const PROFILE: &str = include_str!("../../../configs/local-only.toml");
 fn workspace_with_workflow() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     let config = format!("{PROFILE}\n[workflow]\nenabled = true\n");
-    std::fs::write(dir.path().join("local-agent.toml"), config).expect("write config");
+    std::fs::write(dir.path().join("bridle.toml"), config).expect("write config");
     std::fs::write(dir.path().join("README.md"), "# fixture\n").expect("write README");
     dir
 }
@@ -23,7 +23,7 @@ fn workspace_with_workflow() -> tempfile::TempDir {
 /// A repository with the shipped profile only: the workflow is off.
 fn workspace_without_workflow() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
-    std::fs::write(dir.path().join("local-agent.toml"), PROFILE).expect("write config");
+    std::fs::write(dir.path().join("bridle.toml"), PROFILE).expect("write config");
     dir
 }
 
@@ -31,7 +31,7 @@ fn workspace_without_workflow() -> tempfile::TempDir {
 fn agent(workspace: &Path, args: &[&str], stdin: Option<&str>) -> (bool, String) {
     let path = std::env::var_os("PATH").unwrap_or_default();
     let home = std::env::var_os("HOME").unwrap_or_default();
-    let mut command = Command::new(env!("CARGO_BIN_EXE_agent"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_bridle-cli"));
     command
         .args(args)
         .arg("--workspace")
@@ -39,8 +39,8 @@ fn agent(workspace: &Path, args: &[&str], stdin: Option<&str>) -> (bool, String)
         .env_clear()
         .env("PATH", path)
         .env("HOME", home)
-        .env("LOCAL_AGENT_MODELS_DIR", workspace)
-        .env("LOCAL_AGENT_RUNTIMES_DIR", workspace)
+        .env("BRIDLE_MODELS_DIR", workspace)
+        .env("BRIDLE_RUNTIMES_DIR", workspace)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -124,7 +124,7 @@ fn a_disabled_workflow_never_refuses_and_writes_no_task() {
         let answer = before(dir.path(), "ses_off", call, "bash", git_status());
         assert_eq!(answer["action"], "allow", "{answer}");
     }
-    assert!(!dir.path().join(".local-agent").join("tasks").exists());
+    assert!(!dir.path().join(".bridle").join("tasks").exists());
 }
 
 #[test]
@@ -147,7 +147,7 @@ fn a_damaged_task_cache_degrades_the_workflow_but_keeps_the_policy_answer() {
     let session = "ses_damaged";
     before(dir.path(), session, "c1", "bash", git_status());
     std::fs::write(
-        dir.path().join(".local-agent/tasks/task-0001/task.json"),
+        dir.path().join(".bridle/tasks/task-0001/task.json"),
         "{not json",
     )
     .expect("damage the cache");
@@ -156,7 +156,7 @@ fn a_damaged_task_cache_degrades_the_workflow_but_keeps_the_policy_answer() {
         answer["action"], "allow",
         "the policy still answers: {answer}"
     );
-    let log = std::fs::read_to_string(dir.path().join(".local-agent/tool-events.jsonl")).unwrap();
+    let log = std::fs::read_to_string(dir.path().join(".bridle/tool-events.jsonl")).unwrap();
     assert!(log.contains("workflow_degraded"), "{log}");
 }
 
@@ -178,7 +178,7 @@ fn an_invalid_session_id_is_refused_by_the_policy_path_without_writing() {
     let dir = workspace_with_workflow();
     let answer = before(dir.path(), "../escape", "c1", "bash", git_status());
     assert_eq!(answer["action"], "allow", "policy still answers: {answer}");
-    assert!(!dir.path().join(".local-agent").join("tasks").exists());
+    assert!(!dir.path().join(".bridle").join("tasks").exists());
 }
 
 /// Runs `git -C <dir> <args>` and asserts it succeeds. The commit identity is passed on the command line.
@@ -212,12 +212,9 @@ fn git_status_text(dir: &Path) -> String {
 #[test]
 fn a_worktree_task_runs_in_its_own_folder_and_leaves_the_primary_tree_alone() {
     let dir = workspace_with_workflow();
-    // A project ignores its state and its worktrees, as `agent init` and this repository do.
-    std::fs::write(
-        dir.path().join(".gitignore"),
-        ".local-agent/\n.worktrees/\n",
-    )
-    .expect("write .gitignore");
+    // A project ignores its state and its worktrees, as `bridle init` and this repository do.
+    std::fs::write(dir.path().join(".gitignore"), ".bridle/\n.worktrees/\n")
+        .expect("write .gitignore");
     git(dir.path(), &["init", "-q"]);
     git(dir.path(), &["add", ".gitignore", "README.md"]);
     git(dir.path(), &["commit", "-q", "-m", "init"]);
@@ -237,7 +234,7 @@ fn a_worktree_task_runs_in_its_own_folder_and_leaves_the_primary_tree_alone() {
         "the worktree has the committed files"
     );
     assert!(
-        worktree.join("local-agent.toml").exists(),
+        worktree.join("bridle.toml").exists(),
         "the generated config is copied in"
     );
     assert_eq!(
@@ -279,7 +276,7 @@ fn workspace_with_unreachable_model() -> tempfile::TempDir {
             "enable_micro_decisions = true",
         );
     let config = format!("{profile}\n[workflow]\nenabled = true\n");
-    std::fs::write(dir.path().join("local-agent.toml"), config).expect("write config");
+    std::fs::write(dir.path().join("bridle.toml"), config).expect("write config");
     std::fs::write(dir.path().join("README.md"), "# fixture\n").expect("write README");
     dir
 }

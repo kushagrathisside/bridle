@@ -1,10 +1,10 @@
-//! `agent tui`: the Bridle Control Center.
+//! `bridle tui`: the Bridle Control Center.
 //!
 //! A chat with the configured model slot, and an operational view of the harness around it:
 //! configuration, slots, tasks, the event logs and policy decisions. It is another front end to the
 //! same code the CLI and the OpenCode hook use, not a privileged one: the chat sends every tool call
 //! through the hook's own policy path, there is no configuration editor, and the only other mutating
-//! operations (start or stop a managed server) go through the `agent models` code after an explicit
+//! operations (start or stop a managed server) go through the `bridle models` code after an explicit
 //! confirmation.
 //!
 //! Layout of this module: [`state`] (state and keys, pure), [`chat`] (the chat screen's state),

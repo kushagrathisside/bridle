@@ -1,8 +1,8 @@
-//! `agent init`: wire the harness into a repository, or record machine facts.
+//! `bridle init`: wire the harness into a repository, or record machine facts.
 //!
-//! Repository mode writes `local-agent.toml` (from an embedded profile, never overwritten),
-//! `opencode.json` (generated), `.opencode/plugins/local-agent.ts` (the shim) and a `.gitignore`
-//! entry. Generated files are tracked by hash in `.local-agent/generated.json`; a generated file
+//! Repository mode writes `bridle.toml` (from an embedded profile, never overwritten),
+//! `opencode.json` (generated), `.opencode/plugins/bridle.ts` (the shim) and a `.gitignore`
+//! entry. Generated files are tracked by hash in `.bridle/generated.json`; a generated file
 //! the user has since edited is only replaced with `--force`.
 //!
 //! Machine mode (`--machine`) writes the machine-level config with model/runtime directories and
@@ -38,13 +38,13 @@ const PROFILES: &[(&str, &str)] = &[
     ("hybrid", include_str!("../../../../configs/hybrid.toml")),
 ];
 
-/// The OpenCode plugin shim template (`opencode-plugin/local-agent.ts`).
-const SHIM_TEMPLATE: &str = include_str!("../../../../opencode-plugin/local-agent.ts");
+/// The OpenCode plugin shim template (`opencode-plugin/bridle.ts`).
+const SHIM_TEMPLATE: &str = include_str!("../../../../opencode-plugin/bridle.ts");
 const SHIM_BIN_PLACEHOLDER: &str = "\"__AGENT_BIN__\"";
 
 #[derive(Debug, Args)]
 pub struct InitArgs {
-    /// Profile for a new `local-agent.toml` (local-only, development).
+    /// Profile for a new `bridle.toml` (local-only, development).
     #[arg(long, default_value = "local-only")]
     profile: String,
     /// Replace generated files even if they were edited by hand.
@@ -76,8 +76,12 @@ pub fn run(
 
     // 1. Repository config from a profile (never clobbered).
     let repo_cfg = ws.join(identity::CONFIG_FILE);
-    if repo_cfg.exists() {
-        println!("· {} exists, keeping it", identity::CONFIG_FILE);
+    if let Some(existing) = identity::config_file_in(&ws) {
+        let shown = existing.file_name().map_or_else(
+            || identity::CONFIG_FILE.to_owned(),
+            |n| n.to_string_lossy().into_owned(),
+        );
+        println!("· {shown} exists, keeping it");
     } else {
         let Some((_, body)) = PROFILES.iter().find(|(n, _)| *n == args.profile) else {
             let names: Vec<_> = PROFILES.iter().map(|(n, _)| *n).collect();
@@ -117,7 +121,7 @@ pub fn run(
         identity::CLI_NAME,
         app.config.agent.default_model,
         if warnings > 0 {
-            format!(" ({warnings} config warning(s): run `agent config validate`)")
+            format!(" ({warnings} config warning(s): run `bridle config validate`)")
         } else {
             String::new()
         }
@@ -137,7 +141,7 @@ fn write_host_files(
     let mut ledger = Ledger::load(state_dir);
     let written = ledger
         .write(ws, "opencode.json", oc_text, force)
-        .and_then(|()| ledger.write(ws, ".opencode/plugins/local-agent.ts", shim, force));
+        .and_then(|()| ledger.write(ws, ".opencode/plugins/bridle.ts", shim, force));
     ledger.save(state_dir)?;
     written
 }
@@ -160,10 +164,28 @@ fn read_machine_table(path: &Path) -> anyhow::Result<toml::Table> {
 }
 
 fn init_machine(args: &InitArgs) -> anyhow::Result<ExitCode> {
-    let path = harness_core::config::machine_config_path()
-        .context("cannot determine the machine config location (set LOCAL_AGENT_HOME)")?;
-    let mut table = read_machine_table(&path)?;
-    let mut set = |section: &str, key: &str, value: &Option<PathBuf>| {
+    let path = write_machine_config(
+        args.models_dir.as_deref(),
+        args.runtimes_dir.as_deref(),
+        args.opencode_bin.as_deref(),
+    )?;
+    println!("✓ wrote {}", path.display());
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Records the machine facts in the machine config, keeping every setting that is not given. The merged result is
+/// validated before it is written. Returns the file written. Used by `init --machine` and by the desktop app's first run.
+pub fn write_machine_config(
+    models_dir: Option<&Path>,
+    runtimes_dir: Option<&Path>,
+    opencode_bin: Option<&Path>,
+) -> anyhow::Result<PathBuf> {
+    // Written under the Bridle name; an existing config under the old name is read and carried over.
+    let path = harness_core::config::machine_config_write_path()
+        .context("cannot determine the machine config location (set BRIDLE_HOME)")?;
+    let read_path = harness_core::config::machine_config_path().unwrap_or_else(|| path.clone());
+    let mut table = read_machine_table(&read_path)?;
+    let mut set = |section: &str, key: &str, value: Option<&Path>| {
         if let Some(v) = value {
             let entry = table
                 .entry(section.to_owned())
@@ -176,9 +198,9 @@ fn init_machine(args: &InitArgs) -> anyhow::Result<ExitCode> {
             }
         }
     };
-    set("paths", "models_dir", &args.models_dir);
-    set("paths", "runtimes_dir", &args.runtimes_dir);
-    set("host", "opencode_bin", &args.opencode_bin);
+    set("paths", "models_dir", models_dir);
+    set("paths", "runtimes_dir", runtimes_dir);
+    set("host", "opencode_bin", opencode_bin);
     // Validate the merged result before writing so a typo cannot brick every repository.
     let body = toml::to_string_pretty(&table)?;
     harness_core::config::from_toml_str(&body).context("resulting machine config is invalid")?;
@@ -186,10 +208,61 @@ fn init_machine(args: &InitArgs) -> anyhow::Result<ExitCode> {
         fs::create_dir_all(dir)?;
     }
     let header = "# Machine-level config: facts about this computer (model and runtime locations).\n\
-                  # Managed by `agent init --machine`; repository settings belong in local-agent.toml.\n\n";
+                  # Managed by `bridle init --machine`; repository settings belong in bridle.toml.\n\n";
     fs::write(&path, format!("{header}{body}"))?;
-    println!("✓ wrote {}", path.display());
-    Ok(ExitCode::SUCCESS)
+    Ok(path)
+}
+
+/// Records the proxy setting in the machine config (`[network]`), keeping every other setting. `mode` is `environment`,
+/// `custom` or `none`; a custom mode needs `proxy` (`http://host:port`, no credentials). The merged result is validated
+/// before it is written, so a typo cannot brick every repository. Returns the file written.
+pub fn write_machine_network(mode: &str, proxy: Option<&str>) -> anyhow::Result<PathBuf> {
+    // Written under the Bridle name; an existing config under the old name is read and carried over.
+    let path = harness_core::config::machine_config_write_path()
+        .context("cannot determine the machine config location (set BRIDLE_HOME)")?;
+    let read_path = harness_core::config::machine_config_path().unwrap_or_else(|| path.clone());
+    let mut table = read_machine_table(&read_path)?;
+    let mut network = toml::Table::new();
+    network.insert(
+        "proxy_mode".to_owned(),
+        toml::Value::String(mode.to_owned()),
+    );
+    match (mode, proxy.map(str::trim).filter(|p| !p.is_empty())) {
+        ("custom", Some(url)) => {
+            harness_core::config::check_proxy_url(url).map_err(|reason| anyhow::anyhow!(reason))?;
+            network.insert("proxy".to_owned(), toml::Value::String(url.to_owned()));
+        }
+        ("custom", None) => bail!("a custom proxy needs an address such as http://host:port"),
+        ("environment" | "none", _) => {}
+        (other, _) => bail!("unknown proxy mode `{other}` (environment, custom or none)"),
+    }
+    table.insert("network".to_owned(), toml::Value::Table(network));
+    let body = toml::to_string_pretty(&table)?;
+    harness_core::config::from_toml_str(&body).context("resulting machine config is invalid")?;
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    let header = "# Machine-level config: facts about this computer (model and runtime locations, the proxy).\n\
+                  # Managed by `bridle init --machine` and the app; repository settings belong in bridle.toml.\n\n";
+    fs::write(&path, format!("{header}{body}"))?;
+    Ok(path)
+}
+
+/// The desktop app's setup of a repository: the repository config from an embedded profile (never overwritten) and the
+/// `.gitignore` entries. It writes none of the OpenCode files. Returns whether the config file was written.
+pub fn write_repository_config(ws: &Path, profile: &str) -> anyhow::Result<bool> {
+    let repo_cfg = ws.join(identity::CONFIG_FILE);
+    let wrote = if identity::config_file_in(ws).is_some() {
+        false
+    } else {
+        let Some((_, body)) = PROFILES.iter().find(|(n, _)| *n == profile) else {
+            bail!("unknown profile `{profile}`");
+        };
+        fs::write(&repo_cfg, body).with_context(|| format!("writing {}", repo_cfg.display()))?;
+        true
+    };
+    ensure_gitignore(ws, &[&format!("{}/", identity::STATE_DIR), ".worktrees/"])?;
+    Ok(wrote)
 }
 
 fn ensure_gitignore(ws: &Path, entries: &[&str]) -> anyhow::Result<()> {
@@ -335,7 +408,7 @@ mod tests {
     #[test]
     fn the_ledger_is_saved_when_a_later_host_file_fails() {
         let ws = tempfile::tempdir().expect("workspace");
-        let state = ws.path().join(".local-agent");
+        let state = ws.path().join(".bridle");
         // `.opencode` is a file, so the shim under `.opencode/plugins/` cannot be written.
         fs::write(ws.path().join(".opencode"), "not a directory").expect("write");
         assert!(write_host_files(ws.path(), &state, "{}\n", "// shim", false).is_err());
@@ -352,9 +425,9 @@ mod tests {
     #[test]
     fn gitignore_entries_added_once() {
         let dir = tempfile::tempdir().expect("tempdir");
-        ensure_gitignore(dir.path(), &[".local-agent/"]).expect("first");
-        ensure_gitignore(dir.path(), &[".local-agent/"]).expect("second");
+        ensure_gitignore(dir.path(), &[".bridle/"]).expect("first");
+        ensure_gitignore(dir.path(), &[".bridle/"]).expect("second");
         let text = fs::read_to_string(dir.path().join(".gitignore")).expect("read");
-        assert_eq!(text.matches(".local-agent/").count(), 1);
+        assert_eq!(text.matches(".bridle/").count(), 1);
     }
 }

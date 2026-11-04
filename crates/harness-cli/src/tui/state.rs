@@ -314,7 +314,7 @@ impl Ui {
                         category: "config",
                         title: format!("[{}] {}", i.rule, i.path),
                         detail: i.message.clone(),
-                        impact: "Errors block `agent models serve` and the hook; warnings are advisory.",
+                        impact: "Errors block `bridle models serve` and the hook; warnings are advisory.",
                         next: "Edit the config file (this interface is read-only) and refresh (r).",
                     });
                 }
@@ -428,9 +428,9 @@ impl Ui {
         }
         if self.snap.slots.is_empty() {
             return vec![
-                "No model is configured yet. Create your machine settings once: agent init --machine --models-dir <weights folder> --runtimes-dir <runtimes folder>"
+                "No model is configured yet. Create your machine settings once: bridle init --machine --models-dir <weights folder> --runtimes-dir <runtimes folder>"
                     .to_owned(),
-                "Then, in your repository: agent init --profile local-only".to_owned(),
+                "Then, in your repository: bridle init --profile local-only".to_owned(),
                 "Details: docs/guide/installation.md".to_owned(),
             ];
         }
@@ -1050,6 +1050,9 @@ pub(crate) mod tests {
             runtime_state: FileState::Present(None),
             model_file: Some("/m/x.gguf".to_owned()),
             model_state: FileState::Present(Some(1 << 30)),
+            mmproj_file: None,
+            mmproj_state: FileState::NotManaged,
+            vision: false,
             server,
             log_path: "/s/logs/main.log".to_owned(),
             launchable,
@@ -1444,7 +1447,7 @@ pub(crate) mod tests {
             "{steps}"
         );
         ui.snap.slots.clear();
-        assert!(ui.next_steps().join(" ").contains("agent init --machine"));
+        assert!(ui.next_steps().join(" ").contains("bridle init --machine"));
         ui.snap.config_error = Some("bad".into());
         assert!(ui.next_steps().join(" ").contains("Diagnostics"));
         ui.snap.config_error = None;

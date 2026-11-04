@@ -7,7 +7,7 @@
 //! - `HashCache` at `<state_dir>/manifests/hash-cache.json`: map of absolute path → `{size,
 //!   modified_unix_ms, sha256}`; `cached_sha256(cache_path, file)` returns the cached hash when
 //!   size and mtime match, otherwise hashes, stores and returns. Hashing a 6 GB file takes tens
-//!   of seconds; the cache makes `agent doctor` fast on repeat runs.
+//!   of seconds; the cache makes `bridle doctor` fast on repeat runs.
 //! - `parse_llama_version(stdout)`: llama.cpp `--version` prints lines like
 //!   `version: 11756 (a1b2c3d)` and `built with ... for x86_64`; return
 //!   `Some(RuntimeVersion { build: "11756", commit: Some("a1b2c3d") })`. Prism builds print the same

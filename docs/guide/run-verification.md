@@ -8,7 +8,7 @@ This page assumes the repository is set up. See [set up a repository](set-up-a-r
 
 ## Declare a step
 
-Add one `[[verification.steps]]` table per command to `local-agent.toml`:
+Add one `[[verification.steps]]` table per command to `bridle.toml`:
 
 ```toml
 [[verification.steps]]

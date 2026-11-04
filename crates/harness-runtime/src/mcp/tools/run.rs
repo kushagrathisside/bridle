@@ -150,6 +150,7 @@ pub(super) fn execute_plain(
     };
     let mut command = Command::new(program);
     command.args(words).current_dir(&dir);
+    crate::process::hide_console(&mut command);
     // The sandbox (ADR-0016) confines the command before it starts. A command the sandbox cannot confine is refused.
     let settings = crate::sandbox::Settings {
         enabled: ctx.config.sandbox.enabled,

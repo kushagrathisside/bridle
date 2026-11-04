@@ -14,7 +14,7 @@ eventually new model providers. Bridle already has one extension form: declarati
 which name a program, fixed arguments and a description (rule V25). Adapters are set in the machine config or an explicit
 config only, never in the repository (`config::trust`).
 
-OpenCode has its own plugin system (`opencode-plugin/local-agent.ts`). That is OpenCode's extension point and is not the
+OpenCode has its own plugin system (`opencode-plugin/bridle.ts`). That is OpenCode's extension point and is not the
 one proposed here.
 
 ## Decision (proposed)

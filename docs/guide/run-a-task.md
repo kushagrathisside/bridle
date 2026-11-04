@@ -18,12 +18,12 @@ The `local-only` profile does not enable it. The machine configuration may switc
 may not. The keys and their defaults are listed in the [configuration reference](configuration.md).
 
 Without the workflow, Bridle still checks every call against the policy and records each verdict in
-`.local-agent/tool-events.jsonl`. Only the loop rules and the journal depend on the workflow.
+`.bridle/tool-events.jsonl`. Only the loop rules and the journal depend on the workflow.
 
 ## Start a task
 
 ```bat
-agent task start --prompt "Fix the bug in calc.py so the unit tests pass."
+bridle task start --prompt "Fix the bug in calc.py so the unit tests pass."
 ```
 
 The prompt is stored redacted. The next new OpenCode session in this repository works on the new task. The command
@@ -47,8 +47,8 @@ merge them.
 ## Inspect a task
 
 ```bat
-agent task status
-agent task status task-0001 --json
+bridle task status
+bridle task status task-0001 --json
 ```
 
 `task status` prints the phase, the status, the counters and the number of records:
@@ -65,7 +65,7 @@ refusals in a row: 0
 journal records: 7
 ```
 
-`agent trace` prints the ordered journal, one line per record:
+`bridle trace` prints the ordered journal, one line per record:
 
 ```text
      1  task_started task-0001 repository=...
@@ -73,7 +73,7 @@ journal records: 7
      6  refused rule=repeated_edit
 ```
 
-`agent explain` prints the recent decisions and the reason for each:
+`bridle explain` prints the recent decisions and the reason for each:
 
 ```text
 task-0001: 1 decision(s) recorded, showing 1
@@ -87,10 +87,10 @@ Both commands take `--limit` to show more records or decisions, up to 1000.
 
 | Command | Use it to |
 |---|---|
-| `agent task resume <task>` | Bind the next new session to an existing task. |
-| `agent task reset` | End a block and start the loop counters again. The journal is kept. |
-| `agent task repair` | Rebuild the cached state from the journal, after a damaged file. |
-| `agent task prune` | Remove the folders of finished tasks and their session bindings. Worktrees are not removed. |
+| `bridle task resume <task>` | Bind the next new session to an existing task. |
+| `bridle task reset` | End a block and start the loop counters again. The journal is kept. |
+| `bridle task repair` | Rebuild the cached state from the journal, after a damaged file. |
+| `bridle task prune` | Remove the folders of finished tasks and their session bindings. Worktrees are not removed. |
 
 `reset` is the way to continue after a task was blocked by the iteration limit. It does not change the files in the
 repository.

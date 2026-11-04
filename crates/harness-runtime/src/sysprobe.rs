@@ -1,4 +1,4 @@
-//! Host probing for `agent doctor`: OS, CPU, RAM, GPU/VRAM/driver/CUDA, WSL, disk space,
+//! Host probing for `bridle doctor`: OS, CPU, RAM, GPU/VRAM/driver/CUDA, WSL, disk space,
 //! and versions of external executables.
 //!
 //! IMPLEMENTATION SPEC (delegated). Every probe is best-effort: failures become `None`/empty,
@@ -81,7 +81,7 @@ pub struct WslInfo {
     pub running_distros: Vec<String>,
 }
 
-/// Snapshot of the host for `agent doctor`. Unknown facts are `None`, empty or zero.
+/// Snapshot of the host for `bridle doctor`. Unknown facts are `None`, empty or zero.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SystemReport {
     /// Long OS name (e.g. `Windows 11 Pro`), or `std::env::consts::OS` when unknown.

@@ -3,7 +3,7 @@
 The sample project has one bug: `add()` in `calc.py` subtracts instead of adding. Its unit test fails until the bug is
 fixed. This example walks through an agent run that fixes it, with Bridle deciding every tool call.
 
-It needs the `agent` binary, the model server, and OpenCode. Complete [getting started](../overview/getting-started.md)
+It needs the `bridle` binary, the model server, and OpenCode. Complete [getting started](../overview/getting-started.md)
 first.
 
 ## 1. Copy the sample project
@@ -45,10 +45,10 @@ FAILED (failures=1)
 ## 2. Set up Bridle for the project
 
 ```bat
-agent init --profile local-only
+bridle init --profile local-only
 ```
 
-Tell Bridle how to run the tests. Open `local-agent.toml` and add a verification step at the end:
+Tell Bridle how to run the tests. Open `bridle.toml` and add a verification step at the end:
 
 ```toml
 [[verification.steps]]
@@ -61,7 +61,7 @@ timeout_ms = 120000
 file:
 
 ```bat
-agent config validate
+bridle config validate
 ```
 
 The `V15` warning from getting started is gone:
@@ -73,8 +73,8 @@ The `V15` warning from getting started is gone:
 ## 3. Start the model and run the agent
 
 ```bat
-agent models serve main --detach
-agent health main
+bridle models serve main --detach
+bridle health main
 opencode run "Fix the bug in calc.py so the unit tests pass."
 ```
 
@@ -101,11 +101,11 @@ OK
 Then look at what Bridle recorded for the task:
 
 ```bat
-agent task status
+bridle task status
 ```
 
-`task status` prints the phase and the counters. The verdict for every call is in `.local-agent/tool-events.jsonl`. The
-loop decisions, with their reasons, are shown by `agent explain` once the task workflow is enabled; see
+`task status` prints the phase and the counters. The verdict for every call is in `.bridle/tool-events.jsonl`. The
+loop decisions, with their reasons, are shown by `bridle explain` once the task workflow is enabled; see
 [run a task](../guide/run-a-task.md).
 
 ## Notes

@@ -239,6 +239,28 @@ fn run_chat(turn: Turn, args: &LoadArgs, tx: &Sender<JobMsg>) {
             }
         },
     };
+    // `/compact` folds the conversation into a summary. It is handled before routing: it is not a request for a model.
+    if text.trim() == "/compact" {
+        let (provider, model) = match agent.provider(&slot) {
+            Ok(pair) => pair,
+            Err(error) => {
+                let _ = tx.send(JobMsg::Chat(ChatMsg::Finished {
+                    agent: Some(agent),
+                    end: TurnEnd::Failed(error),
+                }));
+                return;
+            }
+        };
+        let mut emit = |event: crate::chat::Event| {
+            let _ = tx.send(JobMsg::Chat(ChatMsg::Event(event)));
+        };
+        let end = agent.compact_now(provider.as_ref(), &model, &mut emit);
+        let _ = tx.send(JobMsg::Chat(ChatMsg::Finished {
+            agent: Some(agent),
+            end,
+        }));
+        return;
+    }
     // `/team <request>` runs a team (planner, workers, verifier) on the request; anything else is one turn.
     let team_request = text
         .strip_prefix("/team ")

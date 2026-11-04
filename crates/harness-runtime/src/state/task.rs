@@ -1,12 +1,12 @@
 //! Per-task storage.
 //!
-//! Each task has a directory `.local-agent/tasks/<task_id>/` with:
+//! Each task has a directory `.bridle/tasks/<task_id>/` with:
 //! - `task-events.jsonl`: the journal, the source of truth. Entries carry a `seq`.
 //! - `task.json`: a cache of the folded state, written after each append.
 //! - `decisions.jsonl`: one record per decision, with the signals it was made from.
 //!
-//! `.local-agent/state.json` maps OpenCode session ids to task ids. Lock order is fixed: the workspace
-//! lock (`.local-agent/.lock`) first, then a task lock (`tasks/<task_id>/lock`). Never the reverse.
+//! `.bridle/state.json` maps OpenCode session ids to task ids. Lock order is fixed: the workspace
+//! lock (`.bridle/.lock`) first, then a task lock (`tasks/<task_id>/lock`). Never the reverse.
 //! Every append and every cache write holds the lock of the file it touches.
 
 use std::collections::BTreeMap;
@@ -409,7 +409,7 @@ impl Task<'_> {
             .records)
     }
 
-    /// The journal entries, in order. Used by `agent trace` and by repair.
+    /// The journal entries, in order. Used by `bridle trace` and by repair.
     pub fn entries(&self) -> Result<Vec<Entry>, StateError> {
         Ok(self
             .state

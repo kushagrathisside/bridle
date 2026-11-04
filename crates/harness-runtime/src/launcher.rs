@@ -1,4 +1,4 @@
-//! Starts local inference servers from config (`agent models serve <slot>`).
+//! Starts local inference servers from config (`bridle models serve <slot>`).
 //!
 //! IMPLEMENTATION SPEC (delegated):
 //! - `server_args(model, launch, model_file) -> Result<Vec<String>, LaunchError>` (pure, unit
@@ -75,12 +75,14 @@ pub enum LaunchError {
 
 /// Builds the `llama-server` argument vector for one model slot.
 ///
-/// `model_file` must already be resolved against `paths.models_dir`. `allow_remote_bind` must be
+/// `model_file` (and `mmproj_file`, the vision projector, when the slot has one) must already be resolved against
+/// `paths.models_dir`. `allow_remote_bind` must be
 /// `true` before a non-loopback endpoint host is accepted.
 pub fn server_args(
     model: &ModelConfig,
     launch: &LaunchConfig,
     model_file: &Path,
+    mmproj_file: Option<&Path>,
     allow_remote_bind: bool,
 ) -> Result<Vec<String>, LaunchError> {
     let (host, port) = parse_endpoint(&model.endpoint)?;
@@ -93,6 +95,12 @@ pub fn server_args(
 
     let mut args = Vec::new();
     push_pair(&mut args, "-m", model_file.to_string_lossy());
+    if let Some(projector) = mmproj_file {
+        push_pair(&mut args, "--mmproj", projector.to_string_lossy());
+        if !launch.mmproj_offload {
+            args.push("--no-mmproj-offload".to_owned());
+        }
+    }
     push_pair(&mut args, "--host", &host);
     push_pair(&mut args, "--port", port);
     push_pair(&mut args, "--alias", &model.id);
@@ -277,6 +285,7 @@ mod tests {
             &model("http://127.0.0.1/v1"),
             &launch(),
             Path::new("m.gguf"),
+            None,
             false,
         );
         assert!(matches!(result, Err(LaunchError::Endpoint(_))));
@@ -315,12 +324,18 @@ mod tests {
     #[test]
     fn non_loopback_host_needs_explicit_permission() {
         let endpoint = "http://0.0.0.0:8001/v1";
-        let refused = server_args(&model(endpoint), &launch(), Path::new("m.gguf"), false);
+        let refused = server_args(
+            &model(endpoint),
+            &launch(),
+            Path::new("m.gguf"),
+            None,
+            false,
+        );
         assert!(matches!(
             refused,
             Err(LaunchError::NonLoopbackBind(ref host)) if host == "0.0.0.0"
         ));
-        let allowed = server_args(&model(endpoint), &launch(), Path::new("m.gguf"), true);
+        let allowed = server_args(&model(endpoint), &launch(), Path::new("m.gguf"), None, true);
         assert!(allowed.is_ok());
     }
 
@@ -334,7 +349,7 @@ mod tests {
         ] {
             let mut launch = launch();
             launch.extra_args = extra.iter().map(|a| (*a).to_owned()).collect();
-            let refused = server_args(&model(endpoint), &launch, Path::new("m.gguf"), false);
+            let refused = server_args(&model(endpoint), &launch, Path::new("m.gguf"), None, false);
             assert!(
                 matches!(refused, Err(LaunchError::ReservedFlag(_))),
                 "{extra:?}: {refused:?}"
@@ -348,6 +363,7 @@ mod tests {
             &model("http://[::1]:8001/v1"),
             &launch(),
             Path::new("m.gguf"),
+            None,
             false,
         )
         .expect("loopback endpoint is accepted");
@@ -361,6 +377,7 @@ mod tests {
             &model("http://127.0.0.1:8001/v1"),
             &launch(),
             Path::new("m.gguf"),
+            None,
             false,
         )
         .expect("loopback endpoint is accepted");

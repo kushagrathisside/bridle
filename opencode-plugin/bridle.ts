@@ -1,21 +1,21 @@
-// local-agent OpenCode plugin shim (ADR-0001).
+// bridle OpenCode plugin shim (ADR-0001).
 //
 // This file holds NO policy logic. It forwards OpenCode hook payloads as JSON to the Rust
-// `agent hook <event>` command and applies the verdict it returns. Policy hooks fail closed:
+// `bridle hook <event>` command and applies the verdict it returns. Policy hooks fail closed:
 // if the harness cannot answer, the tool call is blocked (tool.execute.before) and the
 // permission is denied (permission.ask). Telemetry-only hooks and the context hooks fail open:
 // the request is sent unchanged. Compaction is a view of the history, not a security control.
 //
-// Generated into `.opencode/plugins/local-agent.ts` by `agent init`, which replaces the
-// placeholder below with the absolute path of the agent executable. Edit the template in the
-// harness repository (opencode-plugin/local-agent.ts), not the generated copy.
+// Generated into `.opencode/plugins/bridle.ts` by `bridle init`, which replaces the
+// placeholder below with the absolute path of the bridle executable. Edit the template in the
+// harness repository (opencode-plugin/bridle.ts), not the generated copy.
 // Pinned against @opencode-ai/plugin 1.19.3 and type-checked against it by `npm run typecheck`
 // (in opencode-plugin/); the type import is erased at runtime.
 
 import type { Plugin } from "@opencode-ai/plugin"
 import { spawn } from "node:child_process"
 
-const AGENT_BIN: string = process.env.LOCAL_AGENT_BIN || "__AGENT_BIN__"
+const AGENT_BIN: string = process.env.BRIDLE_BIN || "__AGENT_BIN__"
 // A deep escalation swaps GPU models inside the tool-before hook, which takes about 20 s in all (measured 2026-10-28).
 // The limit leaves room for two swap waits of 45 s and the deep answer, and still gives up before OpenCode does.
 const HOOK_TIMEOUT_MS = 150_000
@@ -48,7 +48,7 @@ function callHook(event: string, payload: Json, workspace: string): Promise<Json
     let stderr = ""
     const timer = setTimeout(() => {
       child.kill()
-      reject(new Error(`agent hook ${event} timed out after ${HOOK_TIMEOUT_MS} ms`))
+      reject(new Error(`bridle hook ${event} timed out after ${HOOK_TIMEOUT_MS} ms`))
     }, HOOK_TIMEOUT_MS)
     child.stdout.on("data", (chunk) => (stdout += chunk))
     child.stderr.on("data", (chunk) => (stderr += chunk))
@@ -59,13 +59,13 @@ function callHook(event: string, payload: Json, workspace: string): Promise<Json
     child.on("close", (code) => {
       clearTimeout(timer)
       if (code !== 0) {
-        reject(new Error(`agent hook ${event} exited with ${code}: ${stderr.trim()}`))
+        reject(new Error(`bridle hook ${event} exited with ${code}: ${stderr.trim()}`))
         return
       }
       try {
         resolve(JSON.parse(stdout) as Json)
       } catch {
-        reject(new Error(`agent hook ${event} returned invalid JSON`))
+        reject(new Error(`bridle hook ${event} returned invalid JSON`))
       }
     })
     child.stdin.end(JSON.stringify(payload))
@@ -109,10 +109,10 @@ export const LocalAgentPlugin: Plugin = async ({ directory, worktree }) => {
           workspace,
         )
       } catch (err) {
-        throw new Error(`[local-agent] policy engine unavailable, tool call blocked: ${message(err)}`)
+        throw new Error(`[bridle] policy engine unavailable, tool call blocked: ${message(err)}`)
       }
       if (verdict.action !== "allow") {
-        throw new Error(`[local-agent] ${String(verdict.message ?? "blocked by policy")}`)
+        throw new Error(`[bridle] ${String(verdict.message ?? "blocked by policy")}`)
       }
     },
 
@@ -136,7 +136,7 @@ export const LocalAgentPlugin: Plugin = async ({ directory, worktree }) => {
         if (typeof result.output === "string") output.output = result.output
       } catch (err) {
         // Redaction is a security control: if it cannot run, withhold the output.
-        output.output = `[local-agent] tool output withheld: redaction unavailable (${message(err)})`
+        output.output = `[bridle] tool output withheld: redaction unavailable (${message(err)})`
       }
     },
 

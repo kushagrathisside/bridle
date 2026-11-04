@@ -43,6 +43,18 @@ const PREVIEW_CHARS: usize = 240;
 const PROGRESS_EVERY: Duration = Duration::from_millis(250);
 /// Characters per token assumed when sizing the context window. Rough, and on the safe side.
 const CHARS_PER_TOKEN: usize = 3;
+/// What the history is compacted down to, in quarters of the prompt budget: three quarters of it.
+const COMPACT_TO_QUARTERS: usize = 3;
+/// Characters of the rolling summary kept at most.
+const SUMMARY_MAX_CHARS: usize = 3_000;
+/// Tokens the model may spend on a summary.
+const SUMMARY_TOKENS: u32 = 600;
+
+const SUMMARY_PROMPT: &str = "\
+You condense the earlier part of a coding conversation so the work can continue with less context. \
+Write a plain summary of at most 250 words. Keep what the user wants, the decisions made, the files read or \
+changed and why, the commands run and their results, the errors still open, and what remains to be done. \
+Do not invent anything and do not call tools. Reply with the summary only.";
 
 const SYSTEM_PROMPT: &str = "\
 You are a coding assistant working in a repository through Bridle, a local-first harness. \
@@ -88,6 +100,9 @@ pub enum Event {
     /// What the model is doing while it is not writing text, such as writing a long tool call. It is
     /// shown on the status line and not kept.
     Working(String),
+    /// How full the context window is, in tokens: what the next request carries (an estimate before a call, the
+    /// server's own count after one) against the slot's window.
+    Usage { used: usize, window: usize },
 }
 
 /// How a turn ended.
@@ -109,6 +124,8 @@ pub struct Agent {
     server: Server,
     specs: Vec<ToolSpec>,
     messages: Vec<ChatMessage>,
+    /// What older turns were folded into when the conversation outgrew its context window.
+    summary: Option<String>,
     session_id: String,
     next_rpc: u64,
 }
@@ -120,6 +137,19 @@ impl std::fmt::Debug for Agent {
             .field("messages", &self.messages.len())
             .finish()
     }
+}
+
+/// The name and description of every tool the chat offers the model, for the interface to list.
+pub fn tool_catalog(app: &App) -> Vec<(String, String)> {
+    let mut tools = tools_for(app);
+    tools.extend(file_tools());
+    tools
+        .iter()
+        .map(|tool| {
+            let spec = spec_of(tool.as_ref());
+            (spec.name, spec.description)
+        })
+        .collect()
 }
 
 impl Agent {
@@ -245,7 +275,7 @@ impl Agent {
     }
 
     /// Builds the agent for a loaded application. Refuses a configuration with errors, as the hook and
-    /// `agent mcp` do.
+    /// `bridle mcp` do.
     pub fn new(app: App) -> Result<Self, String> {
         app.require_valid_config().map_err(|e| format!("{e:#}"))?;
         let policy = app.policy().map_err(|e| format!("{e:#}"))?;
@@ -268,6 +298,7 @@ impl Agent {
             server: Server::new(info, tools, ctx),
             specs,
             messages: Vec::new(),
+            summary: None,
             session_id: new_session_id(),
             next_rpc: 1,
             app,
@@ -328,7 +359,10 @@ impl Agent {
             if cancel.load(Ordering::Relaxed) {
                 return TurnEnd::Stopped;
             }
-            let (request, dropped) = self.request(model);
+            let base = self.base_system();
+            self.fit(provider, model, &base, cancel, emit);
+            let (request, dropped) = self.request(model, &base);
+            emit(self.usage(model));
             if dropped > 0 {
                 emit(Event::Notice(format!(
                     "{dropped} older message(s) were dropped to fit the context window"
@@ -368,6 +402,14 @@ impl Agent {
                 Ok(response) => response,
                 Err(error) => return TurnEnd::Failed(describe_error(&error, model)),
             };
+            if let Some(prompt) = response.usage.prompt_tokens {
+                // The server's own count, which replaces the estimate.
+                emit(Event::Usage {
+                    used: usize::try_from(prompt + response.usage.completion_tokens.unwrap_or(0))
+                        .unwrap_or(usize::MAX),
+                    window: usize::try_from(model.context).unwrap_or(usize::MAX),
+                });
+            }
             if response.finish_reason.as_deref() == Some("stopped") {
                 // The stream was abandoned at the user's request: keep what was said, run nothing.
                 let said = response
@@ -405,10 +447,23 @@ impl Agent {
                 return TurnEnd::Done;
             }
             let calls = response.tool_calls.clone();
+            // The server parses the arguments of every earlier call again on each request, and answers HTTP 500 when
+            // one is not JSON, for the rest of the conversation. A call cut off by the output limit is such a call. It
+            // is answered below with an error and never run, so the history keeps an empty object in its place.
+            let stored: Vec<ToolCall> = response
+                .tool_calls
+                .into_iter()
+                .map(|mut call| {
+                    if serde_json::from_str::<Value>(&call.arguments).is_err() {
+                        call.arguments = "{}".to_owned();
+                    }
+                    call
+                })
+                .collect();
             self.messages.push(ChatMessage {
                 role: Role::Assistant,
                 content: response.content,
-                tool_calls: response.tool_calls,
+                tool_calls: stored,
                 tool_call_id: None,
                 images: Vec::new(),
             });
@@ -438,9 +493,9 @@ impl Agent {
         });
     }
 
-    /// The request for the next model call, with the history made to fit, and how many messages that
-    /// dropped.
-    fn request(&mut self, model: &ModelConfig) -> (ChatRequest, usize) {
+    /// The system prompt without the summary: the instructions, the workspace, the repository memory and the task
+    /// state. Asking for it runs the hook once, so it is built once per model call.
+    fn base_system(&self) -> String {
         let mut system = format!(
             "{SYSTEM_PROMPT}\nWorkspace: {}",
             self.app.workspace.display()
@@ -456,15 +511,141 @@ impl Agent {
             system.push_str("\n\n");
             system.push_str(block);
         }
-        let schema_chars: usize = self
-            .specs
+        system
+    }
+
+    /// `base` and, when older turns were folded away, their summary.
+    fn system_with_summary(&self, base: &str) -> String {
+        match &self.summary {
+            Some(summary) => format!(
+                "{base}\n\nSummary of the earlier conversation (those messages were compacted into this):\n{summary}"
+            ),
+            None => base.to_owned(),
+        }
+    }
+
+    fn schema_chars(&self) -> usize {
+        self.specs
             .iter()
             .map(|s| s.name.len() + s.description.len() + s.parameters.to_string().len())
-            .sum();
+            .sum()
+    }
+
+    /// Characters the history may take: 70 % of the slot's window, less the tool definitions and the system prompt.
+    fn prompt_budget(&self, model: &ModelConfig, system_chars: usize) -> usize {
         let window = usize::try_from(model.context).unwrap_or(usize::MAX) * CHARS_PER_TOKEN;
-        let budget = (window / 10 * 7)
-            .saturating_sub(schema_chars + system.len())
-            .max(2_000);
+        (window / 10 * 7)
+            .saturating_sub(self.schema_chars() + system_chars)
+            .max(2_000)
+    }
+
+    /// How full the window is, estimated from what the next request carries.
+    pub fn usage(&self, model: &ModelConfig) -> Event {
+        let summary = self.summary.as_deref().map_or(0, str::len);
+        let chars =
+            SYSTEM_PROMPT.len() + summary + self.schema_chars() + total_chars(&self.messages);
+        Event::Usage {
+            used: chars / CHARS_PER_TOKEN,
+            window: usize::try_from(model.context).unwrap_or(usize::MAX),
+        }
+    }
+
+    /// Folds the oldest turns into the rolling summary when the history is over its budget, down to three quarters
+    /// of it. The system prompt and the newest message always stay. When no summary can be made, `request` drops the
+    /// oldest turns instead.
+    fn fit(
+        &mut self,
+        provider: &dyn ModelProvider,
+        model: &ModelConfig,
+        base: &str,
+        cancel: &AtomicBool,
+        emit: &mut dyn FnMut(Event),
+    ) {
+        let budget = self.prompt_budget(model, self.system_with_summary(base).len());
+        if total_chars(&self.messages) <= budget || cancel.load(Ordering::Relaxed) {
+            return;
+        }
+        let target = budget / 4 * COMPACT_TO_QUARTERS;
+        let Some(cut) = fold_point(&self.messages, target) else {
+            return;
+        };
+        emit(Event::Working("compacting the conversation…".to_owned()));
+        match self.fold(provider, model, cut) {
+            Ok(folded) => emit(Event::Notice(format!(
+                "compacted: {folded} older message(s) were folded into a summary"
+            ))),
+            Err(reason) => emit(Event::Notice(format!(
+                "could not summarise the older messages ({reason}); the oldest are dropped instead"
+            ))),
+        }
+    }
+
+    /// Compacts the whole conversation into the summary now (`/compact`). The next message starts from the summary.
+    pub fn compact_now(
+        &mut self,
+        provider: &dyn ModelProvider,
+        model: &ModelConfig,
+        emit: &mut dyn FnMut(Event),
+    ) -> TurnEnd {
+        if self.messages.is_empty() {
+            emit(Event::Notice("there is nothing to compact yet".to_owned()));
+            return TurnEnd::Done;
+        }
+        emit(Event::Working("compacting the conversation…".to_owned()));
+        match self.fold(provider, model, self.messages.len()) {
+            Ok(folded) => {
+                emit(Event::Notice(format!(
+                    "compacted: {folded} message(s) were folded into a summary"
+                )));
+                emit(self.usage(model));
+                TurnEnd::Done
+            }
+            Err(reason) => TurnEnd::Failed(format!("could not compact the conversation: {reason}")),
+        }
+    }
+
+    /// Asks the model for a summary of `messages[..cut]` (and the summary so far), keeps it, and removes those
+    /// messages. Nothing changes when the model cannot make a summary.
+    fn fold(
+        &mut self,
+        provider: &dyn ModelProvider,
+        model: &ModelConfig,
+        cut: usize,
+    ) -> Result<usize, String> {
+        let input_cap = usize::try_from(model.context).unwrap_or(usize::MAX) * CHARS_PER_TOKEN / 2;
+        let text = render_for_summary(self.summary.as_deref(), &self.messages[..cut], input_cap);
+        let request = ChatRequest {
+            messages: vec![
+                ChatMessage::system(SUMMARY_PROMPT.to_owned()),
+                ChatMessage::user_with_images(&text, Vec::new()),
+            ],
+            max_tokens: Some(SUMMARY_TOKENS),
+            temperature: Some(0.2),
+            enable_thinking: Some(false),
+            ..ChatRequest::default()
+        };
+        let response = provider
+            .chat(&request)
+            .map_err(|error| describe_error(&error, model))?;
+        if !response.tool_calls.is_empty() {
+            return Err("the model answered with a tool call".to_owned());
+        }
+        let said = response.content.unwrap_or_default();
+        if said.trim().is_empty() {
+            return Err("the summary was empty".to_owned());
+        }
+        // The summary goes into every later request, so it is redacted like any other text the model sees.
+        let clean = Redactor::new().redact(said.trim()).into_owned();
+        self.summary = Some(clean.chars().take(SUMMARY_MAX_CHARS).collect());
+        self.messages.drain(..cut);
+        Ok(cut)
+    }
+
+    /// The request for the next model call, with the history made to fit, and how many messages that
+    /// dropped.
+    fn request(&mut self, model: &ModelConfig, base: &str) -> (ChatRequest, usize) {
+        let system = self.system_with_summary(base);
+        let budget = self.prompt_budget(model, system.len());
         let dropped = compact(&mut self.messages, budget);
         let mut messages = Vec::with_capacity(self.messages.len() + 1);
         messages.push(ChatMessage::system(system));
@@ -871,6 +1052,90 @@ fn total_chars(messages: &[ChatMessage]) -> usize {
     messages.iter().map(message_chars).sum()
 }
 
+/// Where to cut the history so the turns before the cut can be folded into the summary: the first turn start from
+/// which what remains fits in `target` characters, else the start of the newest turn. `None` when there is only one
+/// turn, which cannot be folded away.
+fn fold_point(messages: &[ChatMessage], target: usize) -> Option<usize> {
+    let starts: Vec<usize> = messages
+        .iter()
+        .enumerate()
+        .skip(1)
+        .filter(|(_, m)| m.role == Role::User)
+        .map(|(i, _)| i)
+        .collect();
+    let newest = *starts.last()?;
+    starts
+        .iter()
+        .copied()
+        .find(|&i| total_chars(&messages[i..]) <= target)
+        .or(Some(newest))
+}
+
+/// The first `n` characters of `text`, with a mark when it was cut.
+fn clip(text: &str, n: usize) -> String {
+    if text.chars().count() <= n {
+        return text.to_owned();
+    }
+    let head: String = text.chars().take(n).collect();
+    format!("{head}…")
+}
+
+/// The text the summary is made from: the summary so far, then the messages, each cut to a few hundred characters
+/// (tighter until the whole fits `cap`). When it still does not fit, the end is kept, which is the newest part.
+fn render_for_summary(previous: Option<&str>, messages: &[ChatMessage], cap: usize) -> String {
+    let render = |per: usize| {
+        let mut out = String::new();
+        if let Some(previous) = previous {
+            out.push_str("Summary so far:\n");
+            out.push_str(previous);
+            out.push_str("\n\nConversation to fold in:\n");
+        }
+        for message in messages {
+            match message.role {
+                Role::User => {
+                    out.push_str(&format!(
+                        "User: {}\n",
+                        clip(message.content.as_deref().unwrap_or(""), per)
+                    ));
+                }
+                Role::Assistant => {
+                    if let Some(text) = message.content.as_deref().filter(|t| !t.trim().is_empty())
+                    {
+                        out.push_str(&format!("Assistant: {}\n", clip(text, per)));
+                    }
+                    for call in &message.tool_calls {
+                        out.push_str(&format!(
+                            "Assistant called {}({})\n",
+                            sanitize(&call.name),
+                            clip(&call.arguments, per / 2)
+                        ));
+                    }
+                }
+                Role::Tool => {
+                    out.push_str(&format!(
+                        "Tool result: {}\n",
+                        clip(message.content.as_deref().unwrap_or(""), per)
+                    ));
+                }
+                _ => {}
+            }
+        }
+        out
+    };
+    for per in [800, 400, 200, 100] {
+        let text = render(per);
+        if text.len() <= cap {
+            return text;
+        }
+    }
+    let text = render(100);
+    let mut start = text.len().saturating_sub(cap);
+    while !text.is_char_boundary(start) {
+        start += 1;
+    }
+    text[start..].to_owned()
+}
+
 /// Makes the history fit `budget` characters: first the older tool results are shortened, then the oldest
 /// turns are dropped, then the newer results are shortened too. A turn is dropped whole, from its user
 /// message to the next one, so a tool result never loses its call. Returns how many messages were dropped.
@@ -972,7 +1237,7 @@ hard_limit = 8000
         }
 
         fn log(&self) -> String {
-            let dir = self.ws().join(".local-agent");
+            let dir = self.ws().join(".bridle");
             ["tool-events.jsonl", "events.jsonl"]
                 .iter()
                 .filter_map(|f| fs::read_to_string(dir.join(f)).ok())
@@ -1009,8 +1274,11 @@ hard_limit = 8000
         let provider = MockProvider::scripted("mock-model", script.into_iter().map(Ok).collect());
         let mut events = Vec::new();
         let cancel = AtomicBool::new(false);
+        // The usage figure is not part of what these tests look at; `a_turn_reports_how_full_the_window_is` reads it.
         let end = agent.run_turn(&provider, &fx.model(), user, &cancel, &mut |e| {
-            events.push(e)
+            if !matches!(e, Event::Usage { .. }) {
+                events.push(e);
+            }
         });
         (end, events, provider)
     }
@@ -1269,7 +1537,7 @@ hard_limit = 8000
                 tool_call(
                     "c3",
                     "write_file",
-                    json!({"path": "local-agent.toml", "content": "x"}),
+                    json!({"path": "bridle.toml", "content": "x"}),
                 ),
                 answer("done"),
             ],
@@ -1286,7 +1554,7 @@ hard_limit = 8000
                 .contains("\"hello\"")
         );
         assert!(
-            !fx.ws().join("local-agent.toml").exists(),
+            !fx.ws().join("bridle.toml").exists(),
             "a control file must not be written"
         );
         let blocked: Vec<_> = events
@@ -1541,6 +1809,219 @@ hard_limit = 8000
         );
     }
 
+    /// `turns` earlier exchanges of `chars` characters each, as the history of a long conversation.
+    fn long_history(agent: &mut Agent, turns: usize, chars: usize) {
+        for i in 0..turns {
+            agent.messages.push(ChatMessage::user_with_images(
+                format!("question {i}"),
+                Vec::new(),
+            ));
+            agent.messages.push(ChatMessage {
+                role: Role::Assistant,
+                content: Some(format!("answer {i} {}", "x".repeat(chars))),
+                tool_calls: Vec::new(),
+                tool_call_id: None,
+                images: Vec::new(),
+            });
+        }
+    }
+
+    #[test]
+    fn a_cut_off_call_is_kept_as_valid_json_so_the_server_can_read_the_history_again() {
+        let fx = Fixture::new("");
+        let mut agent = fx.agent();
+        let cut = ChatResponse {
+            tool_calls: vec![ToolCall {
+                id: "c1".into(),
+                name: "write_file".into(),
+                arguments: "{\"path\":\"a.html\",\"content\":\"<!DOCTYPE html>\\n<html".into(),
+            }],
+            finish_reason: Some("length".into()),
+            ..ChatResponse::default()
+        };
+        let (_, _, provider) = turn(&fx, &mut agent, vec![cut, answer("ok")], "write a page");
+        let resent = &provider.requests()[1];
+        let call = resent
+            .messages
+            .iter()
+            .find(|m| m.role == Role::Assistant && !m.tool_calls.is_empty())
+            .expect("the assistant message with the call is sent again")
+            .tool_calls[0]
+            .clone();
+        assert!(
+            serde_json::from_str::<Value>(&call.arguments).is_ok(),
+            "the server rejects history whose call arguments are not JSON: {}",
+            call.arguments
+        );
+    }
+
+    #[test]
+    fn a_conversation_over_its_budget_is_folded_into_a_summary() {
+        let fx = Fixture::new("");
+        let mut agent = fx.agent();
+        long_history(&mut agent, 6, 3_000);
+        let before = agent.messages.len();
+        let (end, events, provider) = turn(
+            &fx,
+            &mut agent,
+            vec![
+                answer("SUMMARY: the user asked six questions"),
+                answer("fine"),
+            ],
+            "and now?",
+        );
+        assert_eq!(end, TurnEnd::Done);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::Notice(t) if t.starts_with("compacted:"))),
+            "{events:?}"
+        );
+        let requests = provider.requests();
+        assert!(
+            requests[0].tools.is_empty(),
+            "the summary call offers no tools"
+        );
+        let system = requests[1].messages[0].content.clone().unwrap();
+        assert!(
+            system.contains("SUMMARY: the user asked six questions"),
+            "{system}"
+        );
+        let last = requests[1].messages.last().unwrap();
+        assert_eq!(last.content.as_deref(), Some("and now?"));
+        assert!(agent.messages.len() < before, "older messages were removed");
+        assert!(agent.summary.is_some());
+    }
+
+    #[test]
+    fn a_failed_summary_falls_back_to_dropping_the_oldest_turns() {
+        let fx = Fixture::new("");
+        let mut agent = fx.agent();
+        long_history(&mut agent, 6, 3_000);
+        let provider = MockProvider::scripted(
+            "mock-model",
+            vec![
+                Err(ProviderError::Other("boom".to_owned())),
+                Ok(answer("fine")),
+            ],
+        );
+        let mut events = Vec::new();
+        let cancel = AtomicBool::new(false);
+        let end = agent.run_turn(&provider, &fx.model(), "and now?", &cancel, &mut |e| {
+            events.push(e)
+        });
+        assert_eq!(end, TurnEnd::Done);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::Notice(t) if t.contains("could not summarise"))),
+            "{events:?}"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::Notice(t) if t.contains("were dropped"))),
+            "{events:?}"
+        );
+        assert!(agent.summary.is_none());
+    }
+
+    #[test]
+    fn compact_now_folds_everything_and_the_next_request_carries_the_summary() {
+        let fx = Fixture::new("");
+        let mut agent = fx.agent();
+        let (_, _, _) = turn(
+            &fx,
+            &mut agent,
+            vec![answer("first answer")],
+            "first question",
+        );
+        let provider =
+            MockProvider::scripted("mock-model", vec![Ok(answer("SUMMARY: first topic"))]);
+        let mut events = Vec::new();
+        let end = agent.compact_now(&provider, &fx.model(), &mut |e| events.push(e));
+        assert_eq!(end, TurnEnd::Done);
+        assert!(agent.messages.is_empty());
+        assert_eq!(agent.summary.as_deref(), Some("SUMMARY: first topic"));
+        assert!(events.iter().any(|e| matches!(e, Event::Usage { .. })));
+        let (_, _, provider) = turn(
+            &fx,
+            &mut agent,
+            vec![answer("second answer")],
+            "second question",
+        );
+        let system = provider.requests()[0].messages[0].content.clone().unwrap();
+        assert!(system.contains("SUMMARY: first topic"), "{system}");
+    }
+
+    #[test]
+    fn compacting_an_empty_conversation_says_so() {
+        let fx = Fixture::new("");
+        let mut agent = fx.agent();
+        let provider = MockProvider::scripted("mock-model", Vec::new());
+        let mut events = Vec::new();
+        let end = agent.compact_now(&provider, &fx.model(), &mut |e| events.push(e));
+        assert_eq!(end, TurnEnd::Done);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::Notice(t) if t.contains("nothing to compact")))
+        );
+        assert!(provider.requests().is_empty(), "no model call for nothing");
+    }
+
+    #[test]
+    fn a_turn_reports_how_full_the_window_is() {
+        let fx = Fixture::new("");
+        let mut agent = fx.agent();
+        let provider = MockProvider::scripted("mock-model", vec![Ok(answer("hi"))]);
+        let mut events = Vec::new();
+        let cancel = AtomicBool::new(false);
+        agent.run_turn(&provider, &fx.model(), "hello", &cancel, &mut |e| {
+            events.push(e)
+        });
+        let usage: Vec<(usize, usize)> = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::Usage { used, window } => Some((*used, *window)),
+                _ => None,
+            })
+            .collect();
+        assert!(!usage.is_empty());
+        assert!(
+            usage
+                .iter()
+                .all(|(used, window)| *window == 8192 && *used > 0),
+            "{usage:?}"
+        );
+    }
+
+    #[test]
+    fn the_fold_point_keeps_the_newest_turn_and_never_splits_a_turn() {
+        let user = |t: &str| ChatMessage::user_with_images(t, Vec::new());
+        let said = |t: &str| ChatMessage {
+            role: Role::Assistant,
+            content: Some(t.to_owned()),
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+            images: Vec::new(),
+        };
+        let history = vec![
+            user("a"),
+            said(&"x".repeat(100)),
+            user("b"),
+            said(&"y".repeat(100)),
+            user("c"),
+        ];
+        // Only the last turn fits in 50 characters: the cut is at its start.
+        assert_eq!(fold_point(&history, 50), Some(4));
+        // Two turns fit: the cut is at the second.
+        assert_eq!(fold_point(&history, 250), Some(2));
+        // One turn only cannot be folded.
+        assert_eq!(fold_point(&history[..2], 10), None);
+        assert!(history[fold_point(&history, 50).unwrap()].role == Role::User);
+    }
+
     #[test]
     fn a_command_the_tool_refuses_is_shown_as_blocked() {
         let fx = Fixture::new("");
@@ -1780,10 +2261,7 @@ hard_limit = 8000
             hook_view("search_text", &json!({"pattern": "../x"})).0,
             "codesearch"
         );
-        assert_eq!(
-            hook_view("git_status", &json!({})).0,
-            "local-agent_git_status"
-        );
+        assert_eq!(hook_view("git_status", &json!({})).0, "bridle_git_status");
         assert_eq!(hook_call_id("call/1 ✓", 3), "call_1__");
         assert_eq!(hook_call_id("", 3), "call_3");
         let long = "a".repeat(200);

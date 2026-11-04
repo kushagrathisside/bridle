@@ -5,7 +5,7 @@ It has three parts. The first two do not need a model. The third does.
 
 You need Windows 11, the Visual Studio 2022 C++ build tools, and Git. The full list is in [install Bridle](../guide/installation.md).
 
-## 1. Build the `agent` command
+## 1. Build the `bridle` command
 
 ```bat
 git clone https://github.com/kushagrathisside/bridle.git
@@ -13,10 +13,10 @@ cd bridle
 cargo build -p harness-cli --bin agent
 ```
 
-Cargo uses the Rust version pinned in `rust-toolchain.toml`. The binary is `target\debug\agent.exe`. Check it:
+Cargo uses the Rust version pinned in `rust-toolchain.toml`. The binary is `target\debug\bridle-cli.exe`. Check it:
 
 ```bat
-target\debug\agent.exe --version
+target\debug\bridle-cli.exe --version
 ```
 
 Expected output:
@@ -25,7 +25,7 @@ Expected output:
 agent 0.1.0
 ```
 
-From here on, the examples call the binary as `agent`. Add its folder to your `PATH`, or write out the full path.
+From here on, the examples call the binary as `bridle`. Add its folder to your `PATH`, or write out the full path.
 
 ## 2. See a policy decision
 
@@ -39,7 +39,7 @@ describes a call, the way OpenCode sends it:
 Save it as `try-read.json` in an empty folder and run:
 
 ```bat
-agent hook tool-before --workspace . < try-read.json
+bridle hook tool-before --workspace . < try-read.json
 ```
 
 Expected output, on one line:
@@ -56,17 +56,17 @@ Go to the repository you want the agent to work in. Use a clean copy or a branch
 
 ```bat
 cd path\to\your\repo
-agent init --profile local-only
-agent config validate
+bridle init --profile local-only
+bridle config validate
 ```
 
 `init` writes four things:
 
 ```text
-✓ wrote local-agent.toml (profile local-only)
+✓ wrote bridle.toml (profile local-only)
 ✓ wrote opencode.json
-✓ wrote .opencode/plugins/local-agent.ts
-✓ .gitignore: added .local-agent/, .worktrees/
+✓ wrote .opencode/plugins/bridle.ts
+✓ .gitignore: added .bridle/, .worktrees/
 ```
 
 `config validate` checks the configuration. A repository with no verification steps gets one warning, which is expected
@@ -84,8 +84,8 @@ Bridle needs a model server for the agent's own reasoning. Download the model fi
 configuration expects them: [serve the models](../guide/models.md) explains the layout and the checksums.
 
 ```bat
-agent models serve main --detach
-agent health main
+bridle models serve main --detach
+bridle health main
 ```
 
 `serve --detach` starts the server and returns when it answers its health endpoint. `health` runs a set of checks, one
@@ -101,15 +101,15 @@ opencode run "Describe the files in this repository."
 ```
 
 OpenCode loads the Bridle plugin from `.opencode/plugins/`, so every tool call goes through the policy. The record is in
-`.local-agent/` in the repository.
+`.bridle/` in the repository.
 
 ## What success looks like
 
 - `agent --version` prints `agent 0.1.0`.
 - The policy check in step 2 returns `"action":"block"` for the `.env` file.
-- `agent config validate` exits with code 0 and lists no errors.
-- `agent health main` ends with `result: pass`, once the model is running.
-- `opencode run` answers. Every verdict is recorded in `.local-agent/tool-events.jsonl`. `agent explain` shows the
+- `bridle config validate` exits with code 0 and lists no errors.
+- `bridle health main` ends with `result: pass`, once the model is running.
+- `opencode run` answers. Every verdict is recorded in `.bridle/tool-events.jsonl`. `bridle explain` shows the
   loop decisions once the task workflow is enabled; see [run a task](../guide/run-a-task.md).
 
 ## Next steps

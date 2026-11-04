@@ -38,7 +38,7 @@ For each call, Bridle works out:
    `security.network` and `security.destructive_commands`. Their default is `ask`, and `ask` blocks. The answer for
    `PRIVILEGED` comes from `security.privileged_commands`, whose default is `deny`.
 3. **The paths.** Every path must stay inside the repository. Secret files are denied to file tools and to shell
-   commands. The control files of the harness itself (`local-agent.toml`, `opencode.json`, `.opencode/`, `.local-agent/`,
+   commands. The control files of the harness itself (`bridle.toml`, `opencode.json`, `.opencode/`, `.bridle/`,
    and `.git`) cannot be written by the agent, though it may read them.
 4. **The arguments.** A shell command is split into its parts the way the shell that runs it would split it. A command
    that cannot be parsed is blocked.
@@ -83,9 +83,9 @@ and it is not a guarantee. The [security model](security.md) lists what it does 
 
 ## Where the record is
 
-- `.local-agent/tool-events.jsonl` has one line per call, with its verdict and rule.
-- With the task workflow on, each call and each refusal is also in the task journal, which `agent trace` and
-  `agent explain` print. See [run a task](../guide/run-a-task.md).
+- `.bridle/tool-events.jsonl` has one line per call, with its verdict and rule.
+- With the task workflow on, each call and each refusal is also in the task journal, which `bridle trace` and
+  `bridle explain` print. See [run a task](../guide/run-a-task.md).
 
 ## When a decision is wrong
 

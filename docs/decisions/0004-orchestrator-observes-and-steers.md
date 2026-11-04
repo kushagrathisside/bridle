@@ -11,9 +11,9 @@ therefore cannot call the model itself or stop a turn. The workflow needs three 
 outside the loop: a task state, loop detection, and a decision for the next step. The design calls for a bounded,
 explicit workflow, which the harness cannot enforce by controlling the loop.
 
-Three facts constrain the design. Each hook call is a separate `agent hook` process, and OpenCode may run tool calls in
+Three facts constrain the design. Each hook call is a separate `bridle hook` process, and OpenCode may run tool calls in
 parallel. OpenCode does not pass MCP tool output to `tool.execute.after`, so test results are visible only to the
-`agent mcp` server process. `tool.execute.after` cannot deny a call.
+`bridle mcp` server process. `tool.execute.after` cannot deny a call.
 
 The alternatives considered are listed below.
 
@@ -29,11 +29,11 @@ The alternatives considered are listed below.
    for the shortest time possible.
 3. **State failures degrade; policy stays fail-closed.** If the state cannot be read or written, the call is decided by
    the policy alone, a notice appears in the next tool result, and a record is written when the log is writable.
-   `agent task repair` rebuilds the caches. A policy that cannot be evaluated still denies the call.
+   `bridle task repair` rebuilds the caches. A policy that cannot be evaluated still denies the call.
 4. **Compatibility.** Unknown fields are tolerated. A newer major schema version is refused with a named error. An
    older one is migrated forward, keeping a `.bak` copy. Each JSONL line carries a version. A torn last line is skipped
    and counted. Unknown enum values decode without failing. Fingerprints carry a `fp_v1:` prefix.
-5. **The MCP server records its own results.** `agent mcp` appends each result to its own log. The `tool-after` hook for
+5. **The MCP server records its own results.** `bridle mcp` appends each result to its own log. The `tool-after` hook for
    the same call claims the result by tool name and argument hash and copies it into the task log.
 6. **Task identity.** Task ids are assigned by the harness, not taken from session ids. Resume is by task id. A child
    session joins its parent's task when the host payload names the parent, and is a separate task otherwise. Session

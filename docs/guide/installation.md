@@ -1,6 +1,6 @@
 # Install Bridle
 
-This page takes a Windows machine from nothing to a built `agent` binary, and explains the machine configuration that
+This page takes a Windows machine from nothing to a built `bridle` binary, and explains the machine configuration that
 tells Bridle where your models and OpenCode are. Setting up a repository comes next, in
 [set up a repository](set-up-a-repository.md).
 
@@ -29,29 +29,30 @@ git clone https://github.com/kushagrathisside/bridle.git
 cd bridle
 ```
 
-## 2. Build the `agent` binary
+## 2. Build the `bridle` binary
 
 Open a developer shell, or run `"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"`
 first, so the linker is on the path. Then:
 
 ```bat
-cargo build -p harness-cli --bin agent
+cargo build -p harness-cli
 ```
 
-Cargo writes the binary to `target\debug\agent.exe`. To keep build output outside the repository, set `CARGO_TARGET_DIR`
+Cargo writes the binary to `target\debug\bridle-cli.exe`. To keep build output outside the repository, set `CARGO_TARGET_DIR`
 before you build, and use the same folder when you run the binary.
 
 Check the build:
 
 ```bat
-target\debug\agent.exe --version
+target\debug\bridle-cli.exe --version
 ```
 
 ```text
-agent 0.1.0
+bridle 0.1.0
 ```
 
-The examples in these docs write `agent` for the binary. Add its folder to your `PATH`, or call it by its full path.
+The examples in these docs write `bridle` for the binary. Add its folder to your `PATH`, or call it by its full path. This builds
+the headless `bridle-cli`. For the window as well, build `bridle-desktop`; see [the desktop app](desktop.md).
 
 ## 3. Write the machine configuration
 
@@ -59,16 +60,16 @@ The machine configuration records where the model files, the inference runtimes 
 write it once:
 
 ```bat
-agent init --machine --models-dir <models-dir> --runtimes-dir <runtimes-dir> --opencode-bin <path-to-opencode.exe>
+bridle init --machine --models-dir <models-dir> --runtimes-dir <runtimes-dir> --opencode-bin <path-to-opencode.exe>
 ```
 
 Replace the three placeholders with your folders. A layout that works is one folder for the weights, one for the runtimes
 (`llama.cpp\b11756-cuda12.4\llama-server.exe`, and `opencode\1.19.3\opencode.exe`), and the repository's own build folder.
 
-The file is written to `%APPDATA%\local-agent\config.toml`. Check where it is and what it holds:
+The file is written to `%APPDATA%\bridle\config.toml`. Check where it is and what it holds:
 
 ```bat
-agent config paths
+bridle config paths
 ```
 
 The repository's own configuration cannot change these folders or the executables, so a cloned repository cannot point
@@ -77,7 +78,7 @@ Bridle at another OpenCode.
 ## 4. Check the installation
 
 ```bat
-agent doctor
+bridle doctor
 ```
 
 `doctor` checks the host, the runtimes, the model files, the endpoints, the OpenCode version and the configuration. On a

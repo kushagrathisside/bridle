@@ -1,4 +1,4 @@
-//! Turns the `agent doctor` report and health results into selectable diagnostic items, each with a
+//! Turns the `bridle doctor` report and health results into selectable diagnostic items, each with a
 //! cause, an impact and a next step. The advice is fixed text keyed on the kind of finding; the
 //! details come from the report and are redacted and stripped of control characters.
 
@@ -111,7 +111,7 @@ pub fn from_report(report: &Report) -> Vec<DiagItem> {
         title: "OpenCode".to_owned(),
         detail: t(&report.opencode.detail),
         impact: "The policy hook and tools only apply when OpenCode runs with the Bridle plugin.",
-        next: "Install the pinned OpenCode version or set host.opencode_bin; then run `agent init`.",
+        next: "Install the pinned OpenCode version or set host.opencode_bin; then run `bridle init`.",
     });
     for issue in &report.config_issues {
         items.push(DiagItem {
@@ -119,7 +119,7 @@ pub fn from_report(report: &Report) -> Vec<DiagItem> {
             category: "config",
             title: format!("[{}] {}", issue.rule, t(&issue.path)),
             detail: t(&issue.message),
-            impact: "Errors block `agent models serve` and the hook; warnings are advisory.",
+            impact: "Errors block `bridle models serve` and the hook; warnings are advisory.",
             next: "Edit the config file (this interface is read-only) and re-run diagnostics.",
         });
     }

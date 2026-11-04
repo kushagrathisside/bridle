@@ -1,8 +1,8 @@
 # Module: harness-runtime/mcp
 
-The MCP server that `agent mcp` runs on stdio, and the deterministic tools it serves to OpenCode. It owns the
+The MCP server that `bridle mcp` runs on stdio, and the deterministic tools it serves to OpenCode. It owns the
 JSON-RPC 2.0 framing, tool dispatch, redaction of every result, and the bounded process runner the tools share.
-OpenCode lists the tools as `local-agent_<tool>`, and every call still passes the `tool-before` hook first
+OpenCode lists the tools as `bridle_<tool>`, and every call still passes the `tool-before` hook first
 ([cli-host-opencode.md](cli-host-opencode.md)). The tools never decide policy themselves; they ask `ToolPolicy`
 ([core-security.md](core-security.md)).
 

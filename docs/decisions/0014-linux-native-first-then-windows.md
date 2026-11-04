@@ -23,7 +23,7 @@ The Ubuntu machine has no discrete GPU. The main model will run on CPU there, so
 2. **The Windows release follows** from the same code, with its own gate and smoke test, once the Linux release works.
    The Windows machine is the GPU host for the main model; WSL is used only for tasks that need Linux.
 3. **The runtime paths are machine settings.** Shipped profiles name the Windows binaries (`llama-server.exe`). A Linux
-   machine overrides them with an explicit config file, passed through `--config` or `LOCAL_AGENT_CONFIG`. That file sits
+   machine overrides them with an explicit config file, passed through `--config` or `BRIDLE_CONFIG`. That file sits
    above the repository layer, so the repository stays unchanged. The example is in
    `configs/examples/linux-machine.toml`.
 4. **The gate is one script.** `scripts/linux-gate.sh` runs the format check, clippy, the full tests and the release build,

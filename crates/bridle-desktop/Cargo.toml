@@ -1,0 +1,31 @@
+[package]
+name = "bridle-desktop"
+description = "The Bridle desktop app: a Tauri window over the same agent loop, policy and tools as the `agent` command."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# `bridle` opens the window in the current folder. The `agent` command stays the scripting interface.
+[[bin]]
+name = "bridle"
+path = "src/main.rs"
+
+[dependencies]
+harness-cli = { path = "../harness-cli" }
+harness-core.workspace = true
+harness-runtime.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+regex.workspace = true
+# A real pseudo-terminal (ConPTY on Windows) for the terminal panel.
+portable-pty = "0.9"
+tauri = { version = "2", default-features = false, features = ["wry", "common-controls-v6", "compression"] }
+
+[build-dependencies]
+tauri-build = { version = "2", default-features = false, features = [] }
+
+[lints]
+workspace = true
