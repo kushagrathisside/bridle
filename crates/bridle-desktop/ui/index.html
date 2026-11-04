@@ -18,18 +18,10 @@
       </div>
       <span class="workspace-path" id="workspace-path"></span>
       <span class="spacer"></span>
-      <button id="ideas-btn" class="icon-btn ideas-btn" title="Ideas: notes sent when a run finishes" aria-label="Ideas"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg><span id="ideas-count" class="badge" hidden></span></button>
+      <button id="board-btn" class="icon-btn ideas-btn" title="Board: the team's issues" aria-label="Board"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="10" rx="1"/><rect x="17" y="4" width="4" height="13" rx="1"/></svg><span id="board-count" class="badge" hidden></span></button>
       <button id="toggle-bottom" class="icon-btn" title="Show or hide the terminal panel (Ctrl+`)" aria-label="Terminal"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l6 6-6 6M12 18h8"/></svg></button>
       <button id="toggle-chat" class="icon-btn" title="Show or hide the chat (Ctrl+J)" aria-label="Chat"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg></button>
     </header>
-
-    <div id="ideas-panel" class="ideas-panel" hidden>
-      <div class="ideas-head"><strong>Ideas</strong><label class="ideas-hold" title="While on hold, no idea is sent when a run finishes"><input type="checkbox" id="idea-hold"> Hold</label></div>
-      <p id="ideas-summary" class="muted note"></p>
-      <ol id="ideas-list" class="ideas-list"></ol>
-      <textarea id="idea-new" rows="2" placeholder="Write an idea. It is not sent to the model until a run finishes." maxlength="8000"></textarea>
-      <div class="idea-actions"><button type="button" id="idea-add" class="small primary">Save idea</button></div>
-    </div>
 
     <div id="body">
       <nav id="activity" aria-label="Views">
@@ -166,6 +158,12 @@
           </div>
         </form>
       </aside>
+      <aside id="crew" aria-label="The team">
+        <button id="crew-toggle" class="crew-head" title="Hide the team (the team rail)" aria-label="Hide the team"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.4"/><path d="M3 19c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5M15.5 14c3 0 5.5 1.7 5.5 4.5"/></svg><span id="crew-count" class="badge" hidden></span></button>
+        <div id="crew-list" class="crew-list"></div>
+        <button id="crew-warning" class="crew-edit" hidden aria-label="The saved team could not be used">!</button>
+        <button id="crew-edit" class="crew-edit" title="Edit the team: add or remove members, set their specialities" aria-label="Edit the team">+</button>
+      </aside>
     </div>
 
     <footer id="statusbar" class="statusbar">
@@ -181,6 +179,8 @@
   </div>
 
   <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div id="board-backdrop" class="board-backdrop" hidden></div>
+  <div id="board" class="board" role="dialog" aria-label="Board" hidden></div>
   <div id="ctx" class="menu ctx" hidden></div>
   <div id="overlay" class="overlay" hidden>
     <div class="dialog" id="dialog"></div>
@@ -195,6 +195,8 @@
   <script src="editor.js"></script>
   <script src="panels.js"></script>
   <script src="ideas.js"></script>
+  <script src="crew.js"></script>
+  <script src="board.js"></script>
   <script src="boot.js"></script>
 </body>
 </html>
