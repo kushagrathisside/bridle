@@ -31,7 +31,7 @@ use crate::app::App;
 use crate::commands::models;
 
 /// The prefix OpenCode adds to MCP tool names.
-const MCP_PREFIX: &str = "local-agent_";
+const MCP_PREFIX: &str = "bridle_";
 /// Built-in tools that edit a file, and the argument that names the file.
 const EDIT_TOOLS: [&str; 5] = ["edit", "write", "multiedit", "patch", "apply_patch"];
 /// Command words that run a test suite. Their output is parsed for failures.
@@ -236,7 +236,7 @@ fn decide_primary(app: &App, input: &DecisionInput<'_>) -> DecisionResult {
 }
 
 /// How long the deep slot may take to answer health after it starts, and how long a parked slot may take to answer
-/// health again. Both run inside the hook, whose limit is 150 s in the shim (see `opencode-plugin/local-agent.ts`).
+/// health again. Both run inside the hook, whose limit is 150 s in the shim (see `opencode-plugin/bridle.ts`).
 const DEEP_START_WAIT: Duration = Duration::from_secs(45);
 const PARKED_RESTORE_WAIT: Duration = Duration::from_secs(45);
 
@@ -475,7 +475,7 @@ fn rule_message(result: &DecisionResult) -> String {
     let (why, next) = match result.reason_code {
         ReasonCode::IterationLimit => (
             "the task reached its iteration limit",
-            "stop and report to the user, or run `agent task reset` to continue",
+            "stop and report to the user, or run `bridle task reset` to continue",
         ),
         ReasonCode::ImplementationRetries => (
             "IMPLEMENT was entered more often than the retry limit allows",
@@ -566,7 +566,7 @@ mod tests {
         let app = app(dir.path());
         let input = json!({"sessionID": "ses_none"});
         assert_eq!(system_block(&app, &input).expect("no error"), None);
-        assert!(!dir.path().join(".local-agent").join("tasks").exists());
+        assert!(!dir.path().join(".bridle").join("tasks").exists());
     }
 
     #[test]
@@ -948,7 +948,7 @@ mod tests {
         for call in ["c1", "c2", "c3", "c4"] {
             assert_eq!(before(&app, &bash(call, "ls"), false).unwrap(), None);
         }
-        assert!(!dir.path().join(".local-agent").join("tasks").exists());
+        assert!(!dir.path().join(".bridle").join("tasks").exists());
     }
 
     #[test]
@@ -993,7 +993,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let app = app(dir.path());
         let args = json!({"steps": ["unit"]});
-        let start = json!({"sessionID": "ses_test", "callID": "m1", "tool": "local-agent_run_tests", "args": args});
+        let start = json!({"sessionID": "ses_test", "callID": "m1", "tool": "bridle_run_tests", "args": args});
         before(&app, &start, false).unwrap();
         let state = StateDir::open(dir.path()).unwrap();
         state

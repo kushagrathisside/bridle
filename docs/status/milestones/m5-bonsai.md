@@ -11,10 +11,10 @@ Its escalation routing (R-3.6, R-18.1) was added later, as M5-3 (2026-10-27); se
 
 | Requirement | Result | Evidence |
 |---|---|---|
-| Deep slot loads on demand (R-45.3) | Done | `agent models serve deep --detach`: healthy after 27.8 s; `agent models stop deep` releases it |
+| Deep slot loads on demand (R-45.3) | Done | `bridle models serve deep --detach`: healthy after 27.8 s; `bridle models stop deep` releases it |
 | One GPU model at a time (R-45.1, R-45.3) | Done | `models serve` refuses to start a GPU slot while another GPU server runs; live refusal named `deep` |
 | Reasoning budget raised (R-3.5, plan M5) | Done, with a changed value | `[models.deep.reasoning] budget_tokens` 4096 to 8192 (see Deviations) |
-| Model checks pass (R-44.2, AC-B4) | Done | `agent health deep`: 8 of 8, including a tool call and structured output |
+| Model checks pass (R-44.2, AC-B4) | Done | `bridle health deep`: 8 of 8, including a tool call and structured output |
 | PTQ1_0 file and the PrismML runtime (R-3.3, R-3.2) | Done | the deep slot uses `Ternary-Bonsai-2-27B-PTQ1_0.gguf` on `llama.cpp-prism` b10787 |
 | Context (R-3.4) | Done | 16384 (normal deep); the 262K context is not used |
 | Bonsai never replaces Qwen (R-3.7, R-18.4) | Done | the deep model answers only the A/B cases; no code path lets it edit |
@@ -64,7 +64,7 @@ instead of the person (R-3.6, R-18.1). The rules are as follows, all checked in 
   out keeps the escalated decision, which goes to the person.
 - When the deep slot runs on the GPU and is not serving, the harness swaps the GPU models for the call: the other GPU
   slots that run are parked, the deep slot starts, and afterwards it stops and the parked slots start again
-  (2026-10-28). Without a swap the slot has to be running already (`agent models serve deep`).
+  (2026-10-28). Without a swap the slot has to be running already (`bridle models serve deep`).
 - Timing (2026-10-29): a loop rule is evaluated when a verification fails (`after`), not at the agent's next call. An
   escalation taken there is recorded, and its answer is kept in the task until a verification passes or the task is
   reset. The next call is refused with that answer, and the deep model is not asked again. A loop first seen at a call
@@ -83,15 +83,15 @@ session is not run; the live check below is.
 
 A live check of the deep answer is in `crates/harness-runtime/src/decision.rs`, the ignored test
 `the_deep_slot_answers_an_escalated_loop`. It sends a same-failure escalation to the deep slot and checks that the answer
-is one the engine accepts. To run it: stop the main model (`agent models stop main`), serve the deep model
-(`agent models serve deep --detach`), then run the test with `--ignored`. `BRIDLE_DEEP_URL` overrides the endpoint.
+is one the engine accepts. To run it: stop the main model (`bridle models stop main`), serve the deep model
+(`bridle models serve deep --detach`), then run the test with `--ignored`. `BRIDLE_DEEP_URL` overrides the endpoint.
 Without the deep model the test fails with a connection error (checked 2026-10-28), which is the intended result: it
 must not pass on a fallback. Run on 2026-10-28 with the deep model served (`ready`, port 8003): passed, the deep answer
 was used and its label carried no failure.
 
 ## Lifecycle status (R-45.2, 2026-10-28)
 
-`agent models status [slot]` prints one line per slot. The state comes from the PID record and, for a running
+`bridle models status [slot]` prints one line per slot. The state comes from the PID record and, for a running
 process only, one health request (2 s timeout):
 
 - `unloaded`: no record (never started, or stopped).
@@ -111,7 +111,7 @@ The command has no signal for them.
 - Reasoning budget 8192, not 16384. A 16K context cannot hold a 16K budget plus the prompt and an answer. The
   4096 budget is the measured value that truncated answers; 8192 is the first step above it. A longer budget needs a
   larger context or a shorter prompt, and that is a benchmark (R-3.5) for M10.
-- `agent models serve` refuses when another GPU server runs. It does not stop the other one; the person does.
+- `bridle models serve` refuses when another GPU server runs. It does not stop the other one; the person does.
 
 ## Not done
 

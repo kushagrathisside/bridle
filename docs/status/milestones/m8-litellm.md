@@ -20,7 +20,7 @@ decision providers through it, and the agent's endpoint policy covers the gatewa
   to the generated file. The OpenCode side of this (that OpenCode expands `{env:NAME}` in `apiKey`) is not verified yet.
 - `configs/hybrid.toml`: the local profile with a gateway slot (`role = "external"`, `hardware = "remote"`). It names
   `http://127.0.0.1:4000/v1`, the key name `BRIDLE_GATEWAY_KEY`, and the route `local-qwen`.
-- `agent config validate` checks the hybrid profile, `local-only` and `local-with-jev`; a remote gateway without a key name
+- `bridle config validate` checks the hybrid profile, `local-only` and `local-with-jev`; a remote gateway without a key name
   fails with V36.
 
 ## Tests
@@ -37,7 +37,7 @@ decision providers through it, and the agent's endpoint policy covers the gatewa
 
 Planned: a LiteLLM proxy (1.106.4, installed in a Windows virtual environment) in front of the running `main` model
 (Qwen3.5-9B on port 8001), with the route `local-qwen`. The steps are: start the model, start the gateway on
-`127.0.0.1:4000`, run `agent models health gateway`, then run the ignored test with `--ignored`.
+`127.0.0.1:4000`, run `bridle models health gateway`, then run the ignored test with `--ignored`.
 
 **Status: passed (2026-10-28).** The gateway was installed into a Windows virtual environment at `D:\llm-gateway\.venv`
 and started by `D:\llm-gateway\start-litellm-gateway.ps1`, which the person ran in PowerShell. Results:
@@ -47,7 +47,7 @@ and started by `D:\llm-gateway\start-litellm-gateway.ps1`, which the person ran 
   because the model's reasoning used the budget; the route itself worked.
 - The ignored test `a_gateway_slot_completes_a_request` passed with the gateway running.
 
-Not run: `agent models health gateway` (the planned step), and any cloud route. The gateway key in the script is a local
+Not run: `bridle models health gateway` (the planned step), and any cloud route. The gateway key in the script is a local
 test value for loopback only. Its config is `D:\llm-gateway\litellm-config.yaml`.
 
 ## Limits

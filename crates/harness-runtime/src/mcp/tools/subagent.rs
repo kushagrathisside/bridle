@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use super::{McpTool, ToolContext, ToolOutput};
 use crate::subagent::{Request, run_for_config};
 
-/// The MCP tool name. OpenCode shows it to the model as `local-agent_subagent`.
+/// The MCP tool name. OpenCode shows it to the model as `bridle_subagent`.
 pub const NAME: &str = "subagent";
 
 #[derive(Debug)]

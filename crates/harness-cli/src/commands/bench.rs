@@ -1,7 +1,7 @@
-//! `agent bench`: runs a task corpus under one condition, and reports the results.
+//! `bridle bench`: runs a task corpus under one condition, and reports the results.
 //!
 //! A run copies each task's fixture into a fresh folder, writes the condition's config there, wires OpenCode to the
-//! harness with `agent init`, starts OpenCode with the task prompt, and checks the result with the task's `verify.py`.
+//! harness with `bridle init`, starts OpenCode with the task prompt, and checks the result with the task's `verify.py`.
 //! The verify script lives in the corpus, outside the folder the model can edit. The metrics come from the harness's own
 //! logs in that folder. Each task and each condition gets its own folder, so no state is shared between them.
 
@@ -213,15 +213,15 @@ struct RunPlan<'a> {
 fn run_task(plan: &RunPlan<'_>, task: &Task, task_dir: &Path) -> Result<RunResult> {
     let run_dir = plan.out.join(plan.label).join(&task.id);
     copy_tree(&task_dir.join("fixture"), &run_dir)?;
-    fs::write(run_dir.join("local-agent.toml"), plan.config)?;
-    // `agent init` wires OpenCode to the harness; it never overwrites the config written above.
+    fs::write(run_dir.join("bridle.toml"), plan.config)?;
+    // `bridle init` wires OpenCode to the harness; it never overwrites the config written above.
     let init = Command::new(plan.agent)
         .args(["init", "--workspace"])
         .arg(&run_dir)
         .status()
-        .context("cannot run agent init")?;
+        .context("cannot run bridle init")?;
     if !init.success() {
-        bail!("agent init failed in {}", run_dir.display());
+        bail!("bridle init failed in {}", run_dir.display());
     }
     git(&run_dir, &["init", "-q"])?;
     git(&run_dir, &["add", "-A"])?;
@@ -249,7 +249,7 @@ fn run_task(plan: &RunPlan<'_>, task: &Task, task_dir: &Path) -> Result<RunResul
             Supervised::TimedOut => break (None, true),
             Supervised::Stalled if attempts < MAX_ATTEMPTS => {
                 // OpenCode never reached the model. Start it again on a clean state folder.
-                let _ = fs::remove_dir_all(run_dir.join(".local-agent"));
+                let _ = fs::remove_dir_all(run_dir.join(".bridle"));
             }
             Supervised::Stalled => break (None, false),
         }
@@ -262,7 +262,7 @@ fn run_task(plan: &RunPlan<'_>, task: &Task, task_dir: &Path) -> Result<RunResul
         .status()
         .ok()
         .and_then(|s| s.code());
-    let counts = read_counts(&run_dir.join(".local-agent"));
+    let counts = read_counts(&run_dir.join(".bridle"));
     Ok(RunResult {
         condition: plan.label.to_owned(),
         task: task.id.clone(),
@@ -329,9 +329,7 @@ fn supervise(child: &mut Child, timeout: Duration, run_dir: &Path) -> Result<Sup
             let _ = child.wait();
             return Ok(Supervised::TimedOut);
         }
-        if elapsed >= STARTUP_WATCHDOG
-            && !run_dir.join(".local-agent").join("events.jsonl").exists()
-        {
+        if elapsed >= STARTUP_WATCHDOG && !run_dir.join(".bridle").join("events.jsonl").exists() {
             let _ = child.kill();
             let _ = child.wait();
             return Ok(Supervised::Stalled);
@@ -448,7 +446,7 @@ pub fn summarise(condition: &str, rows: &[RunResult]) -> Summary {
     }
 }
 
-/// `agent bench report`: one summary table per condition, one row per task, and the caveat about sample size.
+/// `bridle bench report`: one summary table per condition, one row per task, and the caveat about sample size.
 fn report(folders: &[PathBuf]) -> Result<ExitCode> {
     let mut all: Vec<RunResult> = Vec::new();
     for folder in folders {

@@ -92,7 +92,7 @@ fn latest_task(state: &StateDir) -> Result<String, String> {
         .map_err(|e| e.to_string())?
         .unwrap_or_default();
     if index.next_task == 0 {
-        return Err("no task exists yet; start one with `agent task start`".to_owned());
+        return Err("no task exists yet; start one with `bridle task start`".to_owned());
     }
     Ok(format!("task-{:04}", index.next_task))
 }
@@ -116,7 +116,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let ctx = test_context(dir.path());
         let error = TaskStatusTool.call(&json!({}), &ctx).unwrap_err();
-        assert!(error.contains("agent task start"), "{error}");
+        assert!(error.contains("bridle task start"), "{error}");
     }
 
     #[test]

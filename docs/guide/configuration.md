@@ -7,12 +7,12 @@ the settings each task needs. This page lists all of them.
 
 | File | Location | Created by | Holds |
 |---|---|---|---|
-| Machine configuration | `%APPDATA%\local-agent\config.toml`, or `config.toml` in the folder named by `LOCAL_AGENT_HOME` | `agent init --machine` | Model and runtime folders, the OpenCode executable, names of credential variables, and external services. |
-| Repository configuration | `local-agent.toml` at the repository root | `agent init` (never overwritten) | The agent's limits, workflow, verification steps, context and telemetry. |
-| Explicit file | Any path given to `--config`, or in `LOCAL_AGENT_CONFIG` | You | Any setting. Trusted, like the machine configuration. |
+| Machine configuration | `%APPDATA%\bridle\config.toml`, or `config.toml` in the folder named by `BRIDLE_HOME` | `bridle init --machine` | Model and runtime folders, the OpenCode executable, names of credential variables, and external services. |
+| Repository configuration | `bridle.toml` at the repository root | `bridle init` (never overwritten) | The agent's limits, workflow, verification steps, context and telemetry. |
+| Explicit file | Any path given to `--config`, or in `BRIDLE_CONFIG` | You | Any setting. Trusted, like the machine configuration. |
 
-`agent init` also writes `opencode.json`, `.opencode/plugins/local-agent.ts` and a `.gitignore`. Do not edit the generated
-files. `agent init --force` replaces them. `agent config paths` lists the files Bridle loaded.
+`bridle init` also writes `opencode.json`, `.opencode/plugins/bridle.ts` and a `.gitignore`. Do not edit the generated
+files. `bridle init --force` replaces them. `bridle config paths` lists the files Bridle loaded.
 
 ## Precedence
 
@@ -22,14 +22,14 @@ From lowest to highest:
 2. The machine configuration.
 3. The repository configuration.
 4. The explicit file.
-5. The environment variables `LOCAL_AGENT_MODELS_DIR` and `LOCAL_AGENT_RUNTIMES_DIR`, which replace `paths.models_dir` and
+5. The environment variables `BRIDLE_MODELS_DIR` and `BRIDLE_RUNTIMES_DIR`, which replace `paths.models_dir` and
    `paths.runtimes_dir`.
 
 A table merges key by key with the layer below it. A list, such as `verification.steps`, replaces the list below it.
 
 ## What a repository file cannot set
 
-A repository's `local-agent.toml` arrives with the code it configures, so Bridle checks it when it loads. Bridle refuses
+A repository's `bridle.toml` arrives with the code it configures, so Bridle checks it when it loads. Bridle refuses
 each of these settings and names the key:
 
 - a `[tools]` table, which declares adapters;
@@ -55,7 +55,7 @@ The machine configuration and an explicit file may set any of these.
 | `local-with-jev` | The optional Jev decision service, off in the shipped file. | Machine configuration only |
 | `hybrid` | External model routes, off in the shipped file. | Machine configuration only |
 
-`agent init --profile` accepts all four profiles. A repository file can use only `local-only` or `development`, because
+`bridle init --profile` accepts all four profiles. A repository file can use only `local-only` or `development`, because
 the repository layer refuses the other two. `benchmark` is accepted in a configuration file, but no profile file ships
 with it. `test` is the only profile in which `mock` providers are allowed (V20).
 
@@ -116,7 +116,7 @@ or a `--config` file: a repository may not add tools (enforced in `config::trust
 ## Which file may set what
 
 The machine config and an explicit `--config` file are yours, so they may set anything. The project config arrives
-with the repository, so `agent` refuses to load it, naming the key, when it tries to:
+with the repository, so `bridle` refuses to load it, naming the key, when it tries to:
 
 - set `[paths]` or `host.opencode_bin`;
 - name a `runtimes.<name>.server_bin` or `models.<slot>.launch.model_file` that is absolute, uses `..`, a drive, or
@@ -128,11 +128,11 @@ with the repository, so `agent` refuses to load it, naming the key, when it trie
   make a `security` verdict looser than the machine config's (stricter is fine);
 - declare `[[tools.adapters]]`.
 
-The shipped profiles satisfy these rules, so `agent init` output loads as a project config.
+The shipped profiles satisfy these rules, so `bridle init` output loads as a project config.
 
 ## Validation rules
 
-`agent config validate` reports each issue with its rule id. The rules are in
+`bridle config validate` reports each issue with its rule id. The rules are in
 `crates/harness-core/src/config/validate.rs` (V1 to V41). The main ones:
 
 | Rule | Check |
@@ -254,7 +254,7 @@ declared = "READ_ONLY"      # or EXECUTE_SAFE
 Each tool is offered as `plugin_<plugin>_<tool>`. Its class is the stricter of the class the manifest declares and the
 class the command classifier gives its command. Only read-only and safe-execution tools are offered: a tool whose command
 the classifier calls a write, a network use, a destructive command or an interpreter is reported and not offered. A
-plugin tool runs through the same checks as `run_command`, in the sandbox. `agent plugins` lists what loaded and why any
+plugin tool runs through the same checks as `run_command`, in the sandbox. `bridle plugins` lists what loaded and why any
 tool did not.
 
 ## Sandbox: commands run confined (Linux)
@@ -292,7 +292,7 @@ endpoint = "http://127.0.0.1:8000"
 timeout_ms = 5000
 ```
 
-`agent route "<text>"` shows where a request would go and why, without starting a turn. If the decision server cannot be
+`bridle route "<text>"` shows where a request would go and why, without starting a turn. If the decision server cannot be
 reached or answers outside its choices, the request goes to `main` and the reason says so.
 
 ## Repository memory: AGENTS.md
@@ -379,7 +379,7 @@ recent window keep only their failure lines.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `enabled` | `false` | Offers the `subagent` tool and enables `agent subagent`. |
+| `enabled` | `false` | Offers the `subagent` tool and enables `bridle subagent`. |
 | `slot` | `micro` | The model slot that answers. It must be defined under `[models]` (V37). |
 | `max_input_bytes` | 4096 | Bytes read from each input. Between 256 and 65536 (V38). |
 | `max_inputs` | 4 | Inputs per call. Between 1 and 8 (V38). |
@@ -398,7 +398,7 @@ recent window keep only their failure lines.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `paths.models_dir` | none | The folder that holds model files. A relative `launch.model_file` resolves against it (V16). `agent doctor` reports it when unset. |
+| `paths.models_dir` | none | The folder that holds model files. A relative `launch.model_file` resolves against it (V16). `bridle doctor` reports it when unset. |
 | `paths.runtimes_dir` | none | The folder that holds inference runtimes. A relative `server_bin` resolves against it (V16). |
 | `host.opencode_bin` | none, so `opencode` is looked up on `PATH` | The path to the OpenCode executable. |
 | `host.opencode_version` | `1.19.3` | The OpenCode version Bridle is pinned and tested against. |
@@ -427,11 +427,11 @@ recent window keep only their failure lines.
 | `retries` | 1 | Retries of a failed request. At most 10 (V23). |
 | `hardware` | required | `gpu`, `cpu` or `remote`. |
 | `kv_cache` | none | The KV cache type, such as `q8_0`. An unrecognised name is a warning (V14). |
-| `mtp` | `auto` | Multi-token prediction: `auto` uses it when `agent health` detects it, `on` or `off`. |
+| `mtp` | `auto` | Multi-token prediction: `auto` uses it when `bridle health` detects it, `on` or `off`. |
 | `sampling` | server defaults | `temperature` (0 to 2), `top_p` (above 0, up to 1), `top_k`, `min_p` (0 to 1) and `repeat_penalty`. An unset value uses the server's default (V13). |
 | `reasoning` | `enabled = false` | `enabled` sends the thinking switch to the server. `budget_tokens` sets the thinking budget. Unset means the server's default. |
 | `capabilities` | see text | `tool_calling`, `vision`, `reasoning`, `structured_output`, `streaming`, `long_context`, `local` and `gpu`. All default to `false` except `streaming` and `local`, which default to `true`. |
-| `source` | none | Where the weights came from: `repo`, `revision`, `file`, `sha256`, `quantization` and `license`. `agent models manifest` checks the file against `sha256`. |
+| `source` | none | Where the weights came from: `repo`, `revision`, `file`, `sha256`, `quantization` and `license`. `bridle models manifest` checks the file against `sha256`. |
 
 ### `[models.<slot>.launch]`
 
@@ -449,7 +449,7 @@ recent window keep only their failure lines.
 
 ## Validation
 
-`agent config validate` prints one line per issue, in the form `✗ [V<n>] <path> - <message>` for an error or
+`bridle config validate` prints one line per issue, in the form `✗ [V<n>] <path> - <message>` for an error or
 `⚠ [V<n>] <path> - <message>` for a warning. It exits with code 1 when there is an error. Warnings alone exit with code 0.
 
 The rules:

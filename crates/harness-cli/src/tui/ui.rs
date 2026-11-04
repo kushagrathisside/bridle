@@ -1,7 +1,7 @@
 //! Rendering. Reads [`Ui`] and draws it; makes no decisions about policy and performs no I/O.
 //!
 //! Status is always a symbol plus a word, never colour alone. `NO_COLOR` switches to a monochrome
-//! theme (bold, dim and reverse only); `LOCAL_AGENT_TUI_ASCII=1` switches to ASCII symbols.
+//! theme (bold, dim and reverse only); `BRIDLE_TUI_ASCII=1` switches to ASCII symbols.
 
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
@@ -32,8 +32,7 @@ impl Theme {
         let set = |k: &str| std::env::var_os(k).is_some_and(|v| !v.is_empty());
         Self {
             color: !set("NO_COLOR"),
-            unicode: !set("LOCAL_AGENT_TUI_ASCII")
-                && std::env::var("TERM").as_deref() != Ok("dumb"),
+            unicode: !set("BRIDLE_TUI_ASCII") && std::env::var("TERM").as_deref() != Ok("dumb"),
         }
     }
 
@@ -822,7 +821,7 @@ fn draw_tasks(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
             ));
         }
         lines.push(Line::from(Span::styled(
-            "Enter lists this task's events in Activity. `agent trace` shows its full record.",
+            "Enter lists this task's events in Activity. `bridle trace` shows its full record.",
             theme.dim(),
         )));
         detail_pane(frame, detail, theme, "Selected", lines);
@@ -868,7 +867,7 @@ fn draw_activity(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
         let text: &[&str] = if ui.snap.log.events.is_empty() {
             &[
                 "No events recorded yet.",
-                "Events are written to .local-agent/*.jsonl when OpenCode calls tools through the Bridle plugin.",
+                "Events are written to .bridle/*.jsonl when OpenCode calls tools through the Bridle plugin.",
             ]
         } else {
             &["No event matches the filter. Esc or c clears it."]
@@ -1064,8 +1063,8 @@ fn draw_models(frame: &mut Frame, area: Rect, ui: &Ui, theme: Theme) {
             "Models",
             &[
                 "No model slots are configured.",
-                "Create your machine settings: agent init --machine --models-dir <weights folder> --runtimes-dir <runtimes folder>",
-                "Then, in your repository: agent init --profile local-only. See docs/guide/models.md.",
+                "Create your machine settings: bridle init --machine --models-dir <weights folder> --runtimes-dir <runtimes folder>",
+                "Then, in your repository: bridle init --profile local-only. See docs/guide/models.md.",
             ],
         );
         return;
@@ -1582,10 +1581,10 @@ fn draw_confirm(frame: &mut Frame, area: Rect, ui: &Ui, c: &Confirm, theme: Them
     }
     lines.push(Line::raw(""));
     lines.push(Line::raw(if verb {
-        "Same as `agent models serve --detach`: launches the local inference server and loads the model. \
+        "Same as `bridle models serve --detach`: launches the local inference server and loads the model. \
          This can use several GB of RAM or VRAM and take minutes; it waits up to 5 minutes for health."
     } else {
-        "Same as `agent models stop`: stops the recorded server only if the pid still belongs to it; \
+        "Same as `bridle models stop`: stops the recorded server only if the pid still belongs to it; \
          a stale or reused pid is cleared without signalling."
     }));
     lines.push(Line::raw(""));
@@ -1823,10 +1822,10 @@ fn chat_welcome(ui: &Ui, theme: Theme, width: usize) -> Vec<Line<'static>> {
             theme.sev(Sev::Warn),
             "No model is configured yet.".to_owned(),
         ));
-        text.push((plain, "1. Create your machine settings (once): agent init --machine --models-dir <weights folder> --runtimes-dir <runtimes folder>".to_owned()));
+        text.push((plain, "1. Create your machine settings (once): bridle init --machine --models-dir <weights folder> --runtimes-dir <runtimes folder>".to_owned()));
         text.push((
             plain,
-            "2. In your repository: agent init --profile local-only".to_owned(),
+            "2. In your repository: bridle init --profile local-only".to_owned(),
         ));
         text.push((plain, "3. Start a model server from the Models view (Tab, then 6, then s), and come back here.".to_owned()));
         text.push((dim, "Details: docs/guide/installation.md and docs/guide/models.md. The other screens work without a model.".to_owned()));
@@ -2115,7 +2114,7 @@ mod tests {
         ui.snap.slots.clear();
         let out = render(&ui, 110, 30);
         assert!(out.contains("No model is configured yet"), "{out}");
-        assert!(out.contains("agent init --machine"), "{out}");
+        assert!(out.contains("bridle init --machine"), "{out}");
     }
 
     #[test]
@@ -2429,7 +2428,7 @@ mod tests {
         ui.handle_key(key(KeyCode::Char('s')));
         let out = render(&ui, 120, 40);
         assert!(
-            out.contains("Start model server?") && out.contains("agent models serve"),
+            out.contains("Start model server?") && out.contains("bridle models serve"),
             "{out}"
         );
         assert!(out.contains("cancel"));

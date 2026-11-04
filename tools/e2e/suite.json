@@ -1,0 +1,78 @@
+[
+ {
+  "name": "first-run setup writes bridle.toml and the project then shows three model slots",
+  "eval": "(async () => { const sleep = ms => new Promise(r => setTimeout(r, ms)); const setup = await invoke('setup_repository'); document.getElementById('overlay').hidden = true; state.setupShown = false; state.autoStartDone = false; invoke('refresh_snapshot'); await sleep(3500); return JSON.stringify({setup, files: state.snapshot.config_files.map(f => f.path.split('\\\\').pop()), errors: window.__bridleErrors, slots: state.snapshot.slots.length}); })()",
+  "expect": "wrote bridle\\.toml.*\"bridle\\.toml\".*\"errors\":\\[\\].*\"slots\":3"
+ },
+ {
+  "name": "the model starts by itself",
+  "eval": "(async () => { const sleep = ms => new Promise(r => setTimeout(r, ms)); const waitTurn = async (max) => { const t0 = Date.now(); while (state.busy && Date.now() - t0 < max) await sleep(1000); return Math.round((Date.now() - t0) / 1000); }; const tail = () => [...document.querySelectorAll('#transcript > *')].map(n => n.className.replace('msg ','').slice(0,12) + ': ' + n.innerText.replace(/\\s+/g,' ').slice(0,200)).slice(-6); const t0 = Date.now(); while (Date.now() - t0 < 90000) { const s = state.snapshot.slots.find(x => x.name === 'main'); if (s && s.server === 'running') break; await sleep(1000); } const s = state.snapshot.slots.find(x => x.name === 'main'); return JSON.stringify({main: s.server, vision: s.vision}); })()",
+  "expect": "\"main\":\"running\",\"vision\":true",
+  "model": true
+ },
+ {
+  "name": "a file opens in the editor, can be edited and is saved to disk",
+  "eval": "(async () => { const sleep = ms => new Promise(r => setTimeout(r, ms)); const waitTurn = async (max) => { const t0 = Date.now(); while (state.busy && Date.now() - t0 < max) await sleep(1000); return Math.round((Date.now() - t0) / 1000); }; const tail = () => [...document.querySelectorAll('#transcript > *')].map(n => n.className.replace('msg ','').slice(0,12) + ': ' + n.innerText.replace(/\\s+/g,' ').slice(0,200)).slice(-6); await openFile('calc.py'); await sleep(1500); const e = editors.get('calc.py'); e.model.setValue(e.model.getValue() + '\\n# e2e marker\\n'); await sleep(300); const dirty = e.dirty; await saveActive(); await sleep(1200); const disk = await invoke('read_workspace_file', {path: 'calc.py'}); return JSON.stringify({lang: e.model.getLanguageId(), dirty, dirtyAfter: e.dirty, onDisk: disk.content.includes('e2e marker')}); })()",
+  "expect": "\"lang\":\"python\",\"dirty\":true,\"dirtyAfter\":false,\"onDisk\":true"
+ },
+ {
+  "name": "search finds text across files",
+  "eval": "(async () => { const sleep = ms => new Promise(r => setTimeout(r, ms)); const waitTurn = async (max) => { const t0 = Date.now(); while (state.busy && Date.now() - t0 < max) await sleep(1000); return Math.round((Date.now() - t0) / 1000); }; const tail = () => [...document.querySelectorAll('#transcript > *')].map(n => n.className.replace('msg ','').slice(0,12) + ': ' + n.innerText.replace(/\\s+/g,' ').slice(0,200)).slice(-6); document.getElementById('search-input').value = 'def'; await runSearch(); await sleep(600); return document.getElementById('search-count').textContent; })()",
+  "expect": "\\d+ in \\d+ file"
+ },
+ {
+  "name": "a diff against the last commit opens",
+  "eval": "(async () => { const sleep = ms => new Promise(r => setTimeout(r, ms)); const waitTurn = async (max) => { const t0 = Date.now(); while (state.busy && Date.now() - t0 < max) await sleep(1000); return Math.round((Date.now() - t0) / 1000); }; const tail = () => [...document.querySelectorAll('#transcript > *')].map(n => n.className.replace('msg ','').slice(0,12) + ': ' + n.innerText.replace(/\\s+/g,' ').slice(0,200)).slice(-6); await loadChanges(); await openDiff('calc.py'); await sleep(1500); const d = editors.get('diff:calc.py'); return JSON.stringify({diff: !!d, differ: d && d.original.getValue() !== d.modified.getValue()}); })()",
+  "expect": "\"diff\":true,\"differ\":true"
+ },
+ {
+  "name": "the Git Bash terminal runs a command",
+  "eval": "(async () => { const sleep = ms => new Promise(r => setTimeout(r, ms)); const waitTurn = async (max) => { const t0 = Date.now(); while (state.busy && Date.now() - t0 < max) await sleep(1000); return Math.round((Date.now() - t0) / 1000); }; const tail = () => [...document.querySelectorAll('#transcript > *')].map(n => n.className.replace('msg ','').slice(0,12) + ': ' + n.innerText.replace(/\\s+/g,' ').slice(0,200)).slice(-6); showBottom('terminal'); await sleep(4000); await invoke('term_write', {data: 'echo shell=$0; uname -s\\r'}); await sleep(2500); const b = term.buffer.active; const out = []; for (let i = 0; i < b.length; i++) { const l = b.getLine(i); if (l) out.push(l.translateToString(true)); } return out.join(' | '); })()",
+  "expect": "shell=/usr/bin/bash.*MINGW64"
+ },
+ {
+  "name": "file operations work and the protected places refuse writes",
+  "eval": "(async () => { const sleep = ms => new Promise(r => setTimeout(r, ms)); const waitTurn = async (max) => { const t0 = Date.now(); while (state.busy && Date.now() - t0 < max) await sleep(1000); return Math.round((Date.now() - t0) / 1000); }; const tail = () => [...document.querySelectorAll('#transcript > *')].map(n => n.className.replace('msg ','').slice(0,12) + ': ' + n.innerText.replace(/\\s+/g,' ').slice(0,200)).slice(-6); const c = await invoke('create_entry', {path: 'e2e-dir/new.txt', folder: false}); const r = await invoke('rename_entry', {from: 'e2e-dir/new.txt', to: 'e2e-dir/renamed.txt'}); const d = await invoke('delete_entry', {path: 'e2e-dir/renamed.txt'}); const git = await invoke('write_workspace_file', {path: '.git/config', content: 'x', expectedModified: null, force: true}); const esc = await invoke('read_workspace_file', {path: '../outside.txt'}); return JSON.stringify({c: c.ok, r: r.ok, d: d.ok, gitBlocked: !git.ok, escapeBlocked: !esc.ok}); })()",
+  "expect": "\"c\":true,\"r\":true,\"d\":true,\"gitBlocked\":true,\"escapeBlocked\":true"
+ },
+ {
+  "name": "the slash menu lists commands and tools",
+  "eval": "(async () => { const sleep = ms => new Promise(r => setTimeout(r, ms)); const waitTurn = async (max) => { const t0 = Date.now(); while (state.busy && Date.now() - t0 < max) await sleep(1000); return Math.round((Date.now() - t0) / 1000); }; const tail = () => [...document.querySelectorAll('#transcript > *')].map(n => n.className.replace('msg ','').slice(0,12) + ': ' + n.innerText.replace(/\\s+/g,' ').slice(0,200)).slice(-6); const i = document.getElementById('input'); i.value = '/'; i.dispatchEvent(new Event('input')); await sleep(300); const out = {sections: [...new Set(palette.items.map(x => x.section))], count: palette.items.length}; i.value = ''; i.dispatchEvent(new Event('input')); return JSON.stringify(out); })()",
+  "expect": "Commands.*Tools the model can use"
+ },
+ {
+  "name": "the model answers a question using a tool",
+  "eval": "(async () => { const sleep = ms => new Promise(r => setTimeout(r, ms)); const waitTurn = async (max) => { const t0 = Date.now(); while (state.busy && Date.now() - t0 < max) await sleep(1000); return Math.round((Date.now() - t0) / 1000); }; const tail = () => [...document.querySelectorAll('#transcript > *')].map(n => n.className.replace('msg ','').slice(0,12) + ': ' + n.innerText.replace(/\\s+/g,' ').slice(0,200)).slice(-6); document.getElementById('input').value = 'Read calc.py and tell me in one sentence what the add function does.'; send(); const secs = await waitTurn(120000); return JSON.stringify({busy: state.busy, secs, tail: tail()}); })()",
+  "expect": "read_file calc\\.py.*assistant",
+  "model": true
+ },
+ {
+  "name": "the model fixes a bug, runs the tests, and the editor follows",
+  "eval": "(async () => { const sleep = ms => new Promise(r => setTimeout(r, ms)); const waitTurn = async (max) => { const t0 = Date.now(); while (state.busy && Date.now() - t0 < max) await sleep(1000); return Math.round((Date.now() - t0) / 1000); }; const tail = () => [...document.querySelectorAll('#transcript > *')].map(n => n.className.replace('msg ','').slice(0,12) + ': ' + n.innerText.replace(/\\s+/g,' ').slice(0,200)).slice(-6); document.getElementById('input').value = 'There is a bug in calc.py: add subtracts. Fix it so it adds, then run the tests and tell me the result.'; send(); await waitTurn(170000); await sleep(2500); const e = editors.get('calc.py'); return JSON.stringify({busy: state.busy, line2: e.model.getLineContent(2).trim(), dirty: e.dirty}); })()",
+  "expect": "\"busy\":false,\"line2\":\"return a \\+ b[^\"]*\",\"dirty\":false",
+  "model": true
+ },
+ {
+  "name": "/compact folds the conversation and the meter shows context",
+  "eval": "(async () => { const sleep = ms => new Promise(r => setTimeout(r, ms)); const waitTurn = async (max) => { const t0 = Date.now(); while (state.busy && Date.now() - t0 < max) await sleep(1000); return Math.round((Date.now() - t0) / 1000); }; const tail = () => [...document.querySelectorAll('#transcript > *')].map(n => n.className.replace('msg ','').slice(0,12) + ': ' + n.innerText.replace(/\\s+/g,' ').slice(0,200)).slice(-6); document.getElementById('input').value = '/compact'; await send(); await waitTurn(100000); await sleep(500); return JSON.stringify({tail: tail().slice(-1), meter: document.getElementById('context-text').textContent}); })()",
+  "expect": "compacted.*Context \\d",
+  "model": true
+ },
+ {
+  "name": "an attached image is understood by the vision model",
+  "eval": "(async () => { const sleep = ms => new Promise(r => setTimeout(r, ms)); const waitTurn = async (max) => { const t0 = Date.now(); while (state.busy && Date.now() - t0 < max) await sleep(1000); return Math.round((Date.now() - t0) / 1000); }; const tail = () => [...document.querySelectorAll('#transcript > *')].map(n => n.className.replace('msg ','').slice(0,12) + ': ' + n.innerText.replace(/\\s+/g,' ').slice(0,200)).slice(-6); const a = await invoke('attach_image', {source: '{{IMAGE}}'}); setAttachment(a); await sleep(300); document.getElementById('input').value = 'What shapes and colours do you see in this image?'; await send(); await waitTurn(150000); return JSON.stringify({staged: a.path.includes('/attachments/'), tail: tail().slice(-1)}); })()",
+  "expect": "\"staged\":true.*(?i:red).*(?i:square|circle|blue)",
+  "model": true
+ },
+ {
+  "name": "the network card refuses a proxy with a password and an empty custom proxy",
+  "eval": "(async () => { const sleep = ms => new Promise(r => setTimeout(r, ms)); const waitTurn = async (max) => { const t0 = Date.now(); while (state.busy && Date.now() - t0 < max) await sleep(1000); return Math.round((Date.now() - t0) / 1000); }; const tail = () => [...document.querySelectorAll('#transcript > *')].map(n => n.className.replace('msg ','').slice(0,12) + ': ' + n.innerText.replace(/\\s+/g,' ').slice(0,200)).slice(-6); const bad = await invoke('test_network', {mode: 'custom', proxy: 'http://u:p@proxy:1', url: 'https://example.com'}); const none = await invoke('test_network', {mode: 'custom', proxy: null, url: 'https://example.com'}); return JSON.stringify({bad: bad.error, none: none.error, leaks: JSON.stringify(bad).includes(':p@')}); })()",
+  "expect": "must not carry.*enter a proxy address.*\"leaks\":false"
+ },
+ {
+  "name": "switching project twice leaves exactly one model server for the current folder",
+  "eval": "(async () => { const sleep = ms => new Promise(r => setTimeout(r, ms)); const waitTurn = async (max) => { const t0 = Date.now(); while (state.busy && Date.now() - t0 < max) await sleep(1000); return Math.round((Date.now() - t0) / 1000); }; const tail = () => [...document.querySelectorAll('#transcript > *')].map(n => n.className.replace('msg ','').slice(0,12) + ': ' + n.innerText.replace(/\\s+/g,' ').slice(0,200)).slice(-6); await switchProject('{{OTHER}}'); await sleep(1500); await switchProject('{{PROJECT}}'); await sleep(14000); const s = state.snapshot.slots.find(x => x.name === 'main'); return JSON.stringify({ws: state.snapshot.workspace.split('\\\\').pop(), main: s.server, errors: window.__bridleErrors}); })()",
+  "expect": "\"main\":\"running\".*\"errors\":\\[\\]",
+  "model": true
+ }
+]

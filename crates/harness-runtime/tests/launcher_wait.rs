@@ -147,8 +147,14 @@ fn launcher_args_snapshot_for_a_gpu_model() {
             "cache_ram_mib": 1024,
         }),
     );
-    let args = server_args(&model, &launch, Path::new("/models/qwen3.5-9b.gguf"), false)
-        .expect("loopback GPU endpoint is accepted");
+    let args = server_args(
+        &model,
+        &launch,
+        Path::new("/models/qwen3.5-9b.gguf"),
+        None,
+        false,
+    )
+    .expect("loopback GPU endpoint is accepted");
 
     assert_eq!(
         args,
@@ -210,6 +216,7 @@ fn launcher_args_snapshot_for_a_cpu_model() {
         &model,
         &launch,
         Path::new("/models/lfm2.5-1.2b.gguf"),
+        None,
         false,
     )
     .expect("loopback CPU endpoint is accepted");
@@ -260,7 +267,7 @@ fn launcher_args_put_extra_args_last_verbatim() {
             "extra_args": ["--custom-flag", "value"],
         }),
     );
-    let args = server_args(&model, &launch, Path::new("bonsai.gguf"), false)
+    let args = server_args(&model, &launch, Path::new("bonsai.gguf"), None, false)
         .expect("loopback endpoint is accepted");
 
     assert_eq!(

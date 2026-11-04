@@ -1,4 +1,4 @@
-//! `agent egress`: every outbound destination this configuration can reach.
+//! `bridle egress`: every outbound destination this configuration can reach.
 //!
 //! Read-only. It reads the config and the names of environment variables. It sends nothing, and it never prints a proxy
 //! address or a key. The list is the audit's first step: the security page says what each destination carries.
@@ -48,19 +48,19 @@ pub fn destinations(config: &Config) -> Vec<Destination> {
     out
 }
 
-/// `agent egress`: prints the destinations, the proxy state, and what the harness does not control.
+/// `bridle egress`: prints the destinations, the proxy state, and what the harness does not control.
 pub fn run(app: &App) -> Result<ExitCode> {
     println!("Outbound destinations of this configuration:");
     for row in destinations(&app.config) {
         let scope = if row.loopback { "local " } else { "REMOTE" };
         println!("  {scope} {} - {} ({})", row.endpoint, row.what, row.when);
     }
-    let proxy = ["HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY"]
-        .iter()
-        .any(|name| std::env::var_os(name).is_some());
+    let route = crate::app::remote_route_of(&app.config, &|name| {
+        std::env::var(name).ok().filter(|value| !value.is_empty())
+    });
     println!(
-        "Environment proxy: {} (the value is not shown; remote destinations use it, loopback never does)",
-        if proxy { "set" } else { "not set" }
+        "Remote requests go through: {} (set it with `network.proxy_mode` in the machine config, or in the window's Info view; loopback never uses a proxy)",
+        route.describe()
     );
     println!("Not controlled by the harness:");
     println!("  OpenCode fetches its model catalog at startup (models.dev).");

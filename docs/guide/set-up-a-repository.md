@@ -1,37 +1,37 @@
 # Set up a repository
 
 This page adds Bridle to a repository. It covers the command that does it, the files it writes, the two profiles, and
-how to check the configuration. You need the `agent` binary first; see [install Bridle](installation.md).
+how to check the configuration. You need the `bridle` binary first; see [install Bridle](installation.md).
 
 ## Run the setup
 
 From the repository folder:
 
 ```bat
-agent init --profile local-only
-agent config validate
+bridle init --profile local-only
+bridle config validate
 ```
 
 `init` writes four things and reports each one:
 
 ```text
-✓ wrote local-agent.toml (profile local-only)
+✓ wrote bridle.toml (profile local-only)
 ✓ wrote opencode.json
-✓ wrote .opencode/plugins/local-agent.ts
-✓ .gitignore: added .local-agent/, .worktrees/
+✓ wrote .opencode/plugins/bridle.ts
+✓ .gitignore: added .bridle/, .worktrees/
 ```
 
 | File | What it is |
 |---|---|
-| `local-agent.toml` | The project configuration. Read it, and commit it if the team should share it. |
+| `bridle.toml` | The project configuration. Read it, and commit it if the team should share it. |
 | `opencode.json` | The OpenCode configuration that points OpenCode at Bridle's model servers and tools. Generated; do not edit it by hand. |
-| `.opencode/plugins/local-agent.ts` | The plugin that OpenCode loads. It sends every tool call to Bridle's policy. Generated. |
-| `.gitignore` entries | `.local-agent/` holds the run records and logs. `.worktrees/` holds task worktrees. |
+| `.opencode/plugins/bridle.ts` | The plugin that OpenCode loads. It sends every tool call to Bridle's policy. Generated. |
+| `.gitignore` entries | `.bridle/` holds the run records and logs. `.worktrees/` holds task worktrees. |
 
-If you edit a generated file by hand, `init` does not replace it. To replace it, run `agent init --force`, which also
+If you edit a generated file by hand, `init` does not replace it. To replace it, run `bridle init --force`, which also
 overwrites the edits.
 
-`init` never overwrites an existing `local-agent.toml`. Use `--workspace <dir>` to set up a repository that is not the
+`init` never overwrites an existing `bridle.toml`. Use `--workspace <dir>` to set up a repository that is not the
 current folder.
 
 ## Choose a profile
@@ -49,7 +49,7 @@ for tests. They are not covered here; see [status and limits](../project/status.
 ## Check the configuration
 
 ```bat
-agent config validate
+bridle config validate
 ```
 
 A valid configuration prints one line and exits with code 0:
@@ -64,8 +64,8 @@ verification steps gets one warning, `V15`, until you add a test command. [Run y
 To see every loaded file and the settings that apply:
 
 ```bat
-agent config paths
-agent config show
+bridle config paths
+bridle config show
 ```
 
 `config paths` lists the machine configuration and the project configuration it loaded. `config show` prints the merged

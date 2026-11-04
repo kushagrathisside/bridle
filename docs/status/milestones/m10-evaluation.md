@@ -1,7 +1,7 @@
 # M10: evaluation
 
 M10 is the benchmark: a corpus of tasks, two conditions, a runner and a report (R-39, R-40, R-57.10). The design is in the
-`agent bench` command (`crates/harness-cli/src/commands/bench.rs`) and the corpus under `evals/`.
+`bridle bench` command (`crates/harness-cli/src/commands/bench.rs`) and the corpus under `evals/`.
 
 > **Status:** Built, and the full corpus has run once under both conditions (2026-10-27, one run per task). Minimal
 > passed 6 of 6; harness passed 4 of 6. The sample is six tasks and one run each: a lead, not a measured effect. The
@@ -9,11 +9,11 @@ M10 is the benchmark: a corpus of tasks, two conditions, a runner and a report (
 
 ## What is built
 
-- **Runner** (`agent bench run --condition <file> --opencode <exe> --out <dir>`): copies a task's fixture into a fresh folder,
-  writes the condition's config, runs `agent init` there so OpenCode is wired to the harness, starts OpenCode with the task
+- **Runner** (`bridle bench run --condition <file> --opencode <exe> --out <dir>`): copies a task's fixture into a fresh folder,
+  writes the condition's config, runs `bridle init` there so OpenCode is wired to the harness, starts OpenCode with the task
   prompt and the shared protocol sentence, and checks the result with the task's `verify.py`. A run that never reaches the
   model within five minutes is restarted, up to three times; each restart is counted in the result.
-- **Report** (`agent bench report <folder>...`): one row per condition, one row per task, and the caveat about sample size.
+- **Report** (`bridle bench report <folder>...`): one row per condition, one row per task, and the caveat about sample size.
 - **Corpus** (`evals/tasks/`): six tasks in six categories (debugging, test repair, implementation, repository comprehension,
   refactoring, experiment analysis). Each has a fixture, a prompt, and a `verify.py` that lives outside the run folder.
 - **Conditions** (`evals/bench/conditions/`): `minimal` (policy only: workflow off, compaction off) and `harness` (workflow on,
@@ -133,7 +133,7 @@ Decision: the GPU swap is the faster approach, about 2.4 times faster per escala
 
 Two changes are needed before D can run as a task condition. Neither is in the code yet:
 
-- The swap cannot run inside the `tool_before` hook. The shim gives each hook 20 s (`HOOK_TIMEOUT_MS` in `opencode-plugin/local-agent.ts`), and a timed-out `tool_before` fails closed, which blocks the tool call. The hook limit must be raised to at least 30 s for an escalation, or the swap must run outside the hook.
+- The swap cannot run inside the `tool_before` hook. The shim gives each hook 20 s (`HOOK_TIMEOUT_MS` in `opencode-plugin/bridle.ts`), and a timed-out `tool_before` fails closed, which blocks the tool call. The hook limit must be raised to at least 30 s for an escalation, or the swap must run outside the hook.
 - The deep call is capped at 15 s (`ESCALATION_TIMEOUT_MS`). A swap-based escalation needs about 2 s for the answer and about 20 s for the swap, so the cap must be raised.
 
 Bonsai on CPU is not used. Its speed on this machine makes every escalation slower than the 15 s cap, so it would fall back to the

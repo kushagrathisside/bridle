@@ -27,7 +27,7 @@ or `[agent]` section, as shown in the [configuration reference](../guide/configu
 | `repeated_edit` | One file is edited again and again since the last verification | 4 edits | Run the verification before editing the file again. |
 | `same_failure` | The same failure comes back in consecutive verifications | 3 in a row | Read the failure and change the approach, or ask the user. |
 | `implementation_retries` | The task enters Implement more often than allowed | more than 3 times | Explain the blocker to the user and wait for a decision. |
-| `iteration_limit` | The task reaches its iteration limit | 8 iterations | The task is blocked. Run `agent task reset` to continue. |
+| `iteration_limit` | The task reaches its iteration limit | 8 iterations | The task is blocked. Run `bridle task reset` to continue. |
 
 When more than one rule fires, the first one in this order decides: iteration limit, implementation retries, same
 failure, repeated edit, repeated command.
@@ -55,7 +55,7 @@ A refusal stops the call, not the task. Three things end a block:
 
 - The agent makes progress that the rules can see. An edit clears a repeated-command count, and a passing verification
   clears the failure and edit counts.
-- You run `agent task reset`, which starts the counters again. The journal is kept.
+- You run `bridle task reset`, which starts the counters again. The journal is kept.
 - The refusal cap is reached. After three refusals in a row, Bridle stops refusing on loop grounds, so that a session
   cannot be locked up. The policy still blocks the calls it blocks for other reasons.
 

@@ -98,7 +98,7 @@ pub const TRANSITIONS: &[(Phase, Phase)] = &[
     (Phase::Explore, Phase::Plan),
     (Phase::Explore, Phase::Implement),
     (Phase::Explore, Phase::Escalate),
-    // Resumed after a user decision or `agent task reset`.
+    // Resumed after a user decision or `bridle task reset`.
     (Phase::Escalate, Phase::Implement),
     (Phase::Escalate, Phase::Plan),
 ];
@@ -188,13 +188,13 @@ pub struct TaskState {
     /// Escalations to the deep slot this task has used, successful or not.
     pub escalation_count: u32,
     /// Whether the deep slot's answer still applies to the loop. Set by an escalation; cleared by a passing
-    /// verification and by `agent task reset`. Serde default keeps files written before this field readable.
+    /// verification and by `bridle task reset`. Serde default keeps files written before this field readable.
     #[serde(default)]
     pub escalation_open: bool,
     pub context_version: u32,
     pub status: TaskStatus,
     /// Loop refusals since the last call that was not refused. Reset by a successful call and by
-    /// `agent task reset`. Serde default keeps files written before this field readable.
+    /// `bridle task reset`. Serde default keeps files written before this field readable.
     #[serde(default)]
     pub consecutive_refusals: u32,
 }

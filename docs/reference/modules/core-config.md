@@ -30,18 +30,18 @@ the `[[bin]]` name in `crates/harness-cli/Cargo.toml`, and the shim's `package.j
 
 | Constant | Value | Used for |
 |---|---|---|
-| `PRODUCT_ID` | `local-agent` | MCP server name (`MCP_SERVER_NAME`), provider prefix (`PROVIDER_PREFIX`), machine config directory (`MACHINE_CONFIG_DIR`) |
-| `CLI_NAME` | `agent` | The binary |
-| `STATE_DIR` | `.local-agent` | Per-repository state (event logs, PID files, server logs) |
-| `CONFIG_FILE` | `local-agent.toml` | Repository config, discovered upwards from the workspace |
-| `ENV_PREFIX` | `LOCAL_AGENT_` | `env_var("CONFIG")` gives `LOCAL_AGENT_CONFIG` |
+| `PRODUCT_ID` | `bridle` | MCP server name (`MCP_SERVER_NAME`), provider prefix (`PROVIDER_PREFIX`), machine config directory (`MACHINE_CONFIG_DIR`) |
+| `CLI_NAME` | `bridle` | The binary |
+| `STATE_DIR` | `.bridle` | Per-repository state (event logs, PID files, server logs) |
+| `CONFIG_FILE` | `bridle.toml` | Repository config, discovered upwards from the workspace |
+| `ENV_PREFIX` | `BRIDLE_` | `env_var("CONFIG")` gives `BRIDLE_CONFIG` |
 | `MACHINE_CONFIG_FILE` | `config.toml` | File name inside the machine config directory |
 
-OpenCode exposes MCP tools as `<server>_<tool>`, so the tools appear as `local-agent_git_status` and so on.
+OpenCode exposes MCP tools as `<server>_<tool>`, so the tools appear as `bridle_git_status` and so on.
 
 ### Schema (`schema.rs`)
 
-`Config` sections: `profile`, `agent`, `paths`, `host`, `runtimes`, `models`, `routing`, `decisions`, `context`,
+`Config` sections: `profile`, `bridle`, `paths`, `host`, `runtimes`, `models`, `routing`, `decisions`, `context`,
 `security`, `verification`, `telemetry`, `external`, `tools`. Unknown keys are parse errors (`deny_unknown_fields`),
 so a typo fails instead of being ignored.
 
@@ -82,17 +82,17 @@ so a typo fails instead of being ignored.
 Layers, lowest precedence first:
 
 1. serde defaults;
-2. machine config: `$LOCAL_AGENT_HOME/config.toml`, else `%APPDATA%\local-agent\config.toml` on Windows, else
-   `$XDG_CONFIG_HOME/local-agent/config.toml` or `~/.config/local-agent/config.toml`;
-3. repository config: the nearest `local-agent.toml` walking up from the workspace;
-4. explicit file: `--config` or `LOCAL_AGENT_CONFIG` (must exist);
-5. environment: `LOCAL_AGENT_MODELS_DIR`, `LOCAL_AGENT_RUNTIMES_DIR` (non-empty values only).
+2. machine config: `$BRIDLE_HOME/config.toml`, else `%APPDATA%\bridle\config.toml` on Windows, else
+   `$XDG_CONFIG_HOME/bridle/config.toml` or `~/.config/bridle/config.toml`;
+3. repository config: the nearest `bridle.toml` walking up from the workspace;
+4. explicit file: `--config` or `BRIDLE_CONFIG` (must exist);
+5. environment: `BRIDLE_MODELS_DIR`, `BRIDLE_RUNTIMES_DIR` (non-empty values only).
 
 `merge_toml` deep-merges tables key by key. Any other value, arrays included, replaces the lower layer's value. So
 a repository's `verification.steps` replaces the machine's list; it does not append.
 
 `load_layered(sources, env)` takes the environment as a closure, so tests never touch the process environment. It
-returns `LoadedConfig { config, files }`; `files` is shown by `agent config show`.
+returns `LoadedConfig { config, files }`; `files` is shown by `bridle config show`.
 
 `ConfigError` variants: `NotFound` (explicit file missing), `Io`, `Parse { path, message }`, and
 `Untrusted { path, key, reason }` for a repository layer that sets something only the machine config or an

@@ -1,11 +1,11 @@
 # Module: harness-cli/commands
 
-The `agent` binary: clap definitions, the per-invocation `App` context, and one module per command. It is wiring
+The `bridle` binary: clap definitions, the per-invocation `App` context, and one module per command. It is wiring
 only. Logic lives in `harness-core` and `harness-runtime`, and everything OpenCode-specific lives in
 `src/host/opencode_v1.rs` ([cli-host-opencode.md](cli-host-opencode.md)). Commands must not hold policy rules of
 their own.
 
-> **Status:** Built and tested. `agent mcp` serves the analysis, verification and adapter tools. This release runs on native
+> **Status:** Built and tested. `bridle mcp` serves the analysis, verification and adapter tools. This release runs on native
 > Windows.
 
 ## Responsibilities
@@ -17,25 +17,25 @@ their own.
 | `src/output.rs` | `Mark` | Status lines for `doctor` and `health` |
 | `src/commands/*.rs` | `run` in each of `config`, `doctor`, `health`, `hook`, `init`, `mcp`, `models` | One file per command |
 
-Global options: `--config <file>` (or `LOCAL_AGENT_CONFIG`) adds the highest-precedence config layer;
+Global options: `--config <file>` (or `BRIDLE_CONFIG`) adds the highest-precedence config layer;
 `--workspace <dir>` sets the repository root (default: the current directory).
 
 | Command | What it does | Exit code |
 |---|---|---|
-| `agent doctor [--json]` | Read-only report: OS, CPU, RAM, GPU, CUDA, WSL, disks, runtimes, model files, quick endpoint health, OpenCode binary, config issues | Failure only when a configured runtime is missing or the config has errors |
-| `agent health [slot] [--quick] [--json]` | Functional checks per slot ([runtime-serving.md](runtime-serving.md)). A slot whose provider cannot be built is one failed check; the other slots still run | Failure if any check fails |
-| `agent config show` | The effective config, redacted, and the files it came from | |
-| `agent config validate` | Rules V1 to V35 | Failure on any error |
-| `agent egress` | Lists every outbound destination of the configuration and the proxy state; sends nothing | Always succeeds |
-| `agent config paths` | Machine config, repository config, state directory | |
-| `agent init [--profile local-only\|development] [--force]` | Writes `local-agent.toml` (never overwritten), `opencode.json`, `.opencode/plugins/local-agent.ts`, and a `.gitignore` entry | |
-| `agent init --machine --models-dir <models-dir> --runtimes-dir <runtimes-dir> --opencode-bin <exe>` | Writes the machine config | |
-| `agent models list` | Configured slots | |
-| `agent models serve <slot> [--detach] [--wait-secs 300]` | Starts the slot's server; logs to `.local-agent/logs/<slot>.log`, PID to `.local-agent/servers/<slot>.pid` | The server's exit code when attached |
-| `agent models stop <slot>` | Stops a detached server | |
-| `agent models manifest [slot] [--no-hash]` | Writes `.local-agent/manifests/<slot>.json` | |
-| `agent hook <event>` (hidden) | Plugin bridge: JSON on stdin, JSON on stdout, always exit 0 | 0 |
-| `agent mcp` | MCP server on stdio ([runtime-mcp.md](runtime-mcp.md)); refuses to start when the config has errors | |
+| `bridle doctor [--json]` | Read-only report: OS, CPU, RAM, GPU, CUDA, WSL, disks, runtimes, model files, quick endpoint health, OpenCode binary, config issues | Failure only when a configured runtime is missing or the config has errors |
+| `bridle health [slot] [--quick] [--json]` | Functional checks per slot ([runtime-serving.md](runtime-serving.md)). A slot whose provider cannot be built is one failed check; the other slots still run | Failure if any check fails |
+| `bridle config show` | The effective config, redacted, and the files it came from | |
+| `bridle config validate` | Rules V1 to V35 | Failure on any error |
+| `bridle egress` | Lists every outbound destination of the configuration and the proxy state; sends nothing | Always succeeds |
+| `bridle config paths` | Machine config, repository config, state directory | |
+| `bridle init [--profile local-only\|development] [--force]` | Writes `bridle.toml` (never overwritten), `opencode.json`, `.opencode/plugins/bridle.ts`, and a `.gitignore` entry | |
+| `bridle init --machine --models-dir <models-dir> --runtimes-dir <runtimes-dir> --opencode-bin <exe>` | Writes the machine config | |
+| `bridle models list` | Configured slots | |
+| `bridle models serve <slot> [--detach] [--wait-secs 300]` | Starts the slot's server; logs to `.bridle/logs/<slot>.log`, PID to `.bridle/servers/<slot>.pid` | The server's exit code when attached |
+| `bridle models stop <slot>` | Stops a detached server | |
+| `bridle models manifest [slot] [--no-hash]` | Writes `.bridle/manifests/<slot>.json` | |
+| `bridle hook <event>` (hidden) | Plugin bridge: JSON on stdin, JSON on stdout, always exit 0 | 0 |
+| `bridle mcp` | MCP server on stdio ([runtime-mcp.md](runtime-mcp.md)); refuses to start when the config has errors | |
 
 ## Behaviour
 
@@ -46,7 +46,7 @@ are kept, not fatal: each command decides. Only an unreadable or unparseable con
 
 1. `resolve_workspace` canonicalises the path and refuses a filesystem root, because a root workspace would let the
    path guard allow everything.
-2. `state_dir()` is `<workspace>/.local-agent`. `event_log()` and `policy()` build those services from the config.
+2. `state_dir()` is `<workspace>/.bridle`. `event_log()` and `policy()` build those services from the config.
 3. `require_valid_config()` fails with a readable list (rule, path, message) when the config has errors.
 
 Two commands do not go through the `App::load` call in `main`: `hook` (it must answer JSON even when the config is
@@ -67,21 +67,21 @@ config; it loads the config after writing it).
 
 - Profiles are embedded at build time (`include_str!` of `configs/local-only.toml` and `configs/development.toml`),
   so the binary needs no files beside it.
-- Generated files are tracked by hash in `.local-agent/generated.json` (the ledger). A generated file the user has
+- Generated files are tracked by hash in `.bridle/generated.json` (the ledger). A generated file the user has
   edited, or one the ledger does not know, is replaced only with `--force`.
-- The shim copy gets the absolute path of the `agent` binary baked in, in place of `__AGENT_BIN__`.
+- The shim copy gets the absolute path of the `bridle` binary baked in, in place of `__AGENT_BIN__`.
 - `init --machine` stops with an error when an existing machine config cannot be read, rather than replacing it.
 - The ledger is saved even when a later file fails, so the next run recognises what was written.
 - Under the desktop app that hosts OpenCode (an MSIX package), `%APPDATA%` writes from processes it starts are
   redirected to `%LOCALAPPDATA%\Packages\<app>_<id>\LocalCache\Roaming\`. A machine config written that way is
-  invisible to programs started from your own terminal. Run `agent init --machine` from your own terminal for a
+  invisible to programs started from your own terminal. Run `bridle init --machine` from your own terminal for a
   config every program sees.
 
 ### models (`commands/models.rs`)
 
 1. `serve` builds a plan (`plan_serve`: model file, binary, argv) and reports a missing file or binary before
    spawning. With `--detach` it returns once `/health` answers 200 and leaves the server running.
-2. The record (`.local-agent/servers/<slot>.pid`) holds `pid=` and `bin=`. `stop` signals the PID (`taskkill /T /F`
+2. The record (`.bridle/servers/<slot>.pid`) holds `pid=` and `bin=`. `stop` signals the PID (`taskkill /T /F`
    on Windows, `kill` elsewhere) only if it is in `1..=i32::MAX` and the running process's executable name matches
    the recorded binary. A stale or reused PID (after a crash or reboot) is reported and its record removed, never
    signalled. `serve` clears a stale record instead of refusing to start.
@@ -98,7 +98,7 @@ the tool context (workspace, config, verification, policy, redactor), adds adapt
 
 ### tui and chat (`tui/`, `chat.rs`)
 
-`agent tui` opens the Control Center (see [../../guide/tui.md](../../guide/tui.md)). `tui/state.rs` holds the state and the key
+`bridle tui` opens the Control Center (see [../../guide/tui.md](../../guide/tui.md)). `tui/state.rs` holds the state and the key
 handling and does no I/O; `tui/chat.rs` is the chat screen's state (transcript, input, history, slash commands); `tui/ui.rs`
 draws; `tui/data.rs` and `tui/events.rs` collect configuration, slots, tasks and the event logs without contacting any
 endpoint or writing a file (`StateDir::open_existing` and `Task::peek` are the read-only accessors); `tui/watch.rs` detects
@@ -107,14 +107,14 @@ threads, through `doctor::gather`, `health::check_slot`, `models::start_checked`
 
 `chat.rs` is the agent loop. A turn sends the conversation and the tool list (`mcp::tools_for` plus `file_tools()`) to a slot,
 runs the calls, and repeats until the model answers without one. Each call goes through `hook::answer_with` before and after, the
-same function `agent hook` uses, and runs through the MCP `Server`'s own `tools/call`, so the policy, the loop rules, the task
+same function `bridle hook` uses, and runs through the MCP `Server`'s own `tools/call`, so the policy, the loop rules, the task
 journal, the verification records and the redaction are the ones OpenCode gets. The TUI loads the configuration itself, so a
 broken config is shown as a state. It refuses to start without a terminal.
 
 ## Tests
 
 - `tests/hook_fixtures.rs`: 34 black-box rows (`every_hook_fixture_row_matches_the_policy`) that run the real
-  `agent hook` binary with OpenCode payloads. They cover secret reads through every allowed bash prefix, Ask-class
+  `bridle hook` binary with OpenCode payloads. They cover secret reads through every allowed bash prefix, Ask-class
   commands, malformed payloads and a missing config. They run on Linux and on native Windows.
 - `commands/models.rs`: serve plans, the record format and older records, refused PIDs
   (`records_never_hold_a_process_group_or_wrapped_pid`), program name matching, a reused PID that is reported and
@@ -132,7 +132,7 @@ broken config is shown as a state. It refuses to start without a terminal.
 
 ## Limits
 
-- A machine config written by `agent init --machine` from inside the MSIX-hosted desktop app is redirected and
+- A machine config written by `bridle init --machine` from inside the MSIX-hosted desktop app is redirected and
   invisible to other programs (see init above).
 - Detached servers are tracked by a PID record only; a server started some other way is not seen by `stop`.
 

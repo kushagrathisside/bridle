@@ -1,4 +1,4 @@
-//! `agent hook <event>`: the OpenCode plugin shim's bridge into the policy engine.
+//! `bridle hook <event>`: the OpenCode plugin shim's bridge into the policy engine.
 //!
 //! Protocol: one JSON payload on stdin, one JSON answer on stdout, exit code 0. Even when the
 //! config or workspace is broken the command still answers (fail-closed answers for policy
@@ -45,13 +45,13 @@ fn answer(
 }
 
 /// The hook's answer for an application that is already loaded: the policy's verdict, the
-/// orchestrator's loop rules and records, and the event-log entry. `agent hook` calls it once per
-/// process; the chat in `agent tui` calls it for every tool call, so both follow the same path.
+/// orchestrator's loop rules and records, and the event-log entry. `bridle hook` calls it once per
+/// process; the chat in `bridle tui` calls it for every tool call, so both follow the same path.
 pub(crate) fn answer_with(app: &App, event: HookEvent, input: &Value) -> Value {
     if app.has_config_errors() {
         return opencode_v1::failure_answer(
             event,
-            "configuration has errors; run `agent config validate`",
+            "configuration has errors; run `bridle config validate`",
         );
     }
     let policy = match app.policy() {

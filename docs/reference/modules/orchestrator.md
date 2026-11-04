@@ -22,11 +22,11 @@ command glue in `harness-cli`.
 | `harness-runtime/src/mcp/record.rs` | `record`, `read_result` | Records verification results from the MCP server before redaction |
 | `harness-runtime/src/mcp/tools/task.rs` | `TaskStatusTool` | The `task_status` tool, off by default |
 | `harness-cli/src/workflow.rs` | `before`, `after`, `refusal_message` | Maps hook payloads to records; applies the rules before an allowed call |
-| `harness-cli/src/commands/task.rs` | `TaskAction`, `explain`, `trace` | The `agent task`, `agent explain` and `agent trace` commands |
+| `harness-cli/src/commands/task.rs` | `TaskAction`, `explain`, `trace` | The `bridle task`, `bridle explain` and `bridle trace` commands |
 | `harness-core/src/lfm.rs` | `CHOICES`, `parse_choice`, `is_stalled` | The contract of the micro model's answers: ESCALATE, ASK_USER or REPLAN; a strict check |
 | `harness-runtime/src/decision.rs` | `LfmEngine` | The micro model for stalled loops, with fallback to the rules; the request holds no prompt text |
-| `harness-cli/src/commands/eval.rs` | `run` | `agent eval-decisions`: the A/B run of the rules and a model on recorded cases |
-| `harness-cli/src/commands/models.rs` | `check_one_gpu_model` | `agent models serve` refuses a second GPU server while one runs |
+| `harness-cli/src/commands/eval.rs` | `run` | `bridle eval-decisions`: the A/B run of the rules and a model on recorded cases |
+| `harness-cli/src/commands/models.rs` | `check_one_gpu_model` | `bridle models serve` refuses a second GPU server while one runs |
 
 ## Behaviour
 

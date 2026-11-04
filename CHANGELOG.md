@@ -19,7 +19,7 @@ The project has not been published, so the version below is for the repository o
 - The Jev decision backend behind an endpoint policy, with TLS through the environment proxy (M7).
 - A LiteLLM gateway as a model provider, with a hybrid profile (M8).
 - Security review: an adversarial suite of 72 cases, fixes for short names, escapes, glob patterns and environment
-  dumps, and `agent egress` (M9).
+  dumps, and `bridle egress` (M9).
 - Subagent tier: a small model reads a few bounded, redacted files and answers with checked citations (M4b).
 - Repository memory: an `AGENTS.md` file (or the file `[memory]` names) is added to the system prompt, read through the
   tool policy, redacted and bounded (validation rule V41).
@@ -27,19 +27,39 @@ The project has not been published, so the version below is for the repository o
   `capabilities.vision` is on; the file is read through the policy and limited to 4 MiB.
 - Plugins (ADR-0013): manifests in the machine config declare tools that run a fixed program. Each tool's class is the
   stricter of its declared class and the command classifier's; only read-only and safe-execution tools are offered, and
-  `agent plugins` lists them.
+  `bridle plugins` lists them.
 - Linux sandbox for commands (ADR-0016): Landlock on Linux, on by default there, refusing rather than running unconfined.
 - Team run in the chat (`/team <request>`): a planner, a worker for each step, and a verifier, in sequence, with each
   role's end recorded in the task journal (ADR-0011).
 - Routing: each chat request sent to the default slot is placed by rule, and the rest by the Laya decision model on this
-  machine, with `main` as the fallback and `deep` used only when it is running. `agent route` shows the choice (V42 to
+  machine, with `main` as the fallback and `deep` used only when it is running. `bridle route` shows the choice (V42 to
   V44; ADR-0010, ADR-0015).
 - Benchmark runner and corpus, with a report (M10). The live results are not yet recorded.
 - A checklist of every stage, checked against the code by `scripts/check_checklist.py`.
-- Control Center: `agent tui`, a terminal application with a chat on the home screen and views of tasks, events,
+- Control Center: `bridle tui`, a terminal application with a chat on the home screen and views of tasks, events,
   decisions, slots, diagnostics, configuration and destinations. The chat sends every tool call through the hook's policy
   path; the views are read-only and write nothing.
 - Licence (Apache-2.0), NOTICE, third-party licence list, security and contributing guides, and CI (M11).
+
+- The Bridle desktop app (Windows): `bridle` opens a window on a folder with the chat, an editable Monaco code editor with
+  tabs, side-by-side diffs, a file explorer, project search, a Changes list with per-file revert, Ctrl+P go to file, a status
+  bar, and a real terminal (Git Bash, PowerShell, Command Prompt or WSL on demand). It runs the same agent loop, policy and
+  event log as the terminal UI (ADR-0017). `bridle COMMAND` runs a command in the terminal; `bridle-cli` is the headless build.
+- Conversation compaction: old turns are folded into a rolling summary written by the model, automatically or with `/compact`,
+  with a context meter. A tool call cut off by the output limit no longer breaks the rest of the chat.
+- Images: an Image button, `/image`, pasting and dropping. `launch.mmproj_file` and `launch.mmproj_offload` load a vision
+  projector; validation rule V45.
+- A VRAM guard: a GPU model server starts only if its weights, cache and projector fit with 768 MiB to spare, estimated from the
+  model file's header, in every start path.
+- A proxy setting in the app (`network.proxy_mode`, `network.proxy`, machine config only; validation rule V47) with a Test
+  button, and `BRIDLE_PROXY` for an authenticated proxy.
+- Windows tooling without WSL: `scripts/dev.cmd`, the end-to-end suite in `tools/e2e`, `scripts/install-bridle.cmd`, `CLAUDE.md`.
+
+### Changed
+
+- The product name is Bridle everywhere (ADR-0018): `bridle.toml`, `.bridle/`, `BRIDLE_*`, the `bridle` machine config folder
+  and the `bridle_<tool>` names in OpenCode. The old `local-agent` names are read as a fallback and never written.
+- The shipped `local-only` profile uses a 65,536-token context and loads the vision projector in system memory.
 
 ### Known limits
 
