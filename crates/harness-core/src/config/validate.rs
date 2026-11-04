@@ -833,6 +833,57 @@ fn check_web(cfg: &Config, report: &mut Report) {
     if !(1..=2_048).contains(&web.max_download_mb) {
         report.error("V48", "web.max_download_mb", "must be between 1 and 2048");
     }
+    check_browser(cfg, report);
+}
+
+/// V49: the managed browser's limits, and that it is only on together with web research.
+fn check_browser(cfg: &Config, report: &mut Report) {
+    let b = &cfg.web.browser;
+    if b.enabled && !cfg.web.enabled {
+        report.error(
+            "V49",
+            "web.browser.enabled",
+            "the browser is part of web research: set web.enabled = true as well",
+        );
+    }
+    if !b.headless {
+        report.error(
+            "V49",
+            "web.browser.headless",
+            "a visible browser is not offered; leave headless = true",
+        );
+    }
+    if !(1..=4).contains(&b.max_sessions) {
+        report.error("V49", "web.browser.max_sessions", "must be between 1 and 4");
+    }
+    if !(1_000..=120_000).contains(&b.navigation_timeout_ms) {
+        report.error(
+            "V49",
+            "web.browser.navigation_timeout_ms",
+            "must be between 1000 and 120000",
+        );
+    }
+    if !(500..=60_000).contains(&b.action_timeout_ms) {
+        report.error(
+            "V49",
+            "web.browser.action_timeout_ms",
+            "must be between 500 and 60000",
+        );
+    }
+    if !(60..=3_600).contains(&b.session_idle_secs) {
+        report.error(
+            "V49",
+            "web.browser.session_idle_secs",
+            "must be between 60 and 3600",
+        );
+    }
+    if !(1_000..=100_000).contains(&b.max_page_content_chars) {
+        report.error(
+            "V49",
+            "web.browser.max_page_content_chars",
+            "must be between 1000 and 100000",
+        );
+    }
 }
 
 /// The proxy setting: a custom mode needs a well-formed proxy URL, and the URL must not carry a password (the file may be
@@ -1210,6 +1261,46 @@ mod tests {
             found.iter().all(|i| i.rule != rule),
             "expected no {rule}, got {found:#?}"
         );
+    }
+
+    #[test]
+    fn the_browser_needs_web_research_and_sane_limits() {
+        // Off by default: nothing is reported.
+        assert_no_rule(&baseline(), "V49");
+        let mut cfg = baseline();
+        cfg.web.browser.enabled = true;
+        assert_issue(&cfg, "V49", Severity::Error, "web.browser.enabled");
+        for (set, path) in [
+            (
+                (|c: &mut Config| c.web.browser.max_sessions = 0) as fn(&mut Config),
+                "web.browser.max_sessions",
+            ),
+            (
+                |c| c.web.browser.max_sessions = 9,
+                "web.browser.max_sessions",
+            ),
+            (
+                |c| c.web.browser.navigation_timeout_ms = 10,
+                "web.browser.navigation_timeout_ms",
+            ),
+            (
+                |c| c.web.browser.action_timeout_ms = 10 * 60 * 1000,
+                "web.browser.action_timeout_ms",
+            ),
+            (
+                |c| c.web.browser.session_idle_secs = 5,
+                "web.browser.session_idle_secs",
+            ),
+            (
+                |c| c.web.browser.max_page_content_chars = 5_000_000,
+                "web.browser.max_page_content_chars",
+            ),
+            (|c| c.web.browser.headless = false, "web.browser.headless"),
+        ] {
+            let mut cfg = baseline();
+            set(&mut cfg);
+            assert_issue(&cfg, "V49", Severity::Error, path);
+        }
     }
 
     #[test]

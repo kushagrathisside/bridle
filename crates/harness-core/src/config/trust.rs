@@ -263,6 +263,18 @@ mod tests {
     }
 
     #[test]
+    fn a_repository_may_not_turn_on_or_tune_the_browser() {
+        for text in [
+            "[web.browser]\nenabled = true",
+            "[web.browser]\ndownloads_enabled = true\nscreenshots_enabled = true",
+            "[web]\nmax_results = 3\n[web.browser]\nmax_sessions = 4",
+        ] {
+            let error = rejected_key(text);
+            assert!(error.contains("web"), "{text}: {error}");
+        }
+    }
+
+    #[test]
     fn shipped_profiles_are_valid_repository_configs() {
         for profile in [
             include_str!("../../../../configs/local-only.toml"),

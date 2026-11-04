@@ -2,6 +2,7 @@
 //! information came from. Everything here is policy-gated by the tools in `mcp::tools::web`; this module has no policy of its
 //! own beyond the address guard, which refuses to contact the machine's own network.
 
+pub mod browser;
 pub mod download;
 pub mod fetch;
 pub mod fusion;

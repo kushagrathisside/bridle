@@ -135,13 +135,92 @@ pub fn download(
             "the file is {declared} bytes, over the limit of {max_bytes}"
         ));
     }
-    fs::create_dir_all(dest_dir).map_err(|e| format!("cannot create the download folder: {e}"))?;
     let name = safe_name(&final_url);
+    store_stream(
+        response.into_body().into_reader(),
+        &name,
+        dest_dir,
+        max_bytes,
+        expected_sha256,
+        &content_type,
+        &final_url,
+    )
+}
+
+/// Keeps a file that a browser downloaded, through exactly the checks `download` makes: the size limit, what the first bytes say
+/// it is (a program is refused, and so is a name that lies about the type), the SHA-256 (against `expected_sha256` when given),
+/// and a move into place only when the file is complete. `source` is a file the harness itself had the browser write into a
+/// folder of its own; nothing the model or the page named is opened. The source file is left for the caller to remove.
+pub fn ingest_file(
+    source: &Path,
+    name: &str,
+    dest_dir: &Path,
+    max_bytes: u64,
+    expected_sha256: Option<&str>,
+    content_type: &str,
+    final_url: &str,
+) -> Result<Downloaded, String> {
+    let meta = fs::symlink_metadata(source)
+        .map_err(|e| format!("the downloaded file cannot be read: {e}"))?;
+    if !meta.file_type().is_file() {
+        return Err("the downloaded item is not a regular file".to_owned());
+    }
+    if meta.len() > max_bytes {
+        return Err(format!(
+            "the file is {} bytes, over the limit of {max_bytes}",
+            meta.len()
+        ));
+    }
+    let file =
+        File::open(source).map_err(|e| format!("the downloaded file cannot be read: {e}"))?;
+    store_stream(
+        file.take(max_bytes.saturating_add(1)),
+        &clean_name(name),
+        dest_dir,
+        max_bytes,
+        expected_sha256,
+        content_type,
+        final_url,
+    )
+}
+
+/// A file name from a page (`Content-Disposition`, the `download` attribute) made safe: the last path part only, characters
+/// limited, no leading dot or dash, at most 80 characters. A page chooses this text, so it is only ever a label.
+pub fn clean_name(raw: &str) -> String {
+    let last = raw.rsplit(['/', '\\']).next().unwrap_or("");
+    let cleaned: String = last
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(80)
+        .collect();
+    let cleaned = cleaned.trim_matches('.').to_owned();
+    if cleaned.is_empty() || cleaned.starts_with('-') {
+        format!("download-{cleaned}")
+    } else {
+        cleaned
+    }
+}
+
+fn store_stream(
+    mut reader: impl Read,
+    name: &str,
+    dest_dir: &Path,
+    max_bytes: u64,
+    expected_sha256: Option<&str>,
+    content_type: &str,
+    final_url: &str,
+) -> Result<Downloaded, String> {
+    fs::create_dir_all(dest_dir).map_err(|e| format!("cannot create the download folder: {e}"))?;
     let temp = dest_dir.join(format!(".part-{}-{name}", std::process::id()));
     let result = (|| -> Result<Downloaded, String> {
         let mut file =
             File::create(&temp).map_err(|e| format!("cannot create {}: {e}", temp.display()))?;
-        let mut reader = response.into_body().into_reader();
         let mut digest = Sha256::new();
         let mut head: Vec<u8> = Vec::new();
         let mut total = 0u64;
@@ -212,9 +291,9 @@ pub fn download(
             path: final_path,
             bytes: total,
             sha256,
-            content_type: content_type.clone(),
+            content_type: content_type.to_owned(),
             detected: detected.to_owned(),
-            final_url: final_url.clone(),
+            final_url: final_url.to_owned(),
             already_there,
         })
     })();

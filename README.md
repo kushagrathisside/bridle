@@ -18,7 +18,8 @@ Bridle is built for one developer's daily work first. It needs no cloud service:
 machine through [llama.cpp](https://github.com/ggml-org/llama.cpp), and the only network use is the one you turn on.
 
 **Status:** version 0.1.0. Native Windows only, verified on one machine (Windows 11, RTX 4060 Laptop with 8 GB of VRAM, 16 GB
-of RAM). Sub-agents on small models and web search are planned, not built. See [Status and known limits](#status-and-known-limits).
+of RAM). Web research and a managed browser exist, off by default (the providers are tested against fake servers only); the small-model
+sub-agent fleet is planned, not built. See [Status and known limits](#status-and-known-limits).
 
 ---
 
@@ -55,6 +56,7 @@ of RAM). Sub-agents on small models and web search are planned, not built. See [
 | **Team and board** | Six teams of named members you can add to and rename. Tag a member, a role or a team with `@`; the request becomes an issue on a board, and members work the issues one at a time, splitting work into issues for other teams. What each member may do depends on their role and is checked in code. | [Team and board](docs/guide/team-and-board.md) |
 | **Ideas queue** | Notes saved while a run works are kept out of the conversation, shown as the first column of the board, and sent one per finished run, or turned into issues. | [Team and board](docs/guide/team-and-board.md#ideas) |
 | **Web research** (off by default) | `web_search`, `web_open`, `web_download` and `document_inspect`: search through SearXNG or Brave, read pages, download files with a checksum, every result recorded with its address and SHA-256. Policy-gated inside the tool; addresses on your own network are refused, at every redirect. | [Web research](docs/guide/web-research.md) |
+| **Managed browser** (off by default, optional install) | `browser_navigate`, `browser_snapshot`, `browser_action`, `browser_close`: a real Chromium (through Playwright, pinned) for pages that need JavaScript. Every connection goes through Bridle's own egress proxy, which judges each address; no scripts, selectors, paths or launch flags can be passed; downloads use the same download manager and every page read is a source record with a checksum. `bridle web browser setup / status / test / remove`. | [The managed browser](docs/guide/web-browser.md) |
 | **Context compaction** | Old turns are folded into a rolling summary written by the model, so a long session stays inside the window. `/compact` does it on demand. | [Desktop guide](docs/guide/desktop.md#the--menu-and-images) |
 | **GPU memory guard** | A model server is refused when the model file's own header says it will not fit, instead of crashing half way through loading. | [Models and GPU memory](#models-and-gpu-memory) |
 | **Orchestrator** | Task state in a journal, loop detection, refusals with the rule named, worktree tasks. | [Tasks and loops](docs/concepts/tasks-and-loops.md) |
@@ -555,6 +557,10 @@ setting were verified in the real window on 2026-11-03.
 - **Partial manifests.** `dependency_search` does not read CMake `find_package`, or Go and Gradle manifests.
 - **Context budget is an estimate.** Bytes divided by four, over the messages only.
 - **The GPU memory guard is an estimate,** calibrated on one model and one GPU.
+- **Web research and the browser are verified on one machine and one proxy.** The search providers are tested against fake servers
+  only (no Brave key or SearXNG instance was available). The browser passed its own 72-check self-test against a real Chromium and one
+  live page through a company proxy; DNS rebinding is closed only when Bridle connects directly, and is demonstrated against a scripted
+  resolver. The runtime is optional, about 560 MB, and installed only on request.
 - **Optional services.** Jev is tested against its contract with a local mock, with no real service available. The LiteLLM route was
   checked against a local gateway on 2026-10-28. Both are off unless configured.
 - **Network exceptions.** OpenCode's model catalogue fetch and the model downloads are outside Bridle's control.
@@ -573,9 +579,9 @@ planned in [docs/spec/team-subagents-ideas-plan.md](docs/spec/team-subagents-ide
 2. **Sub-agents on small models.** A manager model (Qwen3.5-4B is the candidate) and workers (Granite-4.0-H-Micro and H-1B for code,
    LFM2.5 for reading) on the GPU with the 9B model unloaded, run as parallel slots of one server each. Measured against the 9B before
    anything is adopted, and bound by the GPU memory guard.
-3. **Web search for literature review.** Search tools surveyed from other agents and libraries, preferably ones that come with a
-   harness, integrated as opt-in tools that pass the same policy, use the proxy setting, and name their sources. Network access
-   stays off by default.
+3. **The rest of web research.** Search, page reading, downloads and a managed browser are built (see
+   [Web research](docs/guide/web-research.md) and [The managed browser](docs/guide/web-browser.md)). Still planned: PDF text, archive
+   listing, crawling, academic and news providers, and an evaluation suite for research quality. Network access stays off by default.
 4. **Window polish.** Further editor and layout refinements for the window.
 
 Routing between model slots and several agents on one repository are the goal of the local-first application layer; see

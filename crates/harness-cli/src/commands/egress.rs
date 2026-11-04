@@ -70,6 +70,17 @@ pub fn destinations(config: &Config) -> Vec<Destination> {
             loopback: false,
             when: format!("web_open and web_download ({tools}); every redirect is checked first"),
         });
+        if config.web.browser.enabled {
+            out.push(Destination {
+                what: "any public web address, through the managed browser (Chromium)".to_owned(),
+                endpoint: "http(s)://* and WebSockets (not this machine or its network), only through Bridle's egress proxy on 127.0.0.1".to_owned(),
+                loopback: false,
+                when: format!(
+                    "browser_navigate and browser_action ({tools}); every request the page makes is judged by the proxy, so are redirects, frames, scripts and WebSockets; downloads {}",
+                    if config.web.browser.downloads_enabled { "are kept" } else { "are refused" }
+                ),
+            });
+        }
     }
     out
 }
@@ -88,6 +99,18 @@ pub fn run(app: &App) -> Result<ExitCode> {
         "Remote requests go through: {} (set it with `network.proxy_mode` in the machine config, or in the window's Info view; loopback never uses a proxy)",
         route.describe()
     );
+    if app.config.web.enabled && app.config.web.browser.enabled {
+        let env = |name: &str| std::env::var(name).ok().filter(|value| !value.is_empty());
+        match harness_runtime::web::browser::proxy::Upstream::from_route(&route, &env) {
+            Ok(upstream) => println!(
+                "The managed browser reaches the web: {}.",
+                upstream.describe()
+            ),
+            Err(error) => {
+                println!("The managed browser cannot start with this proxy setting: {error}")
+            }
+        }
+    }
     println!("Not controlled by the harness:");
     println!("  OpenCode fetches its model catalog at startup (models.dev).");
     println!("  Model weights are downloaded once, during installation.");

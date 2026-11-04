@@ -46,6 +46,7 @@ Requests to a provider on this machine never use a proxy; others follow `network
 | `bridle web download URL [--sha256 HEX]` | Save a file into `.bridle/web/downloads/`. |
 | `bridle web inspect S-0002` or `bridle web inspect path\to\file` | Show a downloaded file (by source id) or a file in the project. |
 | `bridle egress` | Now also lists the search providers and "any public web address". |
+| `bridle web browser status / setup / test / remove` | The managed browser; see [its guide](web-browser.md). |
 
 ## For the model
 
@@ -78,12 +79,23 @@ so a claim can be traced to the page as it was. The same page keeps the same id.
 | A download whose SHA-256 differs from the one you gave | Removed and refused. |
 | A provider that answers 401, 403, 429, an error, or something that is not JSON | Reported in words; the other providers still answer. The key is never in the message. |
 
+## When a page needs JavaScript
+
+`web_open` does not run a page's scripts, so a page that builds itself with script comes back nearly empty. For those, turn on the
+[managed browser](web-browser.md): `browser_navigate`, `browser_snapshot` and `browser_action` read the page as a person sees it, click
+and type, and keep a file the page offers through the same download manager. The way to work is: search, `web_open`; if the text is too
+thin, `browser_navigate` and `browser_snapshot`. Both kinds of reading go into the same `sources.jsonl`; a page read both ways has two
+records and the browser one names the other (`rendition_of`).
+
 ## Limits, stated plainly
 
 - **Providers are verified against fake servers, not the real services.** There is no Brave key or SearXNG instance on the tested machine.
   Opening pages and downloading files were verified live through the proxy (a GitHub raw file downloaded and read back by its id).
 - **Names are resolved twice** (once to check, once to connect), so a hostile DNS server could change its answer in between. Every redirect
-  hop is checked, and when a proxy carries the request the proxy resolves the name and applies its own rules.
-- **No PDF text extraction, no archive listing or unpacking, no crawling, no browser, no academic or news providers beyond the `news` kind.**
-  They are the next phases of the plan.
+  hop is checked, and when a proxy carries the request the proxy resolves the name and applies its own rules. The browser's egress proxy
+  is different: it resolves once and connects to the address it judged (see [the browser](web-browser.md)).
+- **Remote HTTPS now uses the system certificate store.** Before ADR-0020 it used a bundled list of roots, which failed behind a proxy
+  that re-signs certificates and for sites with newer roots (`rfc-editor.org` and `nodejs.org` were such cases).
+- **No PDF text extraction, no archive listing or unpacking, no crawling, no academic or news providers beyond the `news` kind.**
+  They are the next phases of the plan. The browser is described in its own guide.
 - Providers need what they need: Brave a key (and its usage terms), SearXNG your own instance with JSON output enabled.

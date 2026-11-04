@@ -37,7 +37,14 @@ The table lists the tools in the order the server reports them. The class is the
 | `task_status` | READ_ONLY | Only when `workflow.task_status` is `true`. Off by default. |
 | `subagent` | EXECUTE_SAFE | Only when `subagents.enabled` is `true`. Off by default. |
 
-Any tool name the server does not know is blocked.
+| `web_search`, `web_open`, `web_download` | NETWORK | Only when `[web] enabled`. See [Web research](../guide/web-research.md). Each is refused inside the tool unless `security.network = "allow"`. |
+| `document_inspect` | READ_ONLY | Only when `[web] enabled`. Reads a saved download by source id, or a file in the project. |
+| `browser_navigate`, `browser_snapshot`, `browser_action` | NETWORK | Only when `[web] enabled` and `[web.browser] enabled`. A managed Chromium; see [The managed browser](../guide/web-browser.md). Refused inside the tool unless `security.network = "allow"`. |
+| `browser_close` | READ_ONLY | The same condition. Closes a session; always allowed so a session can be freed. |
+
+Any tool name the server does not know is blocked, including the names a general browser server would offer (`browser_evaluate`,
+`browser_run_code`, a raw DevTools command, `browser_install`). The browser tools have no way to run a script, choose a file path or change
+how Chromium starts.
 
 ## Limits
 
