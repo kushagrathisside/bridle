@@ -97,7 +97,7 @@ function renderBoard() {
     return el("section", { class: `col col-${status}` }, el("h4", {}, label, el("span", { class: "col-count", text: String(cards.length) })), el("div", { class: "cards" }, ...nodes));
   });
   const warn = board.skipped ? el("p", { class: "note muted", text: `${board.skipped} damaged line(s) in the board's log were skipped.` }) : null;
-  $("board").replaceChildren(bar, warn, el("div", { class: "board-main" }, el("div", { class: "cols" }, ideasColumn(), ...columns), detailEl()));
+  $("board").replaceChildren(...[bar, warn].filter(Boolean), el("div", { class: "board-main" }, el("div", { class: "cols" }, ideasColumn(), ...columns), detailEl()));
 }
 
 function teamName(id) {

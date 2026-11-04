@@ -11,7 +11,7 @@ on the right edge of the window: tag one with `@`, and the work goes onto a **bo
 > model. A refusal names the rule that caused it.
 
 <p align="center">
-  <img src="docs/images/window.png" alt="The Bridle window: file explorer, a side-by-side diff, a terminal, and the chat with a tool call" width="900">
+  <img src="docs/images/window.png" alt="The Bridle window: file explorer, a side-by-side diff, a terminal, the chat with a team member's tool calls, and the crew rail on the right edge" width="900">
 </p>
 
 Bridle is built for one developer's daily work first. It needs no cloud service: the model runs on the developer's own
@@ -189,6 +189,16 @@ bridle --config my.toml   :: add an explicit configuration file
 | **Info** | Doctor and health results, and the Network card. |
 | **Status bar** | Git branch, model slot and state, tokens used out of the window, the last refresh, and the line, column and language of the open file. |
 | **Project switcher** | The folder name at the top of the window lists recent projects and opens another folder. The model is stopped and loaded again in the new folder, about 10 seconds. |
+
+### The team and the board
+
+<p align="center">
+  <img src="docs/images/board.png" alt="The board popup: the ideas column, then the issues by state, and the details and comments of one issue" width="900">
+</p>
+
+The avatars on the right edge are the team. Click one to tag them in the chat; the board button at the top right opens the popup above.
+In the screenshot `@maya` was asked to fix the bug: the request became an issue, Maya's turn used the board tools to comment and close it, and
+the other cards were made by hand. See [the guide](docs/guide/team-and-board.md).
 
 ### Shortcuts
 
