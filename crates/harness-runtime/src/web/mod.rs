@@ -2,12 +2,15 @@
 //! information came from. Everything here is policy-gated by the tools in `mcp::tools::web`; this module has no policy of its
 //! own beyond the address guard, which refuses to contact the machine's own network.
 
+pub mod archive;
 pub mod browser;
 pub mod download;
 pub mod fetch;
 pub mod fusion;
 pub mod guard;
 pub mod html;
+pub mod inflate;
+pub mod pdf;
 pub mod providers;
 pub mod store;
 

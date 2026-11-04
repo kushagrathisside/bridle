@@ -21,7 +21,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use thiserror::Error;
 
-pub use fs::{FileLock, atomic_write};
+pub use fs::{FileLock, atomic_write, remove_stale_temps};
 pub use jsonl::{JsonlRead, read_records};
 pub use task::{
     CACHE_FILE, DECISIONS_FILE, DecisionRecord, INDEX_FILE, JOURNAL_FILE, MCP_RESULTS_FILE,

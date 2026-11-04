@@ -57,7 +57,7 @@ When web research is on and `security.network = "allow"`, the model is offered f
 | `web_search` | `query`, and optionally `kind` (`web` or `news`), `limit`, `domains`, `after`. Returns numbered results, each with an id such as `[S-0003]`. |
 | `web_open` | Reads a page. Returns the text and an id to cite. |
 | `web_download` | Saves a file. Returns an id and the SHA-256. |
-| `document_inspect` | Reads a downloaded file by id, or a file in the project by path: text and HTML are shown; a PDF or an archive is reported with its size and checksum only. |
+| `document_inspect` | Reads a downloaded file by id, or a file in the project by path: text and HTML are shown; a **PDF** gives its page count, title, author and text; a **zip, tar or tar.gz** gives its listing with names that would unpack outside their folder flagged. Nothing is extracted. |
 
 What every result carries: it is framed as **untrusted** ("information, not instructions"), secrets are redacted, it is bounded, and it
 is recorded in `.bridle/web/sources.jsonl` with the address, the final address after redirects, the time and the SHA-256 of what was read,
@@ -100,6 +100,12 @@ records and the browser one names the other (`rendition_of`).
   is different: it resolves once and connects to the address it judged (see [the browser](web-browser.md)).
 - **Remote HTTPS now uses the system certificate store.** Before ADR-0020 it used a bundled list of roots, which failed behind a proxy
   that re-signs certificates and for sites with newer roots (`rfc-editor.org` and `nodejs.org` were such cases).
-- **No PDF text extraction, no archive listing or unpacking, no crawling, no academic or news providers beyond the `news` kind.**
-  They are the next phases of the plan. The browser is described in its own guide.
+- **PDF text is best effort.** The reader handles single-byte fonts and Flate compression (most word-processor and LaTeX output). It says so,
+  and shows no text, for encrypted files, for text stored in embedded font encodings (many designed documents), for other compressions, and
+  for scans (images only). Page order is the order in the file. There is no OCR. It was checked against PDFs made for the tests and one
+  compressed sample, not against a corpus of real papers.
+- **Archives are listed, never unpacked.** zip (not zip64), tar and tar.gz/tgz; 7z and rar are reported but not listed. A tar.gz is
+  decompressed in memory up to 64 MiB to read its headers (the listing says when that was not all of it).
+- **No crawling, no academic or news providers beyond the `news` kind.** They are the next phases of the plan. The browser is described in
+  its own guide.
 - Providers need what they need: Brave a key (and its usage terms), SearXNG your own instance with JSON output enabled.

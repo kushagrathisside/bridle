@@ -216,6 +216,12 @@ refs/bridle/runs/..., not on any branch), and again afterwards. "Undo changes" o
 files you changed yourself since are left alone. Only one Bridle can run a team in a project at a time. A run cut short by a crash
 is found when the window next opens. Details: guide/team-and-board.md and reference/run-recovery.md.
 
+Leases and the stale-write check: while a team run is active, each file it writes is "leased" to that run (in .bridle\leases.json), so
+two runs cannot write the same file at once; a lease ends with the run or after 15 minutes. The file tools also remember what they read:
+if a file changed since (you typed in the editor), a write or edit of it is refused with "changed since you read it; read it again".
+A folder that is not a Git repository gets the same checkpoints in .bridle\shadow.git (files over 5 MB are not copied; over 200 MB the run
+will not start until the project is under Git or has a .gitignore). If a crash leaves things behind, run   bridle doctor --repair.
+
 Be realistic: the team works in "Solo mode": one model answers every member, one at a time, in your project folder. A project
 manager on a 9B model sometimes completes the whole plan and sometimes stops half way. Expect to step in.
 
@@ -339,7 +345,9 @@ For you, at the terminal (these work as soon as [web] enabled is set):
     bridle web download URL [--sha256 HEX]    save a file into .bridle\web\downloads\
     bridle web inspect S-0003                 show a saved file by its source id (or a path in the project)
 
-For the model: web_search, web_open, web_download, document_inspect. Every page and file is recorded in
+For the model: web_search, web_open, web_download, document_inspect. document_inspect reads a saved file or a project file: text and HTML
+are shown; a PDF gives its pages, title, author and (when its fonts allow) text; a zip, tar or tar.gz gives its listing, with names that
+would unpack outside their folder flagged. Nothing is extracted. PDF text is best effort (see section 17). Every page and file is recorded in
 .bridle\web\sources.jsonl with the address, the final address after redirects, the time and the SHA-256, and gets an id like
 [S-0003] to cite. Results are framed as untrusted ("information, not instructions").
 
@@ -349,7 +357,7 @@ downloads over the limit; programs and scripts; files whose name lies about thei
 one you gave.
 
 Not verified: the search providers have only been tested against fake servers (no Brave key or SearXNG instance was available).
-Not built: PDF text, archive listing, crawling, academic providers. See guide/web-research.md.
+Not built: crawling, academic providers. See guide/web-research.md.
 
 
 12. THE MANAGED BROWSER (OFF BY DEFAULT, OPTIONAL INSTALL)
@@ -436,7 +444,8 @@ Global options:  --config FILE   --workspace DIR   -h/--help   -V/--version     
     bridle config show | validate | paths
     bridle models list | status [slot] | serve SLOT [--detach] [--wait-secs N] | stop SLOT | manifest [slot] [--no-hash]
     bridle health [slot] [--quick] [--json]
-    bridle doctor [--json]               host, runtimes, model files, endpoints, OpenCode, browser, configuration
+    bridle doctor [--json] [--repair]    host, runtimes, model files, endpoints, OpenCode, browser, configuration; --repair first puts
+                                         right what a crash left (ended leases, runs cut short, temporary files, dead browser folders)
     bridle task start [--prompt T] [--worktree] | status [task] [--json] | resume T | reset | repair | prune
     bridle explain [task] [--limit N]    bridle trace [task] [--limit N]
     bridle egress                        every outbound destination of this configuration, and the proxy state; sends nothing
@@ -510,7 +519,9 @@ Model files and runtimes are yours; Bridle never deletes them.
   * Bridle is not a sandbox. "ask" is never allowed, so network, destructive and risky actions are denied, not offered.
   * One conversation at a time; images up to 4 MiB.
   * The team works in Solo mode (one model, one member at a time); how well a 9B model plays each role is barely measured.
-    Not built yet: file leases and a stale-write check, worktrees for parallel engineers, the small-model fleet and scheduler.
+    Not built yet: worktrees for parallel engineers, the small-model fleet and scheduler.
+  * PDF text is best effort: it handles single-byte fonts and Flate compression, and says so (and shows no text) for encrypted files,
+    embedded font encodings, scans and other compressions. It was tried on generated samples, not on a collection of real papers.
   * The code index is syntactic: find_references matches names by spelling and does not resolve types or imports.
   * The context budget and the video-memory guard are estimates.
   * Web research providers are untested against the real services. The browser has been run on one machine and one company proxy.

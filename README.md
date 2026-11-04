@@ -574,15 +574,16 @@ setting were verified in the real window on 2026-11-03.
 The first slice of the team, the board and the ideas queue is built (see [Team and board](docs/guide/team-and-board.md)). The rest is
 planned in [docs/spec/team-subagents-ideas-plan.md](docs/spec/team-subagents-ideas-plan.md), and none of it is built yet:
 
-1. **The rest of the Git layer.** Checkpoints, per-issue undo, a project lock and recovery of a cut-short run are built (see
-   [Runs, checkpoints and recovery](docs/reference/run-recovery.md)). Still planned: file leases, a stale-write check, worktrees for
-   parallel engineers, and `doctor --repair`.
+1. **The rest of the Git layer.** Checkpoints, per-issue undo, a project lock, recovery of a cut-short run, file leases, a stale-write
+   check, a shadow repository for folders without Git, and `bridle doctor --repair` are built (see
+   [Runs, checkpoints and recovery](docs/reference/run-recovery.md)). Still planned: worktrees for parallel engineers and the integration
+   step.
 2. **Sub-agents on small models.** A manager model (Qwen3.5-4B is the candidate) and workers (Granite-4.0-H-Micro and H-1B for code,
    LFM2.5 for reading) on the GPU with the 9B model unloaded, run as parallel slots of one server each. Measured against the 9B before
    anything is adopted, and bound by the GPU memory guard.
-3. **The rest of web research.** Search, page reading, downloads and a managed browser are built (see
-   [Web research](docs/guide/web-research.md) and [The managed browser](docs/guide/web-browser.md)). Still planned: PDF text, archive
-   listing, crawling, academic and news providers, and an evaluation suite for research quality. Network access stays off by default.
+3. **The rest of web research.** Search, page reading, downloads, a managed browser, PDF text and archive listing are built (see
+   [Web research](docs/guide/web-research.md) and [The managed browser](docs/guide/web-browser.md)). Still planned: crawling, academic and
+   news providers, and an evaluation suite for research quality. Network access stays off by default.
 4. **Window polish.** Further editor and layout refinements for the window.
 
 Routing between model slots and several agents on one repository are the goal of the local-first application layer; see

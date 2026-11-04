@@ -6,6 +6,11 @@
 //! person typed in it), in which case it is left and reported. One write-run per project at a time is enforced with a file lock
 //! that the system releases if Bridle dies. A run writes a small journal, so a run cut short by a crash is found at the next start.
 //!
+//! A folder that is **not** a Git repository gets the same checkpoints in a **shadow repository**, `.bridle/shadow.git`, used with
+//! `GIT_DIR` and `GIT_WORK_TREE` so that no `.git` appears in the project. Files over 5 MB are listed and not stored, and a state that
+//! would store more than 200 MB stops the run. While a run is active the file tools claim a lease on each file they write
+//! (`harness_runtime::leases`).
+//!
 //! The commands are plain `git`, so everything here can be inspected and undone by hand (docs/reference/run-recovery.md).
 
 use std::collections::BTreeSet;
@@ -16,6 +21,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 use harness_core::identity;
+use harness_runtime::leases;
 use harness_runtime::process::hide_console;
 use serde_json::{Value, json};
 
@@ -41,6 +47,88 @@ fn left_out(path: &str) -> bool {
         || name.starts_with("id_ed25519")
         || name == ".netrc"
         || name == ".npmrc"
+}
+
+/// The shadow repository of a folder that is not a Git repository.
+const SHADOW_DIR: &str = "shadow.git";
+/// A file bigger than this is listed and not stored in a shadow repository; more than `SHADOW_MAX_TOTAL` in all stops the run.
+pub const SHADOW_MAX_FILE: u64 = 5 * 1024 * 1024;
+pub const SHADOW_MAX_TOTAL: u64 = 200 * 1024 * 1024;
+const SHADOW_EXCLUDE: &str = "# Bridle's shadow repository leaves out what nobody wants a copy of\n.bridle/\n.local-agent/\n.worktrees/\nnode_modules/\ntarget/\n.venv/\nvenv/\n__pycache__/\ndist/\nbuild/\n*.log\n";
+
+fn shadow_dir(workspace: &Path) -> PathBuf {
+    identity::state_dir(workspace).join(SHADOW_DIR)
+}
+
+/// Runs `git` the plain way (no shadow, no inherited `GIT_DIR`) and returns its output on success.
+fn plain_git(dir: &Path, args: &[&str]) -> Option<String> {
+    let mut command = Command::new("git");
+    command
+        .args(args)
+        .current_dir(dir)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    hide_console(&mut command);
+    let output = command.output().ok().filter(|o| o.status.success())?;
+    Some(
+        String::from_utf8_lossy(&output.stdout)
+            .trim_end()
+            .to_owned(),
+    )
+}
+
+/// Whether `dir` is inside a real Git work tree (a shadow repository does not count).
+fn inside_real_repo(dir: &Path) -> bool {
+    plain_git(dir, &["rev-parse", "--is-inside-work-tree"]).as_deref() == Some("true")
+}
+
+/// The shadow repository to use for `dir`: only when it exists and the folder has no real repository (one the person makes later
+/// takes over).
+fn active_shadow(dir: &Path) -> Option<PathBuf> {
+    let shadow = shadow_dir(dir);
+    (shadow.join("HEAD").is_file() && !inside_real_repo(dir)).then_some(shadow)
+}
+
+/// Makes sure a folder that is not a Git repository has a shadow repository. `Ok(true)` when one is in use afterwards, `Ok(false)`
+/// when the folder is a real repository (nothing to make).
+pub fn ensure_shadow(workspace: &Path) -> Result<bool> {
+    if inside_real_repo(workspace) {
+        return Ok(false);
+    }
+    let shadow = shadow_dir(workspace);
+    if shadow.join("HEAD").is_file() {
+        return Ok(true);
+    }
+    fs::create_dir_all(&shadow).with_context(|| format!("create {}", shadow.display()))?;
+    let mut command = Command::new("git");
+    command
+        .args(["init", "-q"])
+        .current_dir(workspace)
+        .env("GIT_DIR", &shadow)
+        .env("GIT_WORK_TREE", workspace)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    hide_console(&mut command);
+    let output = command
+        .output()
+        .context("run git init for the shadow repository")?;
+    if !output.status.success() {
+        let _ = fs::remove_dir_all(&shadow);
+        bail!(
+            "cannot create the shadow repository: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    fs::create_dir_all(shadow.join("info"))?;
+    fs::write(shadow.join("info").join("exclude"), SHADOW_EXCLUDE)?;
+    Ok(true)
 }
 
 fn git(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Result<String> {
@@ -71,6 +159,9 @@ fn git_with_input(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env("GIT_TERMINAL_PROMPT", "0");
+    if let Some(shadow) = active_shadow(dir) {
+        command.env("GIT_DIR", shadow).env("GIT_WORK_TREE", dir);
+    }
     for (key, value) in env {
         command.env(key, value);
     }
@@ -99,8 +190,11 @@ fn git_with_input(
 /// What is known about the project's repository before a run starts.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Preflight {
-    /// Whether the folder is inside a Git work tree. When it is not, runs go ahead without checkpoints.
+    /// Whether the folder is inside a Git work tree (a real one, or Bridle's shadow repository). When it is neither, runs go ahead
+    /// without checkpoints.
     pub repo: bool,
+    /// Whether the checkpoints are kept in the shadow repository because the folder has no Git repository of its own.
+    pub shadow: bool,
     /// The commit HEAD names, when there is one.
     pub head: Option<String>,
     /// Paths with uncommitted changes of the person's, at most 50.
@@ -119,6 +213,7 @@ pub fn preflight(workspace: &Path) -> Preflight {
         return found;
     }
     found.repo = true;
+    found.shadow = active_shadow(workspace).is_some();
     found.head = git(workspace, &["rev-parse", "--verify", "-q", "HEAD"], &[])
         .ok()
         .filter(|h| !h.is_empty());
@@ -158,6 +253,10 @@ pub fn preflight(workspace: &Path) -> Preflight {
             .take(50)
             .collect();
     }
+    if found.shadow {
+        // Everything is "new" to a shadow repository; there is no person's baseline to report.
+        found.dirty.clear();
+    }
     found
 }
 
@@ -166,6 +265,8 @@ pub fn preflight(workspace: &Path) -> Preflight {
 pub struct Checkpoint {
     pub reference: String,
     pub commit: String,
+    /// Files left out of a shadow checkpoint because they are over 5 MB (at most 20 are named).
+    pub skipped_large: Vec<String>,
 }
 
 fn safe_scope(scope: &str) -> String {
@@ -213,7 +314,27 @@ pub fn checkpoint(workspace: &Path, scope: &str, name: &str) -> Result<Checkpoin
             &[],
         )?;
         let mut paths: Vec<u8> = Vec::new();
+        let mut skipped_large: Vec<String> = Vec::new();
+        let mut stored = 0u64;
         for path in listed.split('\0').filter(|p| !p.is_empty() && !left_out(p)) {
+            if info.shadow {
+                // A folder with no Git history has no ignore rules to rely on: big files are listed, not copied, and a state that
+                // is too big stops the run before it starts.
+                let size = fs::metadata(workspace.join(path)).map_or(0, |m| m.len());
+                if size > SHADOW_MAX_FILE {
+                    if skipped_large.len() < 20 {
+                        skipped_large.push(path.to_owned());
+                    }
+                    continue;
+                }
+                stored += size;
+                if stored > SHADOW_MAX_TOTAL {
+                    bail!(
+                        "this folder holds more than {} MB of files and has no Git repository, so Bridle will not copy it; put the project under Git (git init) or add a .gitignore, then start again",
+                        SHADOW_MAX_TOTAL / (1024 * 1024)
+                    );
+                }
+            }
             paths.extend_from_slice(path.as_bytes());
             paths.push(0);
         }
@@ -240,7 +361,11 @@ pub fn checkpoint(workspace: &Path, scope: &str, name: &str) -> Result<Checkpoin
         let commit = git(workspace, &commit, &env)?;
         let reference = format!("{REF_ROOT}/{}/{}", safe_scope(scope), name);
         git(workspace, &["update-ref", &reference, &commit], &[])?;
-        Ok(Checkpoint { reference, commit })
+        Ok(Checkpoint {
+            reference,
+            commit,
+            skipped_large,
+        })
     })();
     let _ = fs::remove_file(&index);
     made
@@ -443,6 +568,29 @@ fn journal_path(workspace: &Path, scope: &str) -> PathBuf {
         .join("journal.jsonl")
 }
 
+/// Removes the temporary index files that a checkpoint cut short by a crash leaves in the Git directory (`bridle-index-*`). Returns how
+/// many it removed. (`bridle doctor --repair` calls this.)
+pub fn remove_leftover_indexes(workspace: &Path) -> usize {
+    let Ok(dir) = git(workspace, &["rev-parse", "--absolute-git-dir"], &[]) else {
+        return 0;
+    };
+    let Ok(entries) = fs::read_dir(PathBuf::from(dir)) else {
+        return 0;
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        if entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with("bridle-index-")
+            && fs::remove_file(entry.path()).is_ok()
+        {
+            removed += 1;
+        }
+    }
+    removed
+}
+
 /// Appends one line to a run's journal and flushes it to disk.
 pub fn journal(workspace: &Path, scope: &str, kind: &str, detail: &Value) -> Result<()> {
     let path = journal_path(workspace, scope);
@@ -491,7 +639,13 @@ impl RunGuard {
     /// Bridle runs a team here, or when the repository is in the middle of a merge or rebase.
     pub fn begin(workspace: &Path, scope: &str) -> Result<Self, String> {
         let lock = RepoLock::acquire(workspace)?;
-        let info = preflight(workspace);
+        let mut info = preflight(workspace);
+        if !info.repo {
+            // No Git repository here: keep the checkpoints in a shadow repository inside .bridle instead.
+            if ensure_shadow(workspace).unwrap_or(false) {
+                info = preflight(workspace);
+            }
+        }
         if let Some(problem) = info.problem {
             return Err(problem);
         }
@@ -519,13 +673,17 @@ impl RunGuard {
             workspace,
             scope,
             "start",
-            &json!({"repo": info.repo, "dirty": info.dirty, "before": guard.before.as_ref().map(|c| c.commit.clone())}),
+            &json!({"repo": info.repo, "shadow": info.shadow, "dirty": info.dirty, "before": guard.before.as_ref().map(|c| c.commit.clone()), "skipped_large": guard.before.as_ref().map(|c| c.skipped_large.clone())}),
         );
+        // From here the file tools claim a lease on each file this run writes; ended leases of dead runs are cleared first.
+        leases::Leases::open(workspace).sweep();
+        leases::set_active(workspace, scope, &format!("run-{number}"));
         Ok(guard)
     }
 
     /// Saves the "after" checkpoint and closes the journal. The lock is released when the guard is dropped.
     pub fn finish(self, outcome: &str) -> Finished {
+        leases::clear_active(&self.workspace);
         let mut done = Finished {
             before: self.before.clone(),
             ..Finished::default()
@@ -549,6 +707,13 @@ impl RunGuard {
             &json!({"outcome": outcome, "after": done.after.as_ref().map(|c| c.commit.clone())}),
         );
         done
+    }
+}
+
+impl Drop for RunGuard {
+    fn drop(&mut self) {
+        // A run that ends any other way (a panic, an early return) must not leave its leases behind.
+        leases::clear_active(&self.workspace);
     }
 }
 
@@ -768,10 +933,91 @@ mod tests {
         let info = preflight(dir.path());
         assert!(!info.repo && info.problem.is_none());
         assert!(checkpoint(dir.path(), "B-6", "0001-before").is_err());
+        // Without a repository the run keeps its checkpoints in a shadow repository, and no .git appears.
         let guard = RunGuard::begin(dir.path(), "B-6").unwrap();
-        assert!(guard.before.is_none());
+        assert!(guard.before.is_some());
         let done = guard.finish("done");
-        assert!(done.after.is_none() && done.note.is_none());
+        assert!(done.after.is_some() && done.note.is_none());
+        assert!(!dir.path().join(".git").exists());
+        assert!(
+            dir.path()
+                .join(".bridle")
+                .join("shadow.git")
+                .join("HEAD")
+                .is_file()
+        );
+    }
+
+    #[test]
+    fn a_shadow_repository_checkpoints_and_undoes_like_a_real_one_and_never_makes_a_dot_git() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+        fs::write(p.join("a.txt"), "one\n").unwrap();
+        fs::write(p.join("b.txt"), "two\n").unwrap();
+        fs::create_dir_all(p.join("node_modules")).unwrap();
+        fs::write(p.join("node_modules").join("junk.js"), "x").unwrap();
+        fs::write(p.join(".env"), "SECRET=1\n").unwrap();
+        let guard = RunGuard::begin(p, "B-20").unwrap();
+        let before = guard.before.clone().unwrap();
+        assert!(preflight(p).shadow);
+        fs::write(p.join("a.txt"), "run edit\n").unwrap();
+        fs::remove_file(p.join("b.txt")).unwrap();
+        fs::write(p.join("c.txt"), "created\n").unwrap();
+        let done = guard.finish("done");
+        let after = done.after.unwrap();
+        // What the checkpoint holds: the project files, not the dependency folder, not the secret file.
+        let held = git_in_shadow(p, &["ls-tree", "-r", "--name-only", &before.reference]);
+        assert!(held.contains("a.txt") && held.contains("b.txt"), "{held}");
+        assert!(
+            !held.contains("node_modules") && !held.contains(".env") && !held.contains(".bridle"),
+            "{held}"
+        );
+        let report = undo(p, &before.reference, &after.reference).unwrap();
+        assert_eq!(
+            fs::read_to_string(p.join("a.txt"))
+                .unwrap()
+                .replace("\r\n", "\n"),
+            "one\n"
+        );
+        assert_eq!(
+            fs::read_to_string(p.join("b.txt"))
+                .unwrap()
+                .replace("\r\n", "\n"),
+            "two\n"
+        );
+        assert!(!p.join("c.txt").exists());
+        assert_eq!((report.restored.len(), report.removed.len()), (2, 1));
+        assert!(!p.join(".git").exists(), "the project got no .git");
+        assert!(undoable_scopes(p).contains("B-20"));
+    }
+
+    fn git_in_shadow(p: &Path, args: &[&str]) -> String {
+        git(p, args, &[]).unwrap()
+    }
+
+    #[test]
+    fn big_files_are_listed_not_stored_and_a_real_repository_made_later_takes_over() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+        fs::write(p.join("small.txt"), "s\n").unwrap();
+        fs::write(
+            p.join("big.bin"),
+            vec![1u8; (SHADOW_MAX_FILE + 1024) as usize],
+        )
+        .unwrap();
+        let guard = RunGuard::begin(p, "B-21").unwrap();
+        let before = guard.before.clone().unwrap();
+        assert_eq!(before.skipped_large, vec!["big.bin".to_owned()]);
+        let held = git_in_shadow(p, &["ls-tree", "-r", "--name-only", &before.reference]);
+        assert!(
+            held.contains("small.txt") && !held.contains("big.bin"),
+            "{held}"
+        );
+        drop(guard);
+        // The person runs git init: the real repository is used from then on and the shadow is left alone.
+        // (Plain git: the test helper `run` would still aim at the shadow repository.)
+        plain_git(p, &["init", "-q"]).unwrap();
+        assert!(preflight(p).repo && !preflight(p).shadow);
     }
 
     #[test]

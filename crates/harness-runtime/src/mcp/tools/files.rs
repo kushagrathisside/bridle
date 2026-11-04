@@ -21,6 +21,7 @@ use harness_core::security::tool_policy::{ToolKind, ToolRequest};
 use serde_json::{Value, json};
 
 use super::{McpTool, ToolContext, ToolOutput, bool_arg, redacted_output, u64_arg};
+use crate::leases;
 use crate::state::atomic_write;
 
 /// Largest file `read_file` and `edit_file` will load.
@@ -193,6 +194,11 @@ impl McpTool for ReadFileTool {
         if looks_binary(&bytes) {
             return Err(format!("{path} looks like a binary file"));
         }
+        // What was read is what a later write is compared with (see `leases`). A file read only in part is not remembered.
+        let sha256 = (!cut_at_limit).then(|| leases::sha256_hex(&bytes));
+        if let Some(sha) = &sha256 {
+            leases::note_content(&resolved, sha);
+        }
         let text = String::from_utf8_lossy(&bytes);
         let lines: Vec<&str> = text.lines().collect();
         let total = lines.len();
@@ -231,10 +237,15 @@ impl McpTool for ReadFileTool {
                 end + 1
             ));
         }
+        if let Some(sha) = &sha256 {
+            out.push_str(&format!("(sha256 {})\n", &sha[..12]));
+        }
         Ok(redacted_output(
             ctx,
             &out,
-            Some(json!({"path": path, "from": offset, "to": end, "total_lines": total})),
+            Some(
+                json!({"path": path, "from": offset, "to": end, "total_lines": total, "sha256": sha256}),
+            ),
         ))
     }
 }
@@ -535,6 +546,7 @@ impl McpTool for WriteFileTool {
             "properties": {
                 "path": {"type": "string", "description": "File path, relative to the workspace. Parent folders are created."},
                 "content": {"type": "string", "description": "The complete new content of the file."},
+                "expected_sha256": {"type": "string", "description": "The hash read_file showed for the version you based this on (at least 8 hex digits). The write is refused if the file has changed since."},
             },
             "required": ["path", "content"],
             "additionalProperties": false,
@@ -554,12 +566,25 @@ impl McpTool for WriteFileTool {
             return Err(format!("{path} is a directory"));
         }
         let existed = resolved.exists();
+        let expected = args.get("expected_sha256").and_then(Value::as_str);
+        // A path another run is writing is refused; a file that is not what the writer last saw is refused.
+        leases::guard_write(&ctx.workspace, &resolved)?;
+        if existed {
+            if let Ok((current, false)) = read_capped(&resolved, MAX_FILE_BYTES) {
+                leases::check_fresh(&resolved, path, &leases::sha256_hex(&current), expected)?;
+            }
+        } else if expected.is_some_and(|e| !e.trim().is_empty()) {
+            return Err(format!(
+                "{path} no longer exists (it was deleted since you read it); write it without expected_sha256 to create it again"
+            ));
+        }
         if let Some(parent) = resolved.parent() {
             fs::create_dir_all(parent)
                 .map_err(|e| format!("cannot create the folder for {path}: {e}"))?;
         }
         replace_file(&resolved, content.as_bytes())
             .map_err(|e| format!("cannot write {path}: {e}"))?;
+        leases::note_content(&resolved, &leases::sha256_hex(content.as_bytes()));
         let text = format!(
             "{} {path} ({} bytes, {} line(s))",
             if existed { "replaced" } else { "created" },
@@ -597,6 +622,7 @@ impl McpTool for EditFileTool {
                 "old_string": {"type": "string", "description": "Exact text to replace. Include enough context to be unique."},
                 "new_string": {"type": "string", "description": "Replacement text."},
                 "replace_all": {"type": "boolean", "description": "Replace every occurrence. Default false."},
+                "expected_sha256": {"type": "string", "description": "The hash read_file showed for the version you based this on (at least 8 hex digits). The edit is refused if the file has changed since."},
             },
             "required": ["path", "old_string", "new_string"],
             "additionalProperties": false,
@@ -629,6 +655,13 @@ impl McpTool for EditFileTool {
         if looks_binary(&bytes) {
             return Err(format!("{path} looks like a binary file"));
         }
+        leases::guard_write(&ctx.workspace, &resolved)?;
+        leases::check_fresh(
+            &resolved,
+            path,
+            &leases::sha256_hex(&bytes),
+            args.get("expected_sha256").and_then(Value::as_str),
+        )?;
         let text = String::from_utf8(bytes)
             .map_err(|_| format!("{path} is not valid UTF-8; edit_file will not rewrite it"))?;
         let count = text.matches(old).count();
@@ -653,6 +686,7 @@ impl McpTool for EditFileTool {
         };
         replace_file(&resolved, updated.as_bytes())
             .map_err(|e| format!("cannot write {path}: {e}"))?;
+        leases::note_content(&resolved, &leases::sha256_hex(updated.as_bytes()));
         let replaced = if replace_all { count } else { 1 };
         let out =
             format!("edited {path}: replaced {replaced} occurrence(s), first at line {first_line}");
@@ -1039,5 +1073,155 @@ mod tests {
             .is_err()
         );
         assert_eq!(file_tools().len(), 5);
+    }
+    #[test]
+    fn a_write_based_on_an_old_read_is_refused_until_the_file_is_read_again() {
+        let ws = workspace();
+        let read = run(&ReadFileTool, ws.path(), json!({"path": "README.md"})).unwrap();
+        assert!(read.text.contains("(sha256 "), "{}", read.text);
+        let sha = read.structured.as_ref().unwrap()["sha256"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert_eq!(sha.len(), 64);
+        // The person types in the editor meanwhile.
+        fs::write(ws.path().join("README.md"), "# demo\nchanged elsewhere\n").unwrap();
+        let error = run(
+            &WriteFileTool,
+            ws.path(),
+            json!({"path": "README.md", "content": "mine"}),
+        )
+        .unwrap_err();
+        assert!(error.contains("changed since you read it"), "{error}");
+        let error = run(
+            &EditFileTool,
+            ws.path(),
+            json!({"path": "README.md", "old_string": "demo", "new_string": "x"}),
+        )
+        .unwrap_err();
+        assert!(error.contains("changed since you read it"), "{error}");
+        assert_eq!(
+            fs::read_to_string(ws.path().join("README.md")).unwrap(),
+            "# demo\nchanged elsewhere\n",
+            "nothing was written"
+        );
+        // Reading again is what allows it, and the tool's own write does not trip the next one.
+        run(&ReadFileTool, ws.path(), json!({"path": "README.md"})).unwrap();
+        run(
+            &EditFileTool,
+            ws.path(),
+            json!({"path": "README.md", "old_string": "demo", "new_string": "mine"}),
+        )
+        .unwrap();
+        run(
+            &WriteFileTool,
+            ws.path(),
+            json!({"path": "README.md", "content": "again"}),
+        )
+        .unwrap();
+        run(
+            &EditFileTool,
+            ws.path(),
+            json!({"path": "README.md", "old_string": "again", "new_string": "and again"}),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_hash_passed_by_the_caller_decides_and_a_file_never_read_can_still_be_written() {
+        let ws = workspace();
+        // Never read: written as before.
+        run(
+            &WriteFileTool,
+            ws.path(),
+            json!({"path": "src/never_read.txt", "content": "x"}),
+        )
+        .unwrap();
+        let read = run(&ReadFileTool, ws.path(), json!({"path": "src/main.rs"})).unwrap();
+        let sha = read.structured.as_ref().unwrap()["sha256"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        run(
+            &WriteFileTool,
+            ws.path(),
+            json!({"path": "src/main.rs", "content": "fn main() {}\n", "expected_sha256": &sha[..12]}),
+        )
+        .unwrap();
+        // The old hash no longer describes the file.
+        let error = run(
+            &WriteFileTool,
+            ws.path(),
+            json!({"path": "src/main.rs", "content": "late", "expected_sha256": sha}),
+        )
+        .unwrap_err();
+        assert!(error.contains("changed since you read it"), "{error}");
+        let error = run(
+            &WriteFileTool,
+            ws.path(),
+            json!({"path": "src/main.rs", "content": "x", "expected_sha256": "xyz"}),
+        )
+        .unwrap_err();
+        assert!(error.contains("hexadecimal"), "{error}");
+        let error = run(
+            &WriteFileTool,
+            ws.path(),
+            json!({"path": "src/gone.rs", "content": "x", "expected_sha256": "0123456789abcdef"}),
+        )
+        .unwrap_err();
+        assert!(error.contains("no longer exists"), "{error}");
+    }
+
+    #[test]
+    fn a_path_another_run_is_writing_is_refused_and_the_active_run_leaves_no_lease_behind() {
+        let ws = workspace();
+        let root = ws.path();
+        crate::leases::Leases::open(root)
+            .claim("README.md", "B-2", "run-2", crate::leases::DEFAULT_TTL)
+            .unwrap()
+            .unwrap();
+        crate::leases::set_active(root, "B-1", "run-1");
+        let error = run(
+            &WriteFileTool,
+            root,
+            json!({"path": "README.md", "content": "mine"}),
+        )
+        .unwrap_err();
+        assert!(
+            error.contains("B-2") && error.contains("being written"),
+            "{error}"
+        );
+        let error = run(
+            &EditFileTool,
+            root,
+            json!({"path": "readme.MD", "old_string": "demo", "new_string": "x"}),
+        )
+        .unwrap_err();
+        assert!(
+            error.contains("B-2"),
+            "a different spelling of the path is the same lease: {error}"
+        );
+        run(
+            &WriteFileTool,
+            root,
+            json!({"path": "src/new.rs", "content": "fn x() {}\n"}),
+        )
+        .unwrap();
+        assert!(
+            crate::leases::Leases::open(root)
+                .list()
+                .iter()
+                .any(|l| l.holder == "B-1")
+        );
+        crate::leases::clear_active(root);
+        let left = crate::leases::Leases::open(root).list();
+        assert!(left.iter().all(|l| l.holder == "B-2"), "{left:?}");
+        // With nobody active, the plain chat writes as it always did.
+        run(
+            &WriteFileTool,
+            root,
+            json!({"path": "README.md", "content": "chat"}),
+        )
+        .unwrap();
     }
 }

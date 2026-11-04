@@ -82,6 +82,13 @@ The project has not been published, so the version below is for the repository o
   button, and `BRIDLE_PROXY` for an authenticated proxy.
 - Windows tooling without WSL: `scripts/dev.cmd`, the end-to-end suite in `tools/e2e`, `scripts/install-bridle.cmd`, `CLAUDE.md`.
 
+- Leftover sections of the plan: a **lease** on each file a run writes (`.bridle/leases.json`, case-insensitive paths, time to live) and a
+  **stale-write check** (`read_file` shows a hash; `write_file` and `edit_file` refuse a file that changed since it was read, and accept
+  `expected_sha256`); a **shadow repository** (`.bridle/shadow.git`) that gives a folder without Git the same checkpoints and Undo, with a 5 MB
+  file limit and a 200 MB stop; **`bridle doctor --repair`**; and `document_inspect` now reads a **PDF's** pages, title, author and text and
+  **lists** zip, tar and tar.gz archives (names that would unpack outside their folder are flagged; nothing is extracted), with a DEFLATE
+  decoder written for it.
+
 ### Fixed
 
 - Remote HTTPS requests used a bundled list of root certificates instead of the system store, so they failed behind a proxy that

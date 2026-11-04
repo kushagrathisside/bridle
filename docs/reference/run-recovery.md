@@ -27,8 +27,36 @@ leaves it. It holds the working tree as it was, including untracked files; files
 | Another Bridle window (or the command line) holds `.bridle/repo.lock` | The run is refused: "another Bridle is running a team in this project". The lock is released by the system if that program dies. |
 | The repository is in the middle of a merge, rebase, cherry-pick, revert or bisect, or has paths in conflict | The run is refused, with the reason. Finish or abort the operation first. |
 | You have uncommitted changes | The run goes ahead. They are in the "before" checkpoint, so nothing is lost. |
-| The folder is not a Git repository | The run goes ahead **without checkpoints** (so Undo is not available). The journal is still written. |
+| The folder is not a Git repository | Bridle makes a **shadow repository**, `.bridle/shadow.git`, and keeps the same checkpoints in it (see below). No `.git` appears in your folder. If git itself is missing the run goes ahead without checkpoints. |
 | A repository with no commit yet | Works. The checkpoint has no parent. |
+
+### A folder with no Git repository: the shadow repository
+
+The first run in such a folder creates `.bridle/shadow.git` (an ordinary Git directory, used with `GIT_DIR` and `GIT_WORK_TREE`, so your
+folder gets no `.git`). Checkpoints, Undo and recovery then work as in a repository. Its own ignore list leaves out `.bridle/`,
+`node_modules/`, `target/`, `.venv/`, `venv/`, `__pycache__/`, `dist/`, `build/` and `*.log`, and a `.gitignore` in your folder is honoured too.
+A file over **5 MB** is listed in the journal and not copied. A folder holding more than **200 MB** of files stops the run before it starts,
+with the reason: put the project under Git or add a `.gitignore`. If you later run `git init` there, the real repository is used from then
+on and the shadow is left alone (inspect it with `git --git-dir=.bridle/shadow.git --work-tree=. ...`, delete it by deleting the folder).
+Worktrees (parallel engineers) are not available without a real repository.
+
+### Leases and the stale-write check
+
+While a run is active, the file tools (`write_file`, `edit_file`) claim a **lease** on each file they write, in `.bridle/leases.json`
+(changed under `.bridle/leases.lock`, atomically). One run holds a path at a time; a path is the same however it is spelled (`Src\Lib.rs` and
+`src/lib.rs`); a lease ends when the run ends, or after 15 minutes if the run died. A write to a path another run holds is refused with who holds
+it. Members work one at a time today, so this protects against a lease left by a run that died and is what a second writer needs.
+
+Separately, `read_file` shows a hash of what it read (`(sha256 ...)`), the file tools remember it, and a later `write_file` or `edit_file` of
+that file is **refused when it has changed since** (you typed in the editor, a formatter ran): "changed since you read it; read it again".
+`write_file` and `edit_file` also take `expected_sha256` (at least 8 hex digits of the hash shown). A file that was never read can still be written.
+
+### Repair
+
+`bridle doctor --repair` puts right what a crash leaves: it ends leases (only when no run is alive), closes runs cut short (saving the state of
+the files as a checkpoint), removes `bridle-index-*` files from the Git directory, `.part-*` files of unfinished downloads and screenshots, old
+`*.tmp-*` files in `.bridle`, and browser session folders of processes that are gone. It says what it did, does nothing to a live run (it skips
+those steps when another Bridle holds the project lock), and is safe to repeat.
 
 ### What Undo does
 
@@ -74,6 +102,6 @@ for /f %t in ('git write-tree') do git commit-tree %t -p HEAD -m "my checkpoint"
 
 ## Not covered yet
 
-Leases on files (two members editing one file at once), worktrees for parallel engineers, a stale-read check on writes, and the
+Worktrees for parallel engineers, the integration step (`merge-tree`, Apply), the user's unsaved editor buffers as leases, and the
 small-model scheduler are planned, not built. Members work **one at a time** in your working copy, so two members never edit at once; the
 lock stops a second Bridle from starting a run. See [the plan](../spec/team-subagents-ideas-plan.md).

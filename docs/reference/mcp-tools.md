@@ -38,7 +38,7 @@ The table lists the tools in the order the server reports them. The class is the
 | `subagent` | EXECUTE_SAFE | Only when `subagents.enabled` is `true`. Off by default. |
 
 | `web_search`, `web_open`, `web_download` | NETWORK | Only when `[web] enabled`. See [Web research](../guide/web-research.md). Each is refused inside the tool unless `security.network = "allow"`. |
-| `document_inspect` | READ_ONLY | Only when `[web] enabled`. Reads a saved download by source id, or a file in the project. |
+| `document_inspect` | READ_ONLY | Only when `[web] enabled`. Reads a saved download by source id, or a file in the project: text, a PDF's pages and text, a zip, tar or tar.gz listing. |
 | `browser_navigate`, `browser_snapshot`, `browser_action` | NETWORK | Only when `[web] enabled` and `[web.browser] enabled`. A managed Chromium; see [The managed browser](../guide/web-browser.md). Refused inside the tool unless `security.network = "allow"`. |
 | `browser_close` | READ_ONLY | The same condition. Closes a session; always allowed so a session can be freed. |
 
