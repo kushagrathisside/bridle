@@ -9,7 +9,7 @@ download them, how to check them, and how to start, check and stop each server. 
 | Slot | Model | Quantisation | Size | Source (repository and revision) | File | Licence |
 |---|---|---|---|---|---|---|
 | `main` | Qwen3.5-9B | Q4_K_M | 5.68 GB | `unsloth/Qwen3.5-9B-GGUF` at `3885219b6810b007914f3a7950a8d1b469d598a5` | `Qwen3.5-9B-Q4_K_M.gguf` | Apache-2.0 |
-| `micro` | LFM2.5-1.2B-Thinking | Q4_K_M | 0.73 GB | `LiquidAI/LFM2.5-1.2B-Thinking-GGUF` at `9584426effbfa44b677e925793a12188a36b44ce` | `LFM2.5-1.2B-Thinking-Q4_K_M.gguf` | LFM Open License v1.0, research use |
+| `micro` | LFM2.5-1.2B-Thinking | Q4_K_M | 0.73 GB | `LiquidAI/LFM2.5-1.2B-Thinking-GGUF` at `9584426effbfa44b677e925793a12188a36b44ce` | `LFM2.5-1.2B-Thinking-Q4_K_M.gguf` | LFM Open License v1.0 (commercial use free below US$10 million annual revenue) |
 | `deep` | Ternary Bonsai 2 27B | PTQ1_0 | 5.95 GB | `prism-ml/Ternary-Bonsai-2-27B-gguf` at `b072e1d3b35a0a630cece372c2127528e0994386` | `Ternary-Bonsai-2-27B-PTQ1_0.gguf` | Apache-2.0 |
 
 The model files are not in the repository, and Bridle does not download them. Download each file from its source, into the
@@ -90,7 +90,7 @@ model requires stopping the `main` model first; Bridle does this for you when de
 - The `main` and `deep` models do not fit in 8 GB of GPU memory together.
 - The `deep` model's PTQ1_0 weights require the PrismML fork.
 - Speculative decoding is not used: none of the local files contains the draft head it needs.
-- The `micro` model's licence is for research use.
+- The `micro` model's licence is the LFM Open License v1.0: commercial use is free for companies below US$10 million annual revenue, and above that a licence from Liquid AI is needed (<https://www.liquid.ai/lfm-license>). Read it before you use the model in a product.
 
 ## If a server does not start
 

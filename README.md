@@ -316,7 +316,7 @@ Weights are not included, and Bridle does not download them. Each model's source
 | Slot | Model | Runs on | Role |
 |---|---|---|---|
 | `main` | Qwen3.5-9B, Q4_K_M (5.68 GB) | GPU | The agent's own turns, with vision when the projector is present. In use. |
-| `micro` | LFM2.5-1.2B-Thinking, Q4_K_M (0.73 GB) | CPU | Decides stalled loops when `decisions.provider = "local_lfm"`, with a rules fallback. Research use under the LFM Open License v1.0. |
+| `micro` | LFM2.5-1.2B-Thinking, Q4_K_M (0.73 GB) | CPU | Decides stalled loops when `decisions.provider = "local_lfm"`, with a rules fallback. Under the LFM Open License v1.0: commercial use is free below US$10 million annual revenue ([licence](https://www.liquid.ai/lfm-license)). |
 | `deep` | Ternary Bonsai 2 27B, PTQ1_0 (5.95 GB), PrismML llama.cpp fork | GPU, on demand | Never beside `main` on 8 GB. Health 8 of 8. Escalation to it is built and off by default. |
 
 Bridle runs one GPU model at a time. `main` and `deep` together are estimated at about 12.9 GiB, which does not fit in 8 GB.
