@@ -133,6 +133,14 @@ While a run works, the chat's Send does not send into it. Pressing **Enter** (or
 - Ideas are kept per project in `.bridle/ideas.json` and survive a restart. Nothing is sent when the window opens. At most 50 ideas
   of 8,000 characters. An idea is sent exactly as you wrote it.
 
+## Your files are protected
+
+Before a member works on an issue Bridle saves the state of your files, and saves it again afterwards, as Git checkpoints that no branch
+points to, so your branch, index and stash are never touched. **Undo changes** on an issue's detail panel puts back what the latest run
+changed (files you changed since are left alone). Only one Bridle can run a team in a project at a time, and a run is refused in the
+middle of a merge or rebase. A run cut short by a crash is found when the window opens and its files are saved. Exactly what is done, and
+how to inspect and undo it with plain Git, is in [Runs, checkpoints and recovery](../reference/run-recovery.md).
+
 ## Where things are kept
 
 | What | Where |
@@ -152,9 +160,8 @@ time**. Members are prompts and tools, not separate models.
 
 - The **small-model fleet** (a manager model and several small workers running in parallel on the GPU, with the 9B model unloaded) and
   the model scheduler are planned, with measurements first.
-- The **Git layer** (checkpoints, per-step undo, worktrees for parallel engineers, crash recovery of runs, a repository lock, file
-  leases) is planned. Until it is built, members edit the project's working copy through the same file tools and policy as the chat,
-  one at a time, and nothing is committed for you.
+- **Worktrees for parallel engineers and file leases** are planned. Members edit the project's working copy through the same file tools
+  and policy as the chat, **one at a time**, and nothing is committed for you.
 - A model-based pick for a tagged team is not built; the rules decide.
 - How well a 9B model plays a project manager or a tester is **barely measured**. The same project-manager request was run twice:
   once the whole chain completed, once the manager created one of the two issues asked for and her turn ended blocked. Expect to step

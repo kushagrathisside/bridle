@@ -12,6 +12,12 @@ The project has not been published, so the version below is for the repository o
   in the machine config folder; the board is `.bridle/board/events.jsonl`; ideas are `.bridle/ideas.json`. Members work through
   harness board tools (`board_ready`, `board_list`, `board_show`, `board_create`, `board_claim`, `board_comment`, `board_update`)
   whose use is limited by role, and classed by the policy as harness tools. See [the guide](docs/guide/team-and-board.md).
+- The chat renders Markdown (tables, headings, lists, quotes, code blocks with Copy, links), with a Copy button on each answer and a
+  jump-to-latest button. The Explorer has a project header with the branch, a fuzzy filter, an Open editors section, Git colours and
+  letters, indent guides, remembered open folders, keyboard navigation and drag and drop to move.
+- A member's turn is protected by a Git layer: a project lock, checkpoints before and after under `refs/bridle/runs/`, a journal, recovery
+  of a cut-short run, and Undo changes on the issue. See [Runs, checkpoints and recovery](docs/reference/run-recovery.md).
+- `board_plan` creates all the child issues of a plan in one call; a project manager who makes no plan is given the issue back twice.
 - A slot whose server is still loading shows as `warming` and the chat does not send to it.
 - Harness core: configuration with validation rules V1 to V36, a path guard, a command-risk classifier, a tool policy,
   output redaction, and a fail-closed hook for OpenCode 1.19.3 (M0 to M2).

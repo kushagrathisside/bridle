@@ -10,6 +10,7 @@ pub mod chat;
 pub mod cli;
 pub mod commands;
 pub mod crew;
+pub mod gitlayer;
 pub mod host;
 pub mod ideas;
 pub mod image;

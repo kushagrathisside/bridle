@@ -107,6 +107,7 @@ const READ_ONLY_HARNESS_TOOLS: &[&str] = &[
 /// and what each member may do with these tools is decided inside them from the member's role.
 const BOARD_WRITE_TOOLS: &[&str] = &[
     "board_create",
+    "board_plan",
     "board_claim",
     "board_comment",
     "board_update",
@@ -947,6 +948,7 @@ mod tests {
         }
         for tool in [
             "board_create",
+            "board_plan",
             "board_claim",
             "board_comment",
             "board_update",

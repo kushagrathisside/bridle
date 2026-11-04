@@ -110,6 +110,7 @@ function renderTabs() {
     tab.addEventListener("auxclick", (e) => { if (e.button === 1) closeTab(entry.id); });
     return tab;
   }));
+  renderOpenEditors();
 }
 
 function showHost(name) {
@@ -169,6 +170,7 @@ async function activate(id) {
   }
   activeId = id;
   renderTabs();
+  if (entry.kind === "file") revealInTree(entry.path);
   if (entry.kind === "image") {
     $("image-view").replaceChildren(el("img", { src: entry.preview, alt: entry.path }));
     return showHost("image-view");
@@ -384,55 +386,7 @@ function isViewActive(name) {
 
 // ---------- explorer ----------
 
-const tree = { expanded: new Set(), selected: null };
-
-async function listInto(container, dir, depth) {
-  const result = await invoke("list_dir", { path: dir });
-  if (!result.ok) {
-    container.replaceChildren(el("p", { class: "muted pad", text: result.error }));
-    return;
-  }
-  const nodes = [];
-  for (const entry of result.entries) {
-    const path = dir ? `${dir}/${entry.name}` : entry.name;
-    const twisty = el("span", { class: "twisty", text: entry.dir ? (tree.expanded.has(path) ? "▾" : "▸") : "" });
-    const row = el("div", { class: `node${tree.selected === path ? " selected" : ""}`, title: path, "data-path": path, "data-dir": entry.dir ? "1" : "" },
-      twisty, entry.dir ? null : fileIcon(entry.name), el("span", { text: entry.name }));
-    row.style.paddingLeft = `${10 + depth * 14}px`;
-    const children = el("div");
-    if (entry.dir) {
-      row.addEventListener("click", async () => {
-        tree.selected = path;
-        markSelected();
-        if (tree.expanded.has(path)) {
-          tree.expanded.delete(path);
-          twisty.textContent = "▸";
-          children.replaceChildren();
-        } else {
-          tree.expanded.add(path);
-          twisty.textContent = "▾";
-          await listInto(children, path, depth + 1);
-        }
-      });
-      if (tree.expanded.has(path)) await listInto(children, path, depth + 1);
-    } else {
-      row.addEventListener("click", () => openFile(path));
-    }
-    row.addEventListener("contextmenu", (e) => { e.preventDefault(); tree.selected = path; markSelected(); showTreeMenu(e, path, entry.dir); });
-    nodes.push(row, children);
-  }
-  if (result.truncated) nodes.push(el("p", { class: "muted pad", text: "More entries than the explorer lists." }));
-  if (nodes.length === 0 && depth === 0) nodes.push(el("p", { class: "muted pad", text: "This folder is empty." }));
-  container.replaceChildren(...nodes);
-}
-
-function markSelected() {
-  document.querySelectorAll("#tree .node").forEach((n) => n.classList.toggle("selected", n.dataset.path === tree.selected));
-}
-
-function refreshTree() {
-  return listInto($("tree"), "", 0).catch(() => {});
-}
+// The tree itself (listing, selection, drag and drop, the filter) is in explorer.js.
 
 // The folder a new entry goes into: the selected folder, the folder of the selected file, or the root.
 function targetFolder() {
@@ -542,6 +496,7 @@ async function loadChanges() {
   const list = $("changes-files");
   const count = result.ok ? result.files.length : 0;
   $("changes-count").textContent = count ? String(count) : "";
+  applyDecorations(result);
   if (!result.ok) {
     $("changes-branch").textContent = "Changes";
     list.replaceChildren(el("p", { class: "muted pad", text: `Cannot read the repository: ${result.error}` }));

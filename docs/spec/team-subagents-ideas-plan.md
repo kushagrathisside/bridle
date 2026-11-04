@@ -937,8 +937,8 @@ machine; the numbers are in [progress.md](../status/progress.md).
 | F2 teams, roles and members (data) | **Built.** Six teams, nine roles, ten starting members, handles for a member, a role and a team, a rule-based pick, per-member prompts, a saved roster (`team.json`), headcount editing. 10 unit tests. |
 | F2.1 crew rail | **Built.** Avatars on the right edge with working state and open-issue badges; click to tag, right-click menu, team editor. End-to-end checked. |
 | F2.2 board | **Built (first slice).** Append-only log with checksums, states, children, dependencies, ready queue, one claim per member, idempotent creation, recovery after a crash, Markdown export, role-limited board tools, a popup with columns, detail panel, filters and a runner. 14 + 4 unit tests, one policy test, and 3 end-to-end checks. |
-| F1 sub-agents, small-model fleet, F0.2 scheduler | **Not built.** Needs the P0 measurements first. |
-| F0.4 to F0.6 Git layer, leases, recovery of runs | **Not built.** Members edit the working copy one at a time through the existing file tools and policy. |
+| F1 sub-agents, small-model fleet, F0.2 scheduler | **Not built.** The first P0 measurement is done: LFM2.5-1.2B as parallel slots on the GPU gives 160 tokens/s for one slot and 670 aggregate for eight, adding 1.4 to 1.8 GB ([progress.md](../status/progress.md)). The coder and manager models still have to be downloaded and measured. |
+| F0.4 Git layer (checkpoints, undo, lock, preflight, journal), F0.6 recovery | **Built (second slice)** for sequential runs: 8 tests on real repositories and the runbook [run-recovery.md](../reference/run-recovery.md). Not built: leases and the stale-write check (F0.5), worktrees for parallel engineers, a shadow repository for a folder without Git, `doctor --repair`. |
 | F0.7 handoff envelope and artifact store | **Replaced for now** by issues and comments on the board (a handoff is an issue or a comment). The envelope is not built. |
 | F4 web search, F5 further polish, F6 slot save and restore | **Not built.** |
 

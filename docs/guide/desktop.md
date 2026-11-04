@@ -27,10 +27,11 @@ started when it closes.
 |---|---|
 | Activity bar | Files, Search, Changes, Models, Info. A second click hides the sidebar. |
 | Status bar | Git branch, the model slot and its state, tokens used, the time of the last refresh, and for a file the line, column and language. |
+| Explorer | The project's name and branch at the top; a **filter** that finds files as you type (fuzzy, best match first, Enter opens it); an **Open editors** list with unsaved marks; the file tree with Git colours (yellow modified, green new or added, red deleted) and letters, a dot on folders that contain changes, indent guides, and the folders you had open remembered for each project. Arrow keys move, Right and Left open and close folders, Enter opens, F2 renames, Delete deletes. **Drag** a file or folder onto a folder to move it (onto the empty part to move it to the top). The active file is revealed in the tree. |
 | Editor | Monaco with tabs and breadcrumbs. Ctrl+S saves. A file the agent changes updates by itself unless you have unsaved edits; then the tab is marked `!` and saving asks what to do. |
 | Diff tabs | The working copy against the last commit, side by side. Read only. |
 | Terminal | Your own shell (Ctrl+`). Pick Git Bash, PowerShell, Command Prompt or WSL. What you type here is not checked by the model's policy. |
-| Chat | Streams the answer, shows each tool call as a card with its verdict, and has Open file and View diff buttons for file tools. |
+| Chat | Streams the answer, shows each tool call as a card with its verdict, and has Open file and View diff buttons for file tools. Answers are shown as Markdown: tables (with alignment), headings, nested, numbered and task lists, quotes, rules, and code blocks with a **Copy** button; a **Copy** button appears over each answer; **Latest** jumps to the newest message after you scroll up. Links are shown but not followed (a click copies the address). |
 
 Shortcuts: Ctrl+P go to file, Ctrl+Shift+F search, Ctrl+Shift+E explorer, Ctrl+Shift+G changes, Ctrl+S save, Ctrl+W close tab,
 Ctrl+J chat, Ctrl+` terminal, Ctrl+L new chat, Ctrl+O change project, Esc stops a running turn. While the terminal has focus its

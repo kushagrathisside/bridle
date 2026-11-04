@@ -18,7 +18,8 @@ use crate::crew::{Level, Member, Role, Roster, Target, Team};
 pub const GUIDE: &str = "The team's board lists the issues. Start with board_ready to see what you can take, board_show to read one, \
 and board_claim to take it. While you work, board_comment says what you found or did. When you finish, board_update moves the issue \
 on: in_review when it needs checking, done when it is finished, blocked with a note when you cannot go on. Use board_create to hand \
-part of the work to another team; give each issue a clear title, what must be true for it to be done (acceptance), and what it \
+part of the work to another team; to split a piece of work into several issues, call board_plan ONCE with all the steps (it makes them \
+together, so none is forgotten) instead of calling board_create several times; give each issue a clear title, what must be true for it to be done (acceptance), and what it \
 waits for (blocked_by). Do not create an issue that already exists.";
 
 /// The tools of one member for one run.
@@ -39,6 +40,7 @@ pub fn member_tools(
         Box::new(List(Arc::clone(&ctx))),
         Box::new(Show(Arc::clone(&ctx))),
         Box::new(Create(Arc::clone(&ctx))),
+        Box::new(Plan(Arc::clone(&ctx))),
         Box::new(Claim(Arc::clone(&ctx))),
         Box::new(Comment(Arc::clone(&ctx))),
         Box::new(Update(ctx)),
@@ -378,6 +380,158 @@ impl McpTool for Create {
         Ok(out(
             format!("{verb} {}", line(&issue)),
             json!({"id": issue.id, "created": created, "status": issue.status.word()}),
+            ctx,
+        ))
+    }
+}
+
+struct Plan(Arc<Ctx>);
+
+impl McpTool for Plan {
+    fn name(&self) -> &'static str {
+        "board_plan"
+    }
+    fn description(&self) -> &'static str {
+        "Split a piece of work into several issues at once, all or none. Use this instead of calling board_create many times. \
+         Each step has a title, who does it (assignee: a member, a role such as eng.engineer, or a team such as qa), what must be true \
+         for it to be done (acceptance), and after: the numbers (starting at 1) of the earlier steps it waits for. The issues become \
+         children of parent, which defaults to the issue you hold."
+    }
+    fn input_schema(&self) -> Value {
+        json!({"type": "object", "properties": {
+            "parent": {"type": "string", "description": "The issue the steps belong to. Defaults to the issue you hold."},
+            "steps": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"type": "object", "properties": {
+                "title": {"type": "string"},
+                "assignee": {"type": "string", "description": "A member handle, a role id such as eng.engineer, or a team id such as qa."},
+                "body": {"type": "string"},
+                "acceptance": {"type": "array", "items": {"type": "string"}},
+                "after": {"type": "array", "items": {"type": "integer", "minimum": 1}, "description": "Numbers of earlier steps this one waits for."},
+                "priority": {"type": "integer", "minimum": 0, "maximum": 3}
+            }, "required": ["title", "assignee"], "additionalProperties": false}}
+        }, "required": ["steps"], "additionalProperties": false})
+    }
+    fn call(&self, args: &Value, ctx: &ToolContext) -> Result<ToolOutput, String> {
+        let c = &self.0;
+        let board = c.store.load().map_err(Ctx::fail)?;
+        let parent = match opt_str(args, "parent") {
+            Some(p) => p.to_owned(),
+            None => board
+                .issues
+                .values()
+                .find(|i| {
+                    i.status == Status::InProgress
+                        && i.assignee.as_deref() == Some(c.member.as_str())
+                })
+                .map(|i| i.id.clone())
+                .ok_or("say which issue the steps belong to (parent): you hold none")?,
+        };
+        let parent_issue = board
+            .issues
+            .get(&parent)
+            .ok_or_else(|| format!("there is no issue {parent}"))?;
+        if !c.lead() && parent_issue.assignee.as_deref() != Some(c.member.as_str()) {
+            return Err(format!(
+                "you can only split an issue assigned to you; {parent} is not"
+            ));
+        }
+        let steps = args
+            .get("steps")
+            .and_then(Value::as_array)
+            .ok_or("`steps` must be a list")?;
+        if steps.is_empty() || steps.len() > 8 {
+            return Err("give between 1 and 8 steps".to_owned());
+        }
+        let resolver = Create(Arc::clone(&self.0));
+        let mut new: Vec<NewIssue> = Vec::new();
+        let mut after: Vec<Vec<usize>> = Vec::new();
+        let mut problems: Vec<String> = Vec::new();
+        for (index, step) in steps.iter().enumerate() {
+            let number = index + 1;
+            let Some(title) = opt_str(step, "title") else {
+                problems.push(format!("step {number} has no title"));
+                continue;
+            };
+            let body = opt_str(step, "body").unwrap_or_default();
+            let assignee = match opt_str(step, "assignee") {
+                Some(handle) => match resolver.resolve_assignee(handle, &format!("{title} {body}"))
+                {
+                    Ok(member) => Some(member),
+                    Err(error) => {
+                        problems.push(format!("step {number}: {error}"));
+                        continue;
+                    }
+                },
+                None => {
+                    problems.push(format!("step {number} has no assignee"));
+                    continue;
+                }
+            };
+            let waits: Vec<usize> = step
+                .get("after")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_u64)
+                        .filter_map(|n| usize::try_from(n).ok())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            if let Some(bad) = waits.iter().find(|n| **n == 0 || **n >= number) {
+                problems.push(format!(
+                    "step {number} waits for step {bad}, which is not an earlier step"
+                ));
+                continue;
+            }
+            after.push(waits.iter().map(|n| n - 1).collect());
+            let track = assignee
+                .as_deref()
+                .and_then(|a| c.roster.member(a))
+                .and_then(|m| c.roster.role(&m.role))
+                .map(|r| r.team.clone());
+            new.push(NewIssue {
+                title: title.to_owned(),
+                body: body.to_owned(),
+                assignee,
+                track,
+                parent: Some(parent.clone()),
+                acceptance: strings(step, "acceptance")?,
+                priority: step
+                    .get("priority")
+                    .and_then(Value::as_u64)
+                    .and_then(|p| u8::try_from(p).ok()),
+                key: Some(format!("{parent}:{}", title.trim().to_lowercase())),
+                ..NewIssue::default()
+            });
+        }
+        if !problems.is_empty() {
+            return Err(format!(
+                "nothing was created. Fix these and call board_plan again with all the steps:\n- {}",
+                problems.join("\n- ")
+            ));
+        }
+        let made = c
+            .store
+            .create_plan(&c.member, &new, &after)
+            .map_err(Ctx::fail)?;
+        let list: Vec<String> = made
+            .iter()
+            .enumerate()
+            .map(|(i, (issue, created))| {
+                format!(
+                    "{}. {}{}",
+                    i + 1,
+                    if *created { "" } else { "(already existed) " },
+                    line(issue)
+                )
+            })
+            .collect();
+        Ok(out(
+            format!(
+                "Planned {} issue(s) under {parent}:\n{}",
+                made.len(),
+                list.join("\n")
+            ),
+            json!({"parent": parent, "ids": made.iter().map(|(i, _)| i.id.clone()).collect::<Vec<_>>()}),
             ctx,
         ))
     }
@@ -740,6 +894,71 @@ mod tests {
             )
             .is_ok()
         );
+    }
+
+    #[test]
+    fn a_plan_creates_every_step_with_its_dependencies_or_nothing() {
+        let (_d, store, ctx) = setup();
+        let pm = tools(&store, "priya");
+        let id = call(
+            &pm,
+            "board_create",
+            json!({"title": "Add a cache", "assignee": "priya"}),
+            &ctx,
+        )
+        .unwrap()
+        .structured
+        .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        call(&pm, "board_claim", json!({"id": id}), &ctx).unwrap();
+        // One bad step: nothing is created, and every problem is listed.
+        let bad = json!({"steps": [
+            {"title": "Implement", "assignee": "eng"},
+            {"title": "Review", "assignee": "nobody-here", "after": [1]},
+            {"title": "Note", "assignee": "product", "after": [3]}]});
+        let error = call(&pm, "board_plan", bad, &ctx).unwrap_err();
+        assert!(
+            error.contains("nothing was created")
+                && error.contains("step 2")
+                && error.contains("step 3"),
+            "{error}"
+        );
+        assert!(store.load().unwrap().children(&id).is_empty());
+        let good = json!({"steps": [
+            {"title": "Implement the cache", "assignee": "eng", "acceptance": ["tests pass"]},
+            {"title": "Review the cache", "assignee": "qa", "after": [1]},
+            {"title": "Write the release note", "assignee": "product", "after": [1]}]});
+        let made = call(&pm, "board_plan", good.clone(), &ctx).unwrap();
+        assert!(made.text.contains("Planned 3 issue(s)"), "{}", made.text);
+        let board = store.load().unwrap();
+        let kids = board.children(&id);
+        assert_eq!(kids.len(), 3);
+        let statuses: Vec<Status> = kids.iter().map(|i| i.status).collect();
+        assert_eq!(statuses, [Status::Ready, Status::Blocked, Status::Blocked]);
+        assert_eq!(kids[1].blocked_by, [kids[0].id.clone()]);
+        // A retried call returns the same issues.
+        let again = call(&pm, "board_plan", good, &ctx).unwrap();
+        assert!(again.text.contains("already existed"), "{}", again.text);
+        assert_eq!(store.load().unwrap().children(&id).len(), 3);
+        // The parent defaults to the issue the member holds, and only a lead or the holder may split an issue.
+        let default_parent = call(
+            &pm,
+            "board_plan",
+            json!({"steps": [{"title": "One more step", "assignee": "eng"}]}),
+            &ctx,
+        )
+        .unwrap();
+        assert!(default_parent.text.contains(&id), "{}", default_parent.text);
+        let error = call(
+            &tools(&store, "sam"),
+            "board_plan",
+            json!({"parent": id, "steps": [{"title": "x", "assignee": "qa"}]}),
+            &ctx,
+        )
+        .unwrap_err();
+        assert!(error.contains("assigned to you"), "{error}");
     }
 
     #[test]

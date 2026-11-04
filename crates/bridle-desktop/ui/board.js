@@ -4,7 +4,7 @@
 // The rules (states, dependencies, claims) are in crates/harness-cli/src/board.rs; this file shows them and sends the
 // person's changes. A tag in the chat makes an issue for the person or team tagged, and the runner works it.
 
-const board = { issues: [], load: {}, ready: [], open: false, filter: "", byTeam: false, auto: true, paused: false, detail: null, skipped: 0 };
+const board = { issues: [], load: {}, ready: [], undoable: [], open: false, filter: "", byTeam: false, auto: true, paused: false, detail: null, skipped: 0 };
 
 const COLUMNS = [["backlog", "Backlog"], ["ready", "Ready"], ["in_progress", "In progress"], ["in_review", "In review"], ["blocked", "Blocked"], ["done", "Done"]];
 // What the person may move an issue to by hand. Starting work is the runner's job (it takes the issue for its owner).
@@ -19,6 +19,7 @@ function applyBoard(answer) {
   board.issues = answer.issues;
   board.load = answer.load || {};
   board.ready = answer.ready || [];
+  board.undoable = answer.undoable || [];
   board.skipped = answer.skipped || 0;
   return true;
 }
@@ -147,6 +148,7 @@ function detailEl() {
   });
   const actions = [assign, moves];
   if (issue.status === "ready" && issue.assignee) actions.push(button("Run now", () => { board.paused = false; runIssueNow(issue.id); }, "small primary"));
+  if (board.undoable.includes(issue.id)) actions.push(button("Undo changes", () => undoIssue(issue), "small"));
   rows.push(el("div", { class: "detail-actions" }, ...actions));
   const comment = el("input", { type: "text", placeholder: "Add a comment", maxlength: "2000" });
   const post = async () => {
@@ -220,6 +222,17 @@ async function runNextIssue(force) {
   } finally {
     board.starting = false;
   }
+}
+
+// Puts back the files the latest run on the issue changed. Files you changed since are left alone.
+async function undoIssue(issue) {
+  if (!(await confirmDialog("Undo this run?", `The files that the latest run on ${issue.id} changed are put back as they were before it. Files you changed since are not touched.`, "Undo", true))) return;
+  const r = await invoke("undo_issue", { id: issue.id });
+  if (!r.ok) return toast(r.error, "bad");
+  const left = r.skipped.length ? ` ${r.skipped.length} left alone: ${r.skipped.map((s) => s.path).join(", ")}.` : "";
+  toast(`Put back ${r.restored.length} file(s), removed ${r.removed.length}.${left}`, r.skipped.length ? "warn" : "ok");
+  agentWrote("");
+  await refreshBoard();
 }
 
 async function runIssueNow(id) {
