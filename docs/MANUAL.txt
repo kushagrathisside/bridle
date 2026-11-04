@@ -20,6 +20,8 @@ Contents
   12. The managed browser (off by default, optional install)
   12A. Window screenshots (off by default)
   12B. The small-model fleet (off by default)
+  12C. Notices and background commands
+  12D. Lanes (parallel members, merged by you)
   13. Command line reference
   14. Where Bridle keeps things
   15. Troubleshooting
@@ -503,6 +505,51 @@ Not built: worktrees for parallel engineers, a manager that plans work, use insi
 decisions/0022-the-fleet-is-small-models-loaded-together-and-a-deterministic-scheduler-swaps-them.md.
 
 
+12C. NOTICES AND BACKGROUND COMMANDS
+------------------------------------
+A NOTICE is a short block that Bridle adds after a tool result to tell the model that something happened meanwhile. It is always on
+(a block appears only when there is something to say) and looks like this:
+
+    [[bridle notices 4433832c4979: added by Bridle after the tool finished, not part of its output]]
+    1. [background_finished] bg-1 `git --version` passed after 0 s. Read its output with command_status bg-1.
+    [[end of bridle notices 4433832c4979]]
+
+The model is told, once, the random id (marker) of the block. Tool results are scrubbed of that id and of the frame words, so a file, a
+commit message or a web page cannot pose as a notice. A notice is a hint: it can be lost, and it names the tool that shows the real
+state. At most 32 wait, 400 characters each, 8 are shown at once. Notices come from background commands that ended, and from files the
+model read that someone else (you in an editor, another run) changed or deleted since.
+
+BACKGROUND COMMANDS run while the model goes on working. Off by default (every tool costs prompt tokens):
+
+    [workflow]
+    background_commands = true           (in bridle.toml or the machine config)
+
+Tools: command_start (program, args, cwd, timeout_ms: judged exactly like run_command; returns an id such as bg-1),
+command_status (state, exit code, last 4 KB of output; wait_ms up to 10 s; no id = list), command_stop (ends a command Bridle started).
+Limits: three at once, time limit 1 s to 10 min (default 5), 64 KiB of output kept. They are stopped when the tool server ends; if
+Bridle itself is killed, a running command goes on until it ends. Not measured: how well a 9B model uses them.
+See guide/background-commands.md and decisions/0023-notices-background-commands-and-lanes-from-infinity.md.
+
+
+12D. LANES (PARALLEL MEMBERS, MERGED BY YOU)
+--------------------------------------------
+A lane is a separate working copy of a Git project for one member. Two members in two lanes cannot step on each other; you review
+each lane's diff and merge. Needs a real Git repository.
+
+    bridle lanes new NAME [--from LANE]       snapshot of the project (uncommitted changes included), in .bridle\lanes\NAME
+    bridle --workspace .bridle\lanes\NAME ...  give the folder to a member as its workspace
+    bridle lanes diff NAME [--stat]           what the lane changed since it started
+    bridle lanes integrate A B [--dry-run] [--skip-conflicts] [--remove]
+                                              merge lanes into the project in order; if one conflicts NOTHING is written;
+                                              files you changed since the snapshot are left alone and listed
+    bridle lanes undo                         put the project back as it was before the last integration
+    bridle lanes remove NAME | list | path NAME
+
+Files Git ignores (build folders, .env) are not in a lane. The model cannot integrate: it is your step. The board does not give members
+lanes by itself yet. Checked with real Git repositories and through the built program; not yet with two real models at once.
+See guide/lanes.md.
+
+
 13. COMMAND LINE REFERENCE
 --------------------------
 Global options:  --config FILE   --workspace DIR   -h/--help   -V/--version        "bridle COMMAND --help" shows any command.
@@ -520,6 +567,7 @@ Global options:  --config FILE   --workspace DIR   -h/--help   -V/--version     
     bridle web status | providers | search | open | download | inspect | browser status|setup|test|remove     (sections 11-12)
     bridle desktop screenshot PROGRAM [ARGS...] [--wait-ms N] [--title T]     a picture of that program's window (section 12A)
     bridle fleet status | up | down | recover | run TASKS.json     the small-model fleet and its scheduler (section 12B)
+    bridle lanes new | list | path | diff | integrate | undo | remove     parallel working copies and your merge of them (section 12D)
     bridle subagent --role explore|summarise --task T [--path F ...] [--text T]     the small-model reader tier (off by default)
     bridle tui                           the terminal Control Center (guide/tui.md)
     bridle mcp                           serve Bridle's tools over MCP (OpenCode starts this)
@@ -542,6 +590,7 @@ Exit codes: 0 success (including warnings); 1 an error: a failing check, or a co
       web\downloads\          files saved by web_download or the browser;  web\screenshots\  browser screenshots
       board\events.jsonl      the team board (append-only)         ideas.json   the saved ideas
       swap.json               exists only while a fleet swap is unfinished (bridle fleet recover)
+      lanes\                  one folder per lane (NAME) and its record (NAME.lane.json)
       leases.json             which run holds which file;  shadow.git  checkpoints for a folder without Git
       manifests\              what was run: model hash, revision, runtime build, hardware
       attachments\            pictures attached in the chat
@@ -597,6 +646,7 @@ Model files and runtimes are yours; Bridle never deletes them.
     embedded font encodings, scans and other compressions. It was tried on generated samples, not on a collection of real papers.
   * The code index is syntactic: find_references matches names by spelling and does not resolve types or imports.
   * The context budget and the video-memory guard are estimates.
+  * Notices, background commands and lanes are tested and were run through the built program, but no real model has used them yet.
   * Window screenshots were tried on one program on one display; a covered or half-drawn window can come back wrong.
   * Web research providers are untested against the real services. The browser has been run on one machine and one company proxy.
   * No installer program and no automatic update.

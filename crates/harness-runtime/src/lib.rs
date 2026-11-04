@@ -18,6 +18,7 @@ pub mod leases;
 pub mod manifest;
 pub mod mcp;
 pub mod memory;
+pub mod notices;
 pub mod process;
 pub mod providers;
 pub mod routing;

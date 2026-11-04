@@ -418,6 +418,9 @@ pub struct WorkflowSection {
     /// Whether the `task_status` tool is offered to the model. Off by default, because
     /// every tool schema costs prompt tokens on a 16K-context model.
     pub task_status: bool,
+    /// Whether the tools `command_start`, `command_status` and `command_stop` are offered: a command runs in the background
+    /// while the model goes on, and its end arrives as a notice (ADR-0023). Off by default for the same reason as `task_status`.
+    pub background_commands: bool,
 }
 
 impl Default for WorkflowSection {
@@ -429,6 +432,7 @@ impl Default for WorkflowSection {
             repeated_edit_count: 4,
             refusal_cap: 3,
             task_status: false,
+            background_commands: false,
         }
     }
 }

@@ -36,6 +36,8 @@ The table lists the tools in the order the server reports them. The class is the
 | `adapter_<name>` | EXECUTE_SAFE | One tool per `[[tools.adapters]]` entry in the machine configuration. A repository cannot add tools. |
 | `task_status` | READ_ONLY | Only when `workflow.task_status` is `true`. Off by default. |
 | `subagent` | EXECUTE_SAFE | Only when `subagents.enabled` is `true`. Off by default. |
+| `command_start` | EXECUTE_SAFE (each command judged as `run_command`) | Only when `workflow.background_commands` is `true`. Starts a program in the background; returns an id. See [Notices and background commands](../guide/background-commands.md). |
+| `command_status`, `command_stop` | READ_ONLY | The same condition. Read a background command's state and output; end one that Bridle started (always allowed, like `browser_close`). |
 
 | `web_search`, `web_open`, `web_download` | NETWORK | Only when `[web] enabled`. See [Web research](../guide/web-research.md). Each is refused inside the tool unless `security.network = "allow"`. |
 | `document_inspect` | READ_ONLY | Only when `[web] enabled`. Reads a saved download by source id, or a file in the project: text, a PDF's pages and text, a zip, tar or tar.gz listing. |

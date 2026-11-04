@@ -176,6 +176,7 @@ repeated_command_window = 5 # recent calls in which they are counted (at most 16
 repeated_edit_count = 4     # edits of one file since the last verification
 refusal_cap = 3             # loop refusals in a row before the harness stops refusing on loop grounds
 task_status = false         # offer the task_status tool to the model
+background_commands = false # offer command_start, command_status and command_stop (see background-commands.md)
 ```
 
 `decisions.provider` chooses who decides a stalled loop: `rules` (the default) or `local_lfm`, which asks the micro slot. A
@@ -223,6 +224,7 @@ The `[context]` section sets the budget for tool results in each model request. 
 | `repeated_edit_count` | 4 | Edits to one file since the last verification that count as a loop. At least 2 (V27). |
 | `refusal_cap` | 3 | Loop refusals in a row before Bridle stops refusing on loop grounds and shows a notice instead. At least 1 (V28). |
 | `task_status` | `false` | Offers the `task_status` tool to the model. |
+| `background_commands` | `false` | Offers `command_start`, `command_status` and `command_stop`: a command runs in the background and its end arrives as a notice. See [Notices and background commands](background-commands.md). |
 
 ### `[security]`
 

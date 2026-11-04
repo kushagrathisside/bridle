@@ -538,6 +538,9 @@ impl Agent {
             system.push_str("\n\n");
             system.push_str(persona);
         }
+        // How a notice from Bridle looks, with this chat's marker (ADR-0023).
+        system.push_str("\n\n");
+        system.push_str(&self.server.notice_guide());
         // The same answer the OpenCode hook gives for the system prompt: the repository memory and the task state.
         // A part that cannot be read is logged by the hook path and left out, so the chat and the hook agree.
         let answer = hook::answer_with(

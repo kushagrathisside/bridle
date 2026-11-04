@@ -88,6 +88,12 @@ The project has not been published, so the version below is for the repository o
   file limit and a 200 MB stop; **`bridle doctor --repair`**; and `document_inspect` now reads a **PDF's** pages, title, author and text and
   **lists** zip, tar and tar.gz archives (names that would unpack outside their folder are flagged; nothing is extracted), with a DEFLATE
   decoder written for it.
+- Background commands (ADR-0023), off by default (`[workflow] background_commands`): `command_start`, `command_status` and
+  `command_stop` run a command under the same policy and sandbox as `run_command` while the model goes on; three at once, a time limit of
+  at most ten minutes, 64 KiB of output kept; stopped when the tool server ends.
+- Lanes (ADR-0023): `bridle lanes new / list / path / diff / integrate / undo / remove`. A lane is a Git worktree started from a
+  snapshot of the project; parallel members work in separate lanes, and the person merges them three ways (nothing is written if a lane
+  conflicts; files changed since the snapshot are left alone; checkpoints and undo). The board runner does not use lanes yet.
 - Window screenshots (ADR-0021), off by default and machine-config only (`[desktop]`, rule V50): the tool `window_screenshot` and
   `bridle desktop screenshot PROGRAM` start a program under the same rules as `run_command`, wait for its window, take a picture of that
   window only (the process tree Bridle started; never the desktop or other windows), keep the PNG as a source record and stop the program.
@@ -108,6 +114,10 @@ The project has not been published, so the version below is for the repository o
 
 ### Changed
 
+- Notices (ADR-0023): after a tool result the server may add a block, framed with a per-server random marker that the model is told
+  once, saying what happened meanwhile (a background command ended; a file the model read was changed or deleted on disk by someone
+  else). Tool results are scrubbed of the marker and the frame words, so nothing a tool returns can pose as a notice. A notice is a hint
+  and names the tool that shows the real state. The file tools now remember size and time as well as the hash of what they read.
 - A sub-agent answer's reference is dropped (and counted) when it names a line that the input does not have, not only when it names an
   input that is not there. A real run had cited line 4105 of a file of 526 lines.
 - The product name is Bridle everywhere (ADR-0018): `bridle.toml`, `.bridle/`, `BRIDLE_*`, the `bridle` machine config folder
