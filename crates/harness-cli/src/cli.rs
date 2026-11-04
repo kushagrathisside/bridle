@@ -104,6 +104,11 @@ enum Command {
         #[command(subcommand)]
         action: commands::fleet::FleetAction,
     },
+    /// Lanes: separate working copies for parallel members, and the person's merge of them (ADR-0023).
+    Lanes {
+        #[command(subcommand)]
+        action: commands::lanes::LanesAction,
+    },
     /// Window screenshots: start a program, take a picture of its window, stop it (ADR-0021).
     Desktop {
         #[command(subcommand)]
@@ -184,6 +189,7 @@ pub fn run() -> ExitCode {
                 }
                 Command::Egress => commands::egress::run(&app),
                 Command::Fleet { action } => commands::fleet::run(&app, &action),
+                Command::Lanes { action } => commands::lanes::run(&app, &action),
                 Command::Desktop { action } => commands::desktop::run(&app, &action),
                 Command::Web { action } => commands::web::run(&app, &action),
                 Command::Subagent {

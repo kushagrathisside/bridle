@@ -10,6 +10,7 @@ pub mod fleet;
 pub mod health;
 pub mod hook;
 pub mod init;
+pub mod lanes;
 pub mod mcp;
 pub mod models;
 pub mod plugins;

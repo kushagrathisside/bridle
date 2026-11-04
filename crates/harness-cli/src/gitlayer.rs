@@ -131,7 +131,7 @@ pub fn ensure_shadow(workspace: &Path) -> Result<bool> {
     Ok(true)
 }
 
-fn git(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Result<String> {
+pub(crate) fn git(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Result<String> {
     git_with_input(dir, args, env, None)
 }
 
@@ -406,7 +406,7 @@ pub fn undoable_scopes(workspace: &Path) -> BTreeSet<String> {
 }
 
 /// How a run changed the tree between two checkpoints: `(status, path)` with status `A`, `M` or `D`.
-fn changes(workspace: &Path, before: &str, after: &str) -> Result<Vec<(char, String)>> {
+pub(crate) fn changes(workspace: &Path, before: &str, after: &str) -> Result<Vec<(char, String)>> {
     let text = git(
         workspace,
         &["diff", "--name-status", "--no-renames", "-z", before, after],

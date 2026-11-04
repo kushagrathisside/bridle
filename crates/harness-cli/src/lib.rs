@@ -14,6 +14,7 @@ pub mod gitlayer;
 pub mod host;
 pub mod ideas;
 pub mod image;
+pub mod lanes;
 pub mod output;
 pub mod prompt;
 pub mod route;

@@ -1240,6 +1240,7 @@ impl McpTool for HarnessInfoTool {
 /// A context for tests: the given workspace, default config and policy.
 pub mod adapters;
 pub mod artifacts;
+pub mod background;
 pub mod browser;
 pub mod code;
 pub mod deps;

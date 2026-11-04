@@ -134,6 +134,20 @@ The managed Chromium. See [The managed browser](../guide/web-browser.md) and
 `bridle doctor` also prints a `browser` line when the browser is enabled or installed: off, not installed, incomplete, the wrong version,
 or ready.
 
+### `bridle lanes`
+
+Separate working copies for parallel members, and the person's merge of them. Needs a real Git repository. See [Lanes](../guide/lanes.md)
+and [ADR-0023](../decisions/0023-notices-background-commands-and-lanes-from-infinity.md).
+
+| Command | What it does |
+|---|---|
+| `new NAME [--from LANE]` | Snapshots the project (uncommitted changes included) as a worktree in `.bridle\lanes\NAME\`; with `--from`, starts from another lane's work. Prints the folder to use as a member's `--workspace`. |
+| `list` / `path NAME` | The lanes / a lane's folder. |
+| `diff NAME [--stat]` | What the lane changed since it started: files, summary and (without `--stat`) the patch. |
+| `integrate NAME... [--dry-run] [--skip-conflicts] [--remove]` | Merges the lanes into the project in the order given, three ways. Nothing is written if one conflicts (unless `--skip-conflicts`); files you changed since the snapshot are left alone and listed. Exit code 1 on a conflict or a file left alone. |
+| `undo` | Puts the project back as it was before the last integration. |
+| `remove NAME` | Deletes a lane: folder, record and checkpoints. |
+
 ### `bridle desktop`
 
 | Command | What it does |

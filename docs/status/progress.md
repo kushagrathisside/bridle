@@ -28,7 +28,39 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
-## 2026-11-04 (latest): window screenshots and the small-model fleet (ADR-0021, ADR-0022)
+## 2026-11-04 (latest): lessons from Infinity and Harness²; notices, background commands, lanes (ADR-0023)
+
+Branch `main`, after `daaccf4`. Windows only. Not committed, not pushed. The video the owner mentioned is the AWS post on Infinity; "harness2"
+is Google Research's `google-research/harness2` (arXiv 2610.14224). Both were read (the post, the READMEs, the paper's text through its
+limitations; **the video itself was not watched**). The reading is in
+[lessons-from-infinity-and-harness2.md](../spec/lessons-from-infinity-and-harness2.md). The three Infinity ideas worth borrowing were built.
+
+| Item | What was built | Evidence |
+|---|---|---|
+| Notices | `harness_runtime::notices` (bounded queue per workspace, per-server random marker, scrub, frame); `Server::call_tool` checks for files changed under the model, scrubs the tool text and appends the block; the marker is in the server's instructions and the chat's system prompt; `leases::changed_since_read` (size and time of the 256 most recent files, a read only when they differ) | 6 notice tests, 2 protocol tests (a waiting notice follows the next result once; a hostile tool text cannot pose as one; a changed file is noticed), 2 lease tests |
+| Background commands | `command_start`, `command_status`, `command_stop` (`[workflow] background_commands`, off by default); same `authorize` and sandbox as `run_command`; three at once, 1 s to 10 min limit, 64 KiB tail; stopped when the server ends; policy: start is executing, status and stop read-only (look-alikes stay `unknown_tool`) | 6 background tests, 1 policy test |
+| Lanes | `bridle lanes new / list / path / diff / integrate / undo / remove`: worktrees from a snapshot of the project, three-way merge with `git merge-tree`, nothing written on conflict, `--skip-conflicts`, `--dry-run`, files changed since the snapshot left alone, checkpoints and undo, stacked lanes | 6 tests on real temporary Git repositories |
+
+**Gate:** fmt, clippy `-D warnings`, **1,171 tests passed, 0 failed, 5 ignored** (`D:\e2e\gate7.out`; one result line of 19 tests was garbled by interleaved output
+and added back from the per-binary figures: 1,152 counted plus 19).
+
+**Live checks** against the built `bridle-cli.exe` (`D:\e2e\live_adr23.py`, output `D:\e2e\live1.out`): **20 of 20 passed.** Over stdio MCP: the
+instructions carry the marker; `command_start` returns an id at once; the next result carries the notice, once; a file named like a notice
+frame is neutralised in `git_status`; `command_status` shows the exit and the output; a command over its limit is stopped; `command_stop`
+works; a blocked program is not started; a long command did not outlive the server. Through the command line: a dry run, a merge of two
+lanes into one file, undo, a conflict that writes nothing, removal.
+
+- **Found on the way.** Git on Windows writes CRLF into the working tree after a merge (`core.autocrlf`); the lane tests compare text with
+  line endings normalised. A first live run failed only because the test configuration needs `BRIDLE_HOME` set as the other helper scripts do.
+- **Not verified.** No real model has used notices or the background tools, so whether a 9B model reads a notice correctly or calls
+  `command_status` is unknown. Two real models working in two lanes at once was not run. A running background command survives a hard kill of Bridle
+  until it ends. Lanes are not used by the board runner and the window has no button for integration. Board and lease notices are not wired.
+  Lanes were not tried on a large repository or one with submodules.
+- **Harness² (proposal only).** An offline loop over prompt text, accepted on verifier pass rate and a clean security suite, with a person
+  reading the diff, is described in the lessons note; its first step, a measured baseline for the planner over many runs, is not done.
+  The paper's gains were reported with frontier models; nothing says a 9B model gains.
+
+## 2026-11-04 (earlier): window screenshots and the small-model fleet (ADR-0021, ADR-0022)
 
 Branch `main`, after `b6a51f7`. Windows only. Not pushed. **Gate:** fmt, clippy `-D warnings`, **1,148 tests passed, 0 failed, 5 ignored** (`D:\e2e\gate6.out`).
 

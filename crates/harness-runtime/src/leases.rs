@@ -15,7 +15,7 @@
 //! Members run one at a time today, so a conflict between two live members cannot happen yet; the leases are what a second writer
 //! (a parallel engineer, the plan's next step) needs, and they already protect against a lease left behind by a run that died.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
@@ -276,9 +276,30 @@ pub fn guard_write(workspace: &Path, resolved: &Path) -> Result<(), String> {
 
 // ------------------------------------------------------------------------------------------------ stale-write check
 
+/// What the file tools last saw of one file: its hash, and enough of its metadata to notice a change cheaply.
+#[derive(Debug, Clone)]
+struct Seen {
+    sha: String,
+    len: u64,
+    modified: Option<SystemTime>,
+    /// Whether a change to this file has already been reported (once per read).
+    told: bool,
+}
+
+#[derive(Debug, Default)]
+struct SeenState {
+    map: HashMap<PathBuf, Seen>,
+    /// The files read or written most recently, oldest first: the only ones watched for changes, so a check stays cheap.
+    recent: VecDeque<PathBuf>,
+}
+
 /// What the file tools last saw of each file (by resolved path).
-static SEEN: Mutex<Option<HashMap<PathBuf, String>>> = Mutex::new(None);
+static SEEN: Mutex<Option<SeenState>> = Mutex::new(None);
 const MAX_SEEN: usize = 4_000;
+/// How many files are watched for changes by [`changed_since_read`].
+const MAX_WATCHED: usize = 256;
+/// A file bigger than this is not read again to confirm a change; a change in its size or time counts.
+const MAX_CONFIRM_BYTES: u64 = 8 * 1024 * 1024;
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
@@ -287,20 +308,114 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
         .collect()
 }
 
-fn with_seen<T>(f: impl FnOnce(&mut HashMap<PathBuf, String>) -> T) -> T {
+fn with_seen<T>(f: impl FnOnce(&mut SeenState) -> T) -> T {
     let mut slot = SEEN.lock().unwrap_or_else(PoisonError::into_inner);
-    let map = slot.get_or_insert_with(HashMap::new);
-    if map.len() >= MAX_SEEN {
-        map.clear();
+    let state = slot.get_or_insert_with(SeenState::default);
+    if state.map.len() >= MAX_SEEN {
+        state.map.clear();
+        state.recent.clear();
     }
-    f(map)
+    f(state)
 }
 
 /// Remembers that `resolved` had this content when it was read (or written).
 pub fn note_content(resolved: &Path, sha256: &str) {
-    with_seen(|m| {
-        m.insert(resolved.to_path_buf(), sha256.to_owned());
+    let meta = fs::metadata(resolved).ok();
+    let seen = Seen {
+        sha: sha256.to_owned(),
+        len: meta.as_ref().map_or(0, fs::Metadata::len),
+        modified: meta.and_then(|m| m.modified().ok()),
+        told: false,
+    };
+    with_seen(|state| {
+        state.map.insert(resolved.to_path_buf(), seen);
+        if !state.recent.iter().any(|p| p == resolved) {
+            if state.recent.len() >= MAX_WATCHED {
+                state.recent.pop_front();
+            }
+            state.recent.push_back(resolved.to_path_buf());
+        }
     });
+}
+
+/// A file the file tools saw, which is not as they saw it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Change {
+    pub path: PathBuf,
+    /// The file is gone (deleted or moved), not changed.
+    pub deleted: bool,
+}
+
+/// The recently read or written files under `workspace` that changed on disk since the file tools last saw them: someone else wrote
+/// them (another run, or the person in an editor). Each change is reported once per read; reading the file again starts afresh. The
+/// check looks at the size and time of at most 256 files and reads a file only when those differ, so it is cheap enough to run after
+/// every tool call.
+pub fn changed_since_read(workspace: &Path) -> Vec<Change> {
+    let watched: Vec<(PathBuf, Seen)> = with_seen(|state| {
+        state
+            .recent
+            .iter()
+            .filter(|p| p.starts_with(workspace))
+            .filter_map(|p| state.map.get(p).map(|seen| (p.clone(), seen.clone())))
+            .filter(|(_, seen)| !seen.told)
+            .collect()
+    });
+    let mut found = Vec::new();
+    let mut touched_only = Vec::new();
+    for (path, seen) in watched {
+        match fs::metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                found.push(Change {
+                    path,
+                    deleted: true,
+                });
+            }
+            Err(_) => {}
+            Ok(meta) => {
+                let modified = meta.modified().ok();
+                if meta.len() == seen.len && modified == seen.modified {
+                    continue;
+                }
+                let changed = if meta.len() > MAX_CONFIRM_BYTES {
+                    true
+                } else {
+                    match fs::read(&path) {
+                        Ok(bytes) => {
+                            let now = sha256_hex(&bytes);
+                            if now == seen.sha {
+                                touched_only.push((path.clone(), meta.len(), modified));
+                                false
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => false,
+                    }
+                };
+                if changed {
+                    found.push(Change {
+                        path,
+                        deleted: false,
+                    });
+                }
+            }
+        }
+    }
+    with_seen(|state| {
+        for change in &found {
+            if let Some(seen) = state.map.get_mut(&change.path) {
+                seen.told = true;
+            }
+        }
+        // Rewritten with the same content: remember the new time so it is not read again at every call.
+        for (path, len, modified) in touched_only {
+            if let Some(seen) = state.map.get_mut(&path) {
+                seen.len = len;
+                seen.modified = modified;
+            }
+        }
+    });
+    found
 }
 
 /// Refuses a write to `resolved` whose current content is not what the caller saw: either the hash the caller passed
@@ -325,7 +440,7 @@ pub fn check_fresh(
         }
         return Ok(());
     }
-    match with_seen(|m| m.get(resolved).cloned()) {
+    match with_seen(|state| state.map.get(resolved).map(|seen| seen.sha.clone())) {
         Some(seen) if seen != current_sha256 => Err(format!(
             "{shown} has changed since you read it (someone else wrote it, perhaps the person in the editor); read it again, then write"
         )),
@@ -522,5 +637,59 @@ mod tests {
         );
         assert_eq!(left[0].holder, "B-8");
         guard_write(ws, &ws.join("docs").join("x.md")).unwrap();
+    }
+
+    #[test]
+    fn a_file_changed_on_disk_after_it_was_read_is_reported_once_and_a_reread_starts_afresh() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        let path = ws.join("watched.txt");
+        std::fs::write(&path, "one").unwrap();
+        note_content(&path, &sha256_hex(b"one"));
+        assert!(changed_since_read(ws).is_empty(), "nothing changed yet");
+        // Someone else writes it (a different length, so the check cannot miss it on a coarse clock).
+        std::fs::write(&path, "two, longer").unwrap();
+        let first = changed_since_read(ws);
+        assert_eq!(
+            first,
+            vec![Change {
+                path: path.clone(),
+                deleted: false
+            }]
+        );
+        assert!(changed_since_read(ws).is_empty(), "reported once");
+        // Reading it again starts afresh; our own write, noted after it is made, is not a change.
+        note_content(&path, &sha256_hex(b"two, longer"));
+        std::fs::write(&path, "three, our own write").unwrap();
+        note_content(&path, &sha256_hex(b"three, our own write"));
+        assert!(changed_since_read(ws).is_empty());
+        std::fs::write(&path, "four, someone else again").unwrap();
+        assert_eq!(changed_since_read(ws).len(), 1);
+    }
+
+    #[test]
+    fn a_deleted_file_a_touched_file_and_a_file_in_another_folder_are_told_apart() {
+        let dir = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        let gone = ws.join("gone.txt");
+        let same = ws.join("same.txt");
+        let elsewhere = other.path().join("elsewhere.txt");
+        for (path, text) in [(&gone, "a"), (&same, "bbb"), (&elsewhere, "c")] {
+            std::fs::write(path, text).unwrap();
+            note_content(path, &sha256_hex(text.as_bytes()));
+        }
+        std::fs::remove_file(&gone).unwrap();
+        // Rewritten with the same content: the time moves, the hash does not, so it is not a change.
+        std::fs::write(&same, "bbb").unwrap();
+        std::fs::write(&elsewhere, "changed elsewhere").unwrap();
+        let found = changed_since_read(ws);
+        assert_eq!(
+            found,
+            vec![Change {
+                path: gone,
+                deleted: true
+            }]
+        );
     }
 }

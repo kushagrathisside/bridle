@@ -94,6 +94,10 @@ const READ_ONLY_HARNESS_TOOLS: &[&str] = &[
     "symbol_search",
     "find_references",
     "dependency_search",
+    // Reading what a background command has printed so far, and ending one that Bridle started (like `browser_close`, so a
+    // runaway command can always be stopped). Starting one is `command_start`, which is an executing tool.
+    "command_status",
+    "command_stop",
     "inspect_artifact",
     "summarize_experiment",
     "compare_experiments",
@@ -157,6 +161,8 @@ const EXECUTING_HARNESS_TOOLS: &[&str] = &[
     "run_command",
     // Starts a program to take a picture of its window; the program goes through the same command checks as `run_command`.
     "window_screenshot",
+    // Starts a program in the background; it goes through the same command checks as `run_command`.
+    "command_start",
 ];
 
 #[derive(Debug, Clone)]
@@ -1044,6 +1050,40 @@ mod tests {
                 .verdict,
             Verdict::Deny
         );
+    }
+
+    #[test]
+    fn the_background_command_tools_are_classified_and_look_alikes_stay_blocked() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        // Starting a program is an executing tool (the command itself is judged again inside the tool); reading its output and
+        // ending one that Bridle started are read-only, so a runaway command can always be stopped.
+        let start = p.evaluate(&ToolRequest::new(ToolKind::Harness(
+            "command_start".to_owned(),
+        )));
+        assert_eq!(
+            (start.class, start.verdict),
+            (ToolClass::ExecuteSafe, Verdict::Allow)
+        );
+        for tool in ["command_status", "command_stop"] {
+            let d = p.evaluate(&ToolRequest::new(ToolKind::Harness(tool.to_owned())));
+            assert_eq!(
+                (d.class, d.verdict),
+                (ToolClass::ReadOnly, Verdict::Allow),
+                "{tool}"
+            );
+        }
+        for tool in [
+            "command_start2",
+            "command_run",
+            "command_kill",
+            "Command_Start",
+            "command_exec",
+        ] {
+            let d = p.evaluate(&ToolRequest::new(ToolKind::Harness(tool.to_owned())));
+            assert_ne!(d.verdict, Verdict::Allow, "{tool}");
+            assert_eq!(d.rule, "unknown_tool", "{tool}");
+        }
     }
 
     #[test]
