@@ -242,6 +242,35 @@ pub fn resolve_pinned(
     Ok(addresses)
 }
 
+/// Like [`resolve_pinned`] for a caller that can still go on when this machine cannot resolve a name: `Ok(Some(addresses))` when the
+/// host is a number or was resolved and every answer judged; `Ok(None)` when the name itself is acceptable but this machine could not
+/// resolve it; `Err` when the host is refused. Used behind a proxy, where the proxy can resolve names this machine cannot.
+pub fn resolve_or_defer(
+    host: &str,
+    port: u16,
+    resolver: &dyn Resolver,
+) -> Result<Option<Vec<IpAddr>>, String> {
+    // Numbers and local names are judged without DNS; a name comes back as an empty list.
+    let known = resolve_pinned(host, port, None)?;
+    if !known.is_empty() {
+        return Ok(Some(known));
+    }
+    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    match resolver.resolve(&host, port) {
+        Err(_) => Ok(None),
+        Ok(addresses) if addresses.is_empty() => Ok(None),
+        Ok(addresses) => {
+            if let Some((ip, why)) = addresses
+                .iter()
+                .find_map(|ip| blocked_ip(*ip).map(|why| (ip, why)))
+            {
+                return Err(format!("{host} resolves to {ip}, which is {why}"));
+            }
+            Ok(Some(addresses))
+        }
+    }
+}
+
 /// Names that mean "this machine or this network", refused without asking DNS.
 fn local_name(host: &str) -> bool {
     host == "localhost"

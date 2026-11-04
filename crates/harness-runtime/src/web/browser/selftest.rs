@@ -369,7 +369,8 @@ fn id_of(structured: &Value) -> String {
     structured["browser"].as_str().unwrap_or("").to_owned()
 }
 
-fn processes_under(dir: &Path) -> usize {
+/// How many running programs have their executable under `dir` (used to show that no Chromium is left).
+pub fn processes_under(dir: &Path) -> usize {
     let mut system = sysinfo::System::new();
     system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
     system
@@ -459,6 +460,16 @@ pub fn run(
             "untrusted",
             "Bridle self-test page Static page",
         ],
+    );
+
+    thread::sleep(Duration::from_secs(8));
+    let hosts = manager
+        .get(&id)
+        .map_or_else(|_| Vec::new(), |session| session.traffic().hosts());
+    rig.check(
+        "reading only local pages, the browser contacted nothing of its own",
+        hosts.iter().all(|h| h.starts_with("127.0.0.1:")),
+        format!("hosts: {}", hosts.join(", ")),
     );
 
     // 2. A page that builds itself with script: invisible to a plain fetch, readable by the browser.
@@ -643,7 +654,11 @@ pub fn run(
         downloads.len() == 1,
         format!("{} file(s)", downloads.len()),
     );
-    let leftovers = std::fs::read_dir(layout.sessions_dir().join(&id).join("downloads"))
+    let session_dir = manager
+        .get(&id)
+        .map(|s| s.dir().to_path_buf())
+        .unwrap_or_default();
+    let leftovers = std::fs::read_dir(session_dir.join("downloads"))
         .map(|d| d.count())
         .unwrap_or(0);
     rig.check(
@@ -724,7 +739,7 @@ pub fn run(
             format!("separate cookies and storage; saw: {body}")
         },
     );
-    let profiles = std::fs::read_dir(layout.sessions_dir().join(&id).join("tmp"))
+    let profiles = std::fs::read_dir(session_dir.join("tmp"))
         .map(|d| {
             d.flatten()
                 .filter(|e| e.file_name().to_string_lossy().contains("profile"))
@@ -967,7 +982,10 @@ pub fn live(
     );
     say(&format!(
         "Egress: {}",
-        manager.proxy().upstream().describe()
+        manager
+            .proxy()
+            .upstream()
+            .describe(config.web.browser.allow_unpinned_destinations)
     ));
     let mut rig = Rig {
         tools: tools_with_manager(Arc::clone(&manager), &ctx.workspace),
@@ -1021,6 +1039,47 @@ pub fn live(
     drop(manager);
     let _ = std::fs::remove_dir_all(layout.root.join("selftest"));
     Ok(rig.checks)
+}
+
+/// A manager with one open session on the test site, kept alive by the caller. For the hard-kill test: a child process holds this, says it
+/// is ready, and is then ended without any clean-up, to see whether Chromium goes away by itself.
+#[derive(Debug)]
+pub struct Held {
+    _manager: Arc<BrowserManager>,
+    _fixture: Fixture,
+}
+
+pub fn hold_one_session(
+    layout: &Layout,
+    route: &RemoteRoute,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Result<Held, String> {
+    let fixture = start_fixture().map_err(|e| format!("cannot start the test site: {e}"))?;
+    let mut config = Config::default();
+    config.web.enabled = true;
+    config.web.browser.enabled = true;
+    let manager = Arc::new(
+        BrowserManager::start_at(
+            layout.clone(),
+            &config.web.browser,
+            Limits { max_download_mb: 1 },
+            route,
+            env,
+            Some(vec![("127.0.0.1".to_owned(), fixture.port)]),
+        )
+        .map_err(|e| e.to_string())?,
+    );
+    let session = manager.open().map_err(|e| e.to_string())?;
+    session
+        .navigate(
+            &format!("http://127.0.0.1:{}/static", fixture.port),
+            super::protocol::WaitUntil::DomContentLoaded,
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(Held {
+        _manager: manager,
+        _fixture: fixture,
+    })
 }
 
 /// A plain GET without scripts, to show what a non-browser fetch would have seen.

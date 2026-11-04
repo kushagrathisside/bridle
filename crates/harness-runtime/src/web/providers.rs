@@ -143,7 +143,15 @@ impl SearchProvider for Searxng {
             .as_deref()
             .and_then(|a| freshness_bucket(a, today_days()))
         {
-            call = call.query("time_range", bucket);
+            // SearXNG documents only `day`, `month` and `year`; a week is asked for as a month (a wider net, never a narrower one).
+            call = call.query(
+                "time_range",
+                match bucket {
+                    "day" => "day",
+                    "week" | "month" => "month",
+                    _ => "year",
+                },
+            );
         }
         let mut response = call
             .call()

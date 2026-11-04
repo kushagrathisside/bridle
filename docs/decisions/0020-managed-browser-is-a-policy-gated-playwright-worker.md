@@ -76,22 +76,36 @@ name can be looked up outside it, QUIC off and WebRTC limited to proxied UDP. Pl
 session id) and a secret that exists only in that session's launch message, so the proxy knows which session a connection belongs to,
 no other program on the machine can use it, and a closed session's access ends at once.
 
-For every `CONNECT` (HTTPS, WebSockets) and every plain `http://` request the proxy calls `guard::resolve_pinned`:
+For every `CONNECT` (HTTPS, WebSockets) and every plain `http://` request the proxy decides, in this order, with no name looked up
+until the earlier steps have passed:
 
-- numbers are judged as numbers, **including the old spellings** (`2130706433`, `0x7f.1`, `0177.0.0.1`, `127.1`), IPv6 (`::1`,
-  `::ffff:127.0.0.1`, `fe80::`, `fc00::`, zone ids), `localhost.` with a trailing dot, `.local`, `.internal` and the rest;
-- a name is resolved **once**, every answer is judged (one bad answer refuses the name), and the connection is made to one of the
-  addresses that was judged, never to the name again. A script that answers "public" first and "127.0.0.1" afterwards has no second
-  lookup to win (tested with a scripted resolver);
-- ports of mail, shells, databases and the like are refused;
-- each call has a byte limit (the download limit plus 64 MiB), which bounds what a download can write to disk;
-- what is refused is counted and named, and told to the model on its next call.
+1. **Ports** of mail, shells, databases and the like are refused.
+2. **Chromium's own service endpoints** (updates, accounts, safe browsing, translation, autofill, `clients*.google.com`) are refused
+   without a word to the model; they are counted and logged (`browser_internal_refused`). A net log showed Chromium reaching
+   `update.googleapis.com` and `accounts.google.com` by itself, which a page never needs.
+3. **The person's lists**: `web.browser.blocked_hosts` always wins; if `allowed_hosts` is not empty, only those names (and what is
+   under them) are reachable, and a bare address is not. A name matches itself and its subdomains, not a name that only ends in the
+   same letters.
+4. **The address**: numbers are judged as numbers, **including the old spellings** (`2130706433`, `0x7f.1`, `0177.0.0.1`, `127.1`),
+   IPv6 (`::1`, `::ffff:127.0.0.1`, `fe80::`, `fc00::`, zone ids), `localhost.` with a trailing dot, `.local`, `.internal` and the
+   rest. A name is resolved **once**, every answer is judged (one bad answer refuses the name), and the connection is made to an
+   address that was judged, never to the name again. A script that answers "public" first and "127.0.0.1" afterwards has no second
+   lookup to win (tested with a scripted resolver).
 
-**What this does not close.** When the machine reaches the web through an upstream proxy (the only way out on the tested machine), the
-upstream resolves names, so the address cannot be pinned here. The proxy then still refuses numbers and local names, and forwards the
-rest by name; the upstream proxy is the boundary for what a name resolves to. `bridle web browser status`, `bridle egress` and the
-self-test say which of the two modes is in force. DNS rebinding is therefore **closed in direct mode and not closed behind an upstream
-proxy.** In direct mode it is demonstrated against a scripted resolver, not against a live rebinding DNS server.
+Each call also has a byte limit (the download limit plus 64 MiB), which bounds what a download can write to disk, and what is refused is
+counted and named, and told to the model on its next call.
+
+**Behind the person's own proxy** (the only way out on the tested machine) the same steps run, and the tunnel is then asked for **at the
+checked address** (`CONNECT 93.184.216.34:443`), not at the name: TLS inside the tunnel still verifies the real name, so it works, and
+the upstream proxy cannot be talked into a different address by a name that changes its answer. This was run for real: Chromium read
+`https://example.com` through the campus proxy this way. If the upstream refuses the tunnel to the address, the connection fails and
+the name is **not** tried instead. If this machine cannot resolve a name at all, the connection is refused, unless the person sets
+`web.browser.allow_unpinned_destinations = true`; then the name is handed to the proxy, the connection is counted and told to the
+model, and for those connections the proxy is the boundary. `bridle web browser status`, `bridle egress` and the self-test say which.
+
+**What this still does not show.** Rebinding is demonstrated against a scripted resolver, in both modes, with real sockets. It has not
+been run against a hostile DNS server answering the system resolver, because pointing the system resolver at one means changing the
+machine's DNS settings, which this work did not do.
 
 ### 4. The managed runtime is optional, pinned and re-checked
 
@@ -101,7 +115,7 @@ proxy.** In direct mode it is demonstrated against a scripted resolver, not agai
 |---|---|---|
 | Node.js 24.22.2 (win-x64 zip, MIT) | URL and SHA-256 in the source | The SHA-256 nodejs.org publishes (`SHASUMS256.txt`) |
 | `playwright-core` 1.64.1 (npm tarball, Apache-2.0, no dependencies) | URL and SHA-512 in the source | The `integrity` npm publishes |
-| Chromium 156.0.8078.4 (Playwright revision 1248, BSD-style licences) | Version and revision; installed by Playwright's own installer | **Not hash-pinned by the publisher**: Playwright downloads over TLS. Bridle records the SHA-256 of `chrome.exe` after install and checks it, and `node.exe`, before every start |
+| Chromium 156.0.8078.4 (Playwright revision 1248, BSD-style licences) | Version and revision; installed by Playwright's own installer; **the SHA-256 of the whole installed folder (304 files: path, size, hash of each) is pinned in Bridle's source** | The folder hash at install time, which `setup` refuses to accept if it differs. The pin is Bridle's own, taken from a clean install and reproduced by two later clean installs on this machine; neither Playwright nor the Chromium project publishes a hash. Before every start Bridle re-checks `node.exe`, `chrome.exe` and `chrome.dll` (where nearly all of Chromium's code is) against the install-time hashes |
 
 Unpacking uses the `tar.exe` that ships with Windows, by full path. The manifest is written last; a half-finished install is visible
 (`incomplete`) and the next `setup` or `remove` cleans it. A repository cannot choose any path or version. Nothing is installed by first
@@ -132,8 +146,15 @@ same type, size and checksum rules, and the page cannot name where.
 - Bridle's own output redaction masks a value under a key named `session` or `cookie`. A structured field named `session_id` was
   rewritten to `[REDACTED]`, so the first version of the tools returned an id nobody could use. The id is now under `browser`, and the
   log carries a label derived from it, not the id (an id is a capability).
-- Chromium reached out to `www.google.com:443` on its own during the live check. It passed through the proxy and was reported in
-  "Contacted"; it is a public host. Not blocked in this milestone (see below).
+- Chromium reached out to `www.google.com:443` and, later, to `update.googleapis.com` and `accounts.google.com` on its own. Cause:
+  the worker passed its own `--disable-features=...`, and Chromium keeps only the **last** such flag, so it replaced Playwright's
+  list and switched back on `NetworkTimeServiceQuerying` and `AimEnabled` (found from Playwright's switches and a net log). The worker
+  now sends the union of Playwright's list for the pinned version and its own, plus the three search-preconnect features found in
+  `chrome.dll`. The self-test fails if Chromium contacts anything on its own in the first seconds, so a change of pin that brings
+  this back is caught; and the proxy refuses the service endpoints regardless.
+- SearXNG documents `time_range` as `day`, `month` or `year`; the provider sent `week`. A week is now asked for as a month.
+- A Bridle that is ended without clean-up leaves its session folders. They are now named `<pid>-<id>`, and a folder whose process no
+  longer runs is removed when the next manager starts.
 
 ## Consequences
 
@@ -143,10 +164,10 @@ same type, size and checksum rules, and the page cannot name where.
 
 ## Not done, and why
 
-- **No allow or deny list of public hosts** for the browser (it can reach any public address the proxy allows). A list would be a
-  small addition to the proxy; it was not asked for and a wrong default would break pages.
 - **No persistent profile, no logged-in state, no uploads, no iframes in the snapshot, no PDF viewer, no extension.** The tools say so.
-- **No Windows job object** to kill a worker's whole process tree if Bridle is killed hard: that needs `unsafe`. Chromium is started over
-  a pipe and exits when the worker's pipe closes; this was observed (no process left after closing), not proven for every kind of crash.
+- **No Windows job object** to kill a worker's whole process tree if Bridle is killed hard: that needs `unsafe`. Instead the worker watches
+  its pipe and Chromium is started over a pipe. This was **tested**: a child that opened a session was aborted with no clean-up, and
+  Chromium and Node were gone within seconds (`tests/browser_live.rs`). Not tested: `TerminateProcess` of a parent while the worker is
+  in the middle of a long page load, or a kill of the machine.
 - **Not run on Linux or macOS**; the pins are for Windows x64 and `setup` says so elsewhere.
 - Chromium's own download of its binary is not hash-pinned by the publisher (see decision 4).

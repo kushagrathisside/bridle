@@ -104,7 +104,7 @@ pub fn run(app: &App) -> Result<ExitCode> {
         match harness_runtime::web::browser::proxy::Upstream::from_route(&route, &env) {
             Ok(upstream) => println!(
                 "The managed browser reaches the web: {}.",
-                upstream.describe()
+                upstream.describe(app.config.web.browser.allow_unpinned_destinations)
             ),
             Err(error) => {
                 println!("The managed browser cannot start with this proxy setting: {error}")

@@ -44,6 +44,12 @@ pub const PLAYWRIGHT_SHA512_B64: &str =
 /// The Chromium that this `playwright-core` installs (`browsers.json` in the package).
 pub const CHROMIUM_REVISION: &str = "1248";
 pub const CHROMIUM_VERSION: &str = "156.0.8078.4";
+/// The SHA-256 of the whole installed Chromium folder (see [`tree_sha256`]): every file's path, size and SHA-256, in order. Playwright
+/// publishes no hash for the browser it downloads, so this one comes from Bridle's own source: the developer computed it from clean
+/// installs, and `setup` refuses a Chromium that does not match it. It is a pin made by Bridle, not by the Chromium or Playwright
+/// projects, and it is only as trustworthy as the machine and the network of the install it was taken from.
+pub const CHROMIUM_TREE_SHA256: &str =
+    "c83bf5c7be18c4ea698fc15ae745bc6653442d040b9012007286569164803fe3";
 
 /// The worker program, built into Bridle so a repository or a download cannot replace it.
 pub const WORKER_JS: &str = include_str!("browser-worker.js");
@@ -79,6 +85,14 @@ pub struct Manifest {
     /// Relative to the runtime folder.
     pub chromium_executable: String,
     pub chromium_executable_sha256: String,
+    /// `chrome.dll` holds nearly all of Chromium's code (`chrome.exe` is a small launcher), so it is checked before every start too.
+    #[serde(default)]
+    pub chromium_core: String,
+    #[serde(default)]
+    pub chromium_core_sha256: String,
+    /// The hash of the whole Chromium folder at install time, which `setup` compared with [`CHROMIUM_TREE_SHA256`].
+    #[serde(default)]
+    pub chromium_tree_sha256: String,
     pub chromium_source: String,
     pub worker_sha256: String,
     pub protocol: u32,
@@ -213,6 +227,7 @@ pub fn inspect(layout: &Layout) -> Status {
         || manifest.playwright_version != PLAYWRIGHT_VERSION
         || manifest.chromium_revision != CHROMIUM_REVISION
         || manifest.protocol != PROTOCOL_VERSION
+        || manifest.chromium_tree_sha256 != CHROMIUM_TREE_SHA256
     {
         State::Mismatch(format!(
             "installed Node {}, Playwright {}, Chromium revision {}; this Bridle pins Node {NODE_VERSION}, Playwright {PLAYWRIGHT_VERSION}, revision {CHROMIUM_REVISION}",
@@ -255,6 +270,13 @@ pub fn verify_identity(layout: &Layout, manifest: &Manifest) -> Result<(), Strin
     if chromium != manifest.chromium_executable_sha256 {
         return Err("Chromium is not the file that was installed (its SHA-256 changed); run `bridle web browser setup` again".to_owned());
     }
+    if manifest.chromium_core.is_empty() || manifest.chromium_core_sha256.is_empty() {
+        return Err("the manifest is from an older Bridle and does not record chrome.dll; run `bridle web browser setup` again".to_owned());
+    }
+    let core = file_sha256(&layout.root.join(&manifest.chromium_core))?;
+    if core != manifest.chromium_core_sha256 {
+        return Err("chrome.dll is not the file that was installed (its SHA-256 changed); run `bridle web browser setup` again".to_owned());
+    }
     write_worker(layout)?;
     Ok(())
 }
@@ -273,6 +295,53 @@ pub fn write_worker(layout: &Layout) -> Result<(), String> {
 pub fn worker_sha256() -> String {
     hex(&Sha256::digest(WORKER_JS.as_bytes()))
 }
+
+/// A hash of a whole folder: for every file under it (links are refused), in the order of their `/`-joined relative paths, the line
+/// `path NUL size NUL sha256 LF`, all fed to one SHA-256. `skip` names relative paths to leave out (files Playwright or Chromium
+/// write themselves: the install markers, and the `First Run` file Chromium makes the first time it starts).
+pub fn tree_sha256(dir: &Path, skip: &[&str]) -> Result<String, String> {
+    let mut files: Vec<(String, PathBuf)> = Vec::new();
+    let mut stack = vec![(dir.to_path_buf(), String::new())];
+    while let Some((current, prefix)) = stack.pop() {
+        for entry in
+            fs::read_dir(&current).map_err(|e| format!("cannot read {}: {e}", current.display()))?
+        {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let meta = fs::symlink_metadata(entry.path()).map_err(|e| e.to_string())?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let rel = if prefix.is_empty() {
+                name
+            } else {
+                format!("{prefix}/{name}")
+            };
+            if meta.file_type().is_symlink() {
+                return Err(format!("{} is a link; refusing it", entry.path().display()));
+            }
+            if meta.file_type().is_dir() {
+                stack.push((entry.path(), rel));
+            } else if !skip.contains(&rel.as_str()) {
+                files.push((rel, entry.path()));
+            }
+            if files.len() > 100_000 {
+                return Err("the folder holds too many files".to_owned());
+            }
+        }
+    }
+    files.sort();
+    let mut all = Sha256::new();
+    for (rel, path) in &files {
+        let size = fs::metadata(path).map_err(|e| e.to_string())?.len();
+        all.update(format!("{rel}\0{size}\0{}\n", file_sha256(path)?).as_bytes());
+    }
+    Ok(hex(&all.finalize()))
+}
+
+/// The files Playwright and Chromium write into the Chromium folder themselves, left out of [`CHROMIUM_TREE_SHA256`].
+const CHROMIUM_SKIP: &[&str] = &[
+    "DEPENDENCIES_VALIDATED",
+    "INSTALLATION_COMPLETE",
+    "chrome-win64/First Run",
+];
 
 pub fn file_sha256(path: &Path) -> Result<String, String> {
     let mut file =
@@ -484,6 +553,29 @@ pub fn setup(
         );
     }
     let chromium_sha = file_sha256(&executable)?;
+    // The whole folder, before anything has started Chromium: it must be the one this Bridle was built against.
+    let chromium_root = relative
+        .components()
+        .next()
+        .map(|c| layout.browsers_dir().join(c.as_os_str()))
+        .ok_or("cannot tell which folder Chromium is in")?;
+    say("  hashing the Chromium folder ...");
+    let tree = tree_sha256(&chromium_root, CHROMIUM_SKIP)?;
+    if tree != CHROMIUM_TREE_SHA256 {
+        return Err(format!(
+            "the Chromium that was downloaded is not the one this Bridle was built against (folder SHA-256 {tree}, expected {CHROMIUM_TREE_SHA256}); it was left in {} and not accepted. If Playwright's download changed, a new Bridle release has to re-pin it.",
+            chromium_root.display()
+        ));
+    }
+    say("  checked: the folder matches the SHA-256 pinned in Bridle's source");
+    let core = executable.with_file_name("chrome.dll");
+    if !core.is_file() {
+        return Err("Chromium has no chrome.dll next to chrome.exe".to_owned());
+    }
+    let core_sha = file_sha256(&core)?;
+    let core_relative = core
+        .strip_prefix(layout.root.as_path())
+        .map_err(|_| "chrome.dll is outside the runtime folder".to_owned())?;
     let manifest = Manifest {
         schema: MANIFEST_SCHEMA,
         status: "complete".to_owned(),
@@ -498,6 +590,9 @@ pub fn setup(
         chromium_version: CHROMIUM_VERSION.to_owned(),
         chromium_executable: format!("browsers/{}", relative.to_string_lossy().replace('\\', "/")),
         chromium_executable_sha256: chromium_sha,
+        chromium_core: core_relative.to_string_lossy().replace('\\', "/"),
+        chromium_core_sha256: core_sha,
+        chromium_tree_sha256: tree,
         chromium_source: "Playwright's installer (playwright-core install chromium); the download is checked by Playwright, Bridle records the SHA-256 of chrome.exe and re-checks it before every launch".to_owned(),
         worker_sha256: worker_sha256(),
         protocol: PROTOCOL_VERSION,
@@ -786,6 +881,9 @@ mod tests {
             chromium_version: CHROMIUM_VERSION.to_owned(),
             chromium_executable: "browsers/chromium-1248/chrome-win/chrome.exe".to_owned(),
             chromium_executable_sha256: file_sha256_of(b"chrome"),
+            chromium_core: "browsers/chromium-1248/chrome-win/chrome.dll".to_owned(),
+            chromium_core_sha256: file_sha256_of(b"core"),
+            chromium_tree_sha256: CHROMIUM_TREE_SHA256.to_owned(),
             chromium_source: "s".to_owned(),
             worker_sha256: worker_sha256(),
             protocol: PROTOCOL_VERSION,
@@ -797,6 +895,7 @@ mod tests {
         let chrome = layout.root.join(&manifest.chromium_executable);
         fs::create_dir_all(chrome.parent().unwrap()).unwrap();
         fs::write(&chrome, b"chrome").unwrap();
+        fs::write(chrome.with_file_name("chrome.dll"), b"core").unwrap();
         write_worker(layout).unwrap();
         fs::write(
             layout.manifest_file(),
@@ -854,6 +953,64 @@ mod tests {
         manifest.playwright_version = "1.0.0".to_owned();
         fs::write(l.manifest_file(), serde_json::to_string(&manifest).unwrap()).unwrap();
         assert!(matches!(inspect(&l).state, State::Mismatch(why) if why.contains("1.0.0")));
+    }
+
+    #[test]
+    fn the_main_chromium_library_is_checked_as_well_as_the_launcher() {
+        let dir = tempfile::tempdir().unwrap();
+        let l = layout(dir.path());
+        let manifest = installed(&l);
+        fs::write(l.root.join(&manifest.chromium_core), b"tampered").unwrap();
+        let error = verify_identity(&l, &manifest).unwrap_err();
+        assert!(error.contains("chrome.dll"), "{error}");
+        // A manifest from before chrome.dll was recorded is not trusted either.
+        let mut old = manifest.clone();
+        old.chromium_core.clear();
+        assert!(
+            verify_identity(&l, &old)
+                .unwrap_err()
+                .contains("older Bridle")
+        );
+        // And one whose folder hash is not the pinned one is a mismatch.
+        let mut other = manifest;
+        other.chromium_tree_sha256 = "0".repeat(64);
+        fs::write(l.manifest_file(), serde_json::to_string(&other).unwrap()).unwrap();
+        assert!(matches!(inspect(&l).state, State::Mismatch(_)));
+    }
+
+    #[test]
+    fn a_folder_hash_covers_names_sizes_and_contents_and_skips_what_chromium_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("c");
+        fs::create_dir_all(root.join("sub")).unwrap();
+        fs::write(root.join("a.bin"), b"one").unwrap();
+        fs::write(root.join("sub").join("b.bin"), b"two").unwrap();
+        let base = tree_sha256(&root, &[]).unwrap();
+        assert_eq!(base, tree_sha256(&root, &[]).unwrap(), "stable");
+        fs::write(root.join("First Run"), b"").unwrap();
+        assert_ne!(
+            base,
+            tree_sha256(&root, &[]).unwrap(),
+            "a new file changes it"
+        );
+        assert_eq!(
+            base,
+            tree_sha256(&root, &["First Run"]).unwrap(),
+            "unless it is one of the skipped names"
+        );
+        fs::write(root.join("sub").join("b.bin"), b"twp").unwrap();
+        assert_ne!(
+            base,
+            tree_sha256(&root, &["First Run"]).unwrap(),
+            "a changed byte changes it"
+        );
+        fs::write(root.join("sub").join("b.bin"), b"two").unwrap();
+        fs::rename(root.join("a.bin"), root.join("c.bin")).unwrap();
+        assert_ne!(
+            base,
+            tree_sha256(&root, &["First Run"]).unwrap(),
+            "a renamed file changes it"
+        );
     }
 
     #[test]

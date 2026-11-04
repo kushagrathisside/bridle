@@ -107,6 +107,22 @@ function playwrightVersion() {
 
 // ----------------------------------------------------------------------------------------------------------------- launch
 
+// Chromium takes only the LAST --disable-features it is given, so a list of our own would silently replace Playwright's and bring back
+// the connections that list exists to prevent (a time query to clients2.google.com, an "AI Mode" check to www.google.com, optimisation
+// hints, translation, upgrades). So ours is Playwright's list for the pinned version (playwright-core 1.64.1,
+// chromiumSwitches) plus Bridle's additions. The self-test fails if Chromium contacts anything on its own, which would catch drift
+// when the pin moves.
+const DISABLED_FEATURES = [
+  // Playwright 1.64.1's own list.
+  'AvoidUnnecessaryBeforeUnloadCheckSync', 'DestroyProfileOnBrowserClose', 'DialMediaRouteProvider', 'GlobalMediaControls', 'HttpsUpgrades',
+  'LensOverlay', 'MediaRouter', 'PaintHolding', 'ThirdPartyStoragePartitioning', 'BlockOriginHeaderModificationOnRedirect',
+  'AvoidCorsURLLoaderRestartOnRedirect', 'Translate', 'AutoDeElevate', 'OptimizationHints', 'NetworkTimeServiceQuerying', 'AimEnabled',
+  // Bridle's additions. The three Preconnect ones stop Chromium opening a connection to the default search engine (www.google.com)
+  // when a session starts; found with a net log (the connection was a preconnect started by the browser itself).
+  'AutofillServerCommunication', 'DnsOverHttps', 'UseDnsHttpsSvcb', 'PreconnectToSearch', 'PreconnectToSearchDesktop',
+  'SearchEnginePreconnect2',
+];
+
 const LAUNCH_ARGS = [
   '--disable-extensions',
   '--disable-component-update',
@@ -121,7 +137,7 @@ const LAUNCH_ARGS = [
   '--no-first-run',
   '--no-default-browser-check',
   '--mute-audio',
-  '--disable-features=Translate,MediaRouter,OptimizationHints,AutofillServerCommunication,DnsOverHttps,UseDnsHttpsSvcb',
+  '--disable-features=' + DISABLED_FEATURES.join(','),
   '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
   // Nothing may be looked up by name outside the proxy: the proxy's own address is a number.
   '--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1',

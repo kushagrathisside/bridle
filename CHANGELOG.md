@@ -23,6 +23,10 @@ The project has not been published, so the version below is for the repository o
   downloads and screenshots through the existing artifact code, source records with the Chromium and Playwright versions, event-log
   entries, `bridle web browser status / setup / test / remove`, and a `browser` line in `bridle doctor` and `bridle egress`.
 - The web address guard also refuses `localhost.` (trailing dot) and the old spellings of IPv4 addresses (`2130706433`, `0x7f.1`, `127.1`).
+- Browser: `web.browser.allowed_hosts` and `blocked_hosts`; behind the person's proxy the tunnel is now asked for at the address Bridle
+  checked (`allow_unpinned_destinations` for names only the proxy can resolve); Chromium's own service endpoints are refused quietly;
+  the whole Chromium folder is hash-pinned in the source and `chrome.dll` is re-checked before every start; session folders carry the
+  owner's process id and those of dead processes are swept; a test shows Chromium exits when Bridle is ended without clean-up.
 - The chat renders Markdown (tables, headings, lists, quotes, code blocks with Copy, links), with a Copy button on each answer and a
   jump-to-latest button. The Explorer has a project header with the branch, a fuzzy filter, an Open editors section, Git colours and
   letters, indent guides, remembered open folders, keyboard navigation and drag and drop to move.
@@ -82,6 +86,8 @@ The project has not been published, so the version below is for the repository o
 
 - Remote HTTPS requests used a bundled list of root certificates instead of the system store, so they failed behind a proxy that
   re-signs certificates and for sites with newer roots. They now use the system store, as the documentation said.
+- The browser worker's own `--disable-features` replaced Playwright's list, which switched Chromium's time query and "AI mode" check
+  back on; the lists are now merged. SearXNG was sent `time_range=week`, which it does not define; it is now `month`.
 
 ### Changed
 

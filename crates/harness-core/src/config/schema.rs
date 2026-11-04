@@ -141,6 +141,14 @@ pub struct BrowserSection {
     pub screenshots_enabled: bool,
     /// Whether a download that a page starts is kept. Off: the download is refused and nothing is written.
     pub downloads_enabled: bool,
+    /// If not empty, the browser may reach only these hosts (and their subdomains). A name here matches itself and everything under it.
+    pub allowed_hosts: Vec<String>,
+    /// Hosts (and their subdomains) the browser may never reach. Wins over `allowed_hosts`.
+    pub blocked_hosts: Vec<String>,
+    /// Behind a proxy that resolves names, Bridle resolves a name itself first and tunnels to the address it checked. If this machine
+    /// cannot resolve the name, the connection is refused, unless this is `true`: then the name is handed to the proxy and the proxy is
+    /// the only thing that decides where it goes (the address is not pinned).
+    pub allow_unpinned_destinations: bool,
 }
 
 impl Default for BrowserSection {
@@ -156,6 +164,9 @@ impl Default for BrowserSection {
             max_page_content_chars: 20_000,
             screenshots_enabled: false,
             downloads_enabled: false,
+            allowed_hosts: Vec::new(),
+            blocked_hosts: Vec::new(),
+            allow_unpinned_destinations: false,
         }
     }
 }

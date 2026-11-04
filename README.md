@@ -558,9 +558,10 @@ setting were verified in the real window on 2026-11-03.
 - **Context budget is an estimate.** Bytes divided by four, over the messages only.
 - **The GPU memory guard is an estimate,** calibrated on one model and one GPU.
 - **Web research and the browser are verified on one machine and one proxy.** The search providers are tested against fake servers
-  only (no Brave key or SearXNG instance was available). The browser passed its own 72-check self-test against a real Chromium and one
-  live page through a company proxy; DNS rebinding is closed only when Bridle connects directly, and is demonstrated against a scripted
-  resolver. The runtime is optional, about 560 MB, and installed only on request.
+  only (no Brave key or SearXNG instance was available); their requests were checked against the published documentation. The browser
+  passed its own 73-check self-test against a real Chromium, and read one live page through a company proxy with the tunnel asked for
+  at the address Bridle had checked. DNS rebinding is shown against a scripted resolver, not a hostile DNS server. Chromium's folder
+  hash is pinned by Bridle, not by its publisher. The runtime is optional, about 560 MB, and installed only on request.
 - **Optional services.** Jev is tested against its contract with a local mock, with no real service available. The LiteLLM route was
   checked against a local gateway on 2026-10-28. Both are off unless configured.
 - **Network exceptions.** OpenCode's model catalogue fetch and the model downloads are outside Bridle's control.
