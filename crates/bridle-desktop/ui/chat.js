@@ -201,6 +201,7 @@ function chatEvent(event) {
       setStatus("");
       syncControls();
       afterTurn();
+      ideasAfterRun(event.end);
       break;
     default:
       break;
@@ -232,14 +233,15 @@ function setStatus(text) {
 
 function syncControls() {
   const slot = slotInfo(currentSlot());
-  const loading = state.starting.has(currentSlot());
+  const warming = !!slot && slot.server === "warming";
+  const loading = state.starting.has(currentSlot()) || warming;
   $("send").disabled = state.busy || loading || !slot;
   $("stop").hidden = !state.busy;
   $("new-chat").disabled = state.busy;
   $("compact").disabled = state.busy;
   $("attach").disabled = state.busy;
   $("slot-start").disabled = !slot || !slot.ready_to_start || slot.server === "running" || loading;
-  $("slot-stop").disabled = !slot || slot.server !== "running";
+  $("slot-stop").disabled = !slot || (slot.server !== "running" && slot.server !== "warming");
   if (loading) setStatus(`Loading ${currentSlot()}… the model is being put on the GPU.`);
   else if (!state.busy && $("status").textContent.startsWith("Loading")) setStatus("");
 }
@@ -255,7 +257,7 @@ function renderSlotState() {
     text.textContent = "no model configured";
     return bar("bad", "no model");
   }
-  if (state.starting.has(name)) {
+  if (state.starting.has(name) || slot.server === "warming") {
     dot.className = "dot starting";
     text.textContent = "loading…";
     bar("starting", `${name} loading…`);
@@ -276,12 +278,34 @@ function renderSlotState() {
 
 // ---------- sending ----------
 
-async function send() {
+// `override` is text to send that is not in the box (a saved idea). Without it, the box is sent.
+async function send(override) {
   const input = $("input");
-  const typed = input.value.trim();
-  const attachment = state.attachment;
-  if ((!typed && !attachment) || state.busy) return;
-  if (!attachment) {
+  const fromIdea = typeof override === "string";
+  const typed = (fromIdea ? override : input.value).trim();
+  const attachment = fromIdea ? null : state.attachment;
+  if (!typed && !attachment) return;
+  if (state.busy) {
+    // A message typed while a run works is not sent into it: it is saved as an idea and sent when the run finishes.
+    if (fromIdea) return;
+    if (attachment) return addNote("notice", "An image cannot be saved as an idea. Wait for the run to finish, then send it.");
+    const asIdea = typed.match(/^\/idea\s+([\s\S]+)$/);
+    if (typed.startsWith("/") && !asIdea) return addNote("notice", "Commands run when the current run has finished.");
+    if (await saveIdea(asIdea ? asIdea[1] : typed)) { input.value = ""; autosize(); }
+    return;
+  }
+  const slotNow = slotInfo(currentSlot());
+  if (state.starting.has(currentSlot()) || (slotNow && slotNow.server === "warming")) {
+    return addNote("notice", "The model is still loading. Send again when it is ready.");
+  }
+  if (!attachment && !fromIdea) {
+    const idea = typed.match(/^\/idea\s+([\s\S]+)$/);
+    if (idea) {
+      input.value = "";
+      autosize();
+      await saveIdea(idea[1]);
+      return;
+    }
     if (typed === "/clear") {
       input.value = "";
       return newChat();
@@ -311,9 +335,11 @@ async function send() {
     }
     text = `/image ${attachment.path} ${typed || "Describe this image."}`;
   }
-  input.value = "";
-  autosize();
-  closePalette();
+  if (!fromIdea) {
+    input.value = "";
+    autosize();
+    closePalette();
+  }
   const compacting = text === "/compact";
   if (attachment) {
     addUser(typed, attachment.preview);

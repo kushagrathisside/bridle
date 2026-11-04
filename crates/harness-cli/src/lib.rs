@@ -8,6 +8,7 @@ pub mod chat;
 pub mod cli;
 pub mod commands;
 pub mod host;
+pub mod ideas;
 pub mod image;
 pub mod output;
 pub mod prompt;
