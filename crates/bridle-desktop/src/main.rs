@@ -10,6 +10,7 @@
 //! `bridge.rs` and listen to the `bridle` event, and nothing else (see `capabilities/default.json`).
 
 mod bridge;
+mod crew_cmd;
 mod ideas_cmd;
 mod view;
 
@@ -139,6 +140,7 @@ fn run_window(raw: &[OsString]) -> ExitCode {
             let loaded = app.state::<bridge::Bridge>().load_args();
             if let Ok(workspace) = harness_cli::app::resolve_workspace(loaded.workspace.as_deref())
             {
+                crew_cmd::recover_board(&workspace);
                 bridge::remember_project(&workspace);
                 bridge::set_window_title(app.handle(), &workspace);
             }
@@ -198,6 +200,21 @@ fn run_window(raw: &[OsString]) -> ExitCode {
             ideas_cmd::move_idea,
             ideas_cmd::set_ideas_hold,
             ideas_cmd::take_idea,
+            crew_cmd::get_crew,
+            crew_cmd::crew_add_member,
+            crew_cmd::crew_update_member,
+            crew_cmd::crew_remove_member,
+            crew_cmd::crew_set_headcount,
+            crew_cmd::crew_reset,
+            crew_cmd::resolve_tags,
+            crew_cmd::create_tagged_issues,
+            crew_cmd::get_board,
+            crew_cmd::board_new_issue,
+            crew_cmd::board_set_status,
+            crew_cmd::board_assign,
+            crew_cmd::board_comment,
+            crew_cmd::board_export,
+            crew_cmd::run_issue,
         ])
         .build(tauri::generate_context!());
     let app = match built {

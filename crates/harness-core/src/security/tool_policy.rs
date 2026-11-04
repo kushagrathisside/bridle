@@ -98,7 +98,14 @@ const READ_ONLY_HARNESS_TOOLS: &[&str] = &[
     "summarize_experiment",
     "compare_experiments",
     "harness_info",
+    // The team board, read.
+    "board_ready",
+    "board_list",
+    "board_show",
 ];
+/// Harness MCP tools that change the team board. The board is a store the harness owns, outside the repository's files,
+/// and what each member may do with these tools is decided inside them from the member's role.
+const BOARD_WRITE_TOOLS: &[&str] = &["board_create", "board_claim", "board_comment", "board_update"];
 /// Harness and host control files, relative to the workspace root (lowercase). The harness reads
 /// its profile, and the host its config, on every call, so the agent must not change them.
 ///
@@ -444,6 +451,12 @@ impl ToolPolicy {
                     "read-only harness tool",
                 )
             }
+            ToolKind::Harness(name) if BOARD_WRITE_TOOLS.contains(&name.as_str()) => PolicyDecision::new(
+                Verdict::Allow,
+                ToolClass::Write,
+                "harness_tool",
+                "changes the team board only (the harness owns it; the member's role is checked inside the tool)",
+            ),
             ToolKind::Harness(name) if EXECUTING_HARNESS_TOOLS.contains(&name.as_str()) => {
                 PolicyDecision::new(
                     Verdict::Allow,
@@ -911,6 +924,23 @@ mod tests {
         secret.paths = vec![".env".to_owned()];
         let d = p.evaluate(&secret);
         assert_eq!((d.verdict, d.rule.as_str()), (Verdict::Deny, "secret_file"));
+    }
+
+    #[test]
+    fn the_board_tools_read_or_write_only_the_board_and_a_look_alike_is_unknown() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        for tool in ["board_ready", "board_list", "board_show"] {
+            let d = p.evaluate(&ToolRequest::new(ToolKind::Harness(tool.to_owned())));
+            assert_eq!((d.verdict, d.class), (Verdict::Allow, ToolClass::ReadOnly), "{tool}");
+        }
+        for tool in ["board_create", "board_claim", "board_comment", "board_update"] {
+            let d = p.evaluate(&ToolRequest::new(ToolKind::Harness(tool.to_owned())));
+            assert_eq!((d.verdict, d.class, d.rule.as_str()), (Verdict::Allow, ToolClass::Write, "harness_tool"), "{tool}");
+        }
+        // A tool that only looks like one of them is not recognised, so it is refused.
+        let d = p.evaluate(&ToolRequest::new(ToolKind::Harness("board_delete".to_owned())));
+        assert_eq!((d.verdict, d.rule.as_str()), (Verdict::Deny, "unknown_tool"));
     }
 
     #[test]

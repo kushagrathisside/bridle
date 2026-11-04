@@ -30,20 +30,31 @@ const DIFF_LIMIT: usize = 400_000;
 
 /// The conversation and what is running now.
 #[derive(Debug, Default)]
-struct Inner {
+pub(crate) struct Inner {
     /// The conversation. It is `None` before the first message, while a turn runs (the turn owns it),
     /// and after a crash.
-    agent: Option<Box<Agent>>,
-    running: bool,
-    cancel: Arc<AtomicBool>,
+    pub(crate) agent: Option<Box<Agent>>,
+    /// The conversation of each member of the team who has worked in this window, by member handle.
+    pub(crate) members: BTreeMap<String, Box<Agent>>,
+    /// The member and the issue of the turn that runs now, when it is a member's turn.
+    pub(crate) active: Option<Active>,
+    pub(crate) running: bool,
+    pub(crate) cancel: Arc<AtomicBool>,
+}
+
+/// A member's turn in progress.
+#[derive(Debug, Clone)]
+pub(crate) struct Active {
+    pub(crate) member: String,
+    pub(crate) issue: String,
 }
 
 #[derive(Debug)]
 pub struct Bridge {
     /// Which configuration and folder the window works on. `switch_workspace` changes the folder.
     args: Mutex<LoadArgs>,
-    tx: Sender<JobMsg>,
-    inner: Mutex<Inner>,
+    pub(crate) tx: Sender<JobMsg>,
+    pub(crate) inner: Mutex<Inner>,
     /// Every server this window started or is starting, by folder and slot, with the arguments that reach that folder.
     /// Recorded when the start is requested, not when it finishes, so a server that is still loading can be stopped too.
     /// A record is removed only by an explicit stop: a start that fails or is cut short leaves the record, and stopping a
@@ -52,7 +63,7 @@ pub struct Bridge {
     terminal: Terminal,
 }
 
-fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+pub(crate) fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
@@ -110,26 +121,59 @@ pub fn pump(rx: Receiver<JobMsg>, handle: &AppHandle) {
     for message in rx {
         let bridge = handle.state::<Bridge>();
         match message {
-            JobMsg::Chat(ChatMsg::Event(event)) => emit(handle, &view::chat_event(&event)),
-            JobMsg::Chat(ChatMsg::Finished { agent, end }) => {
-                {
-                    let mut inner = locked(&bridge.inner);
-                    inner.agent = agent;
-                    inner.running = false;
+            JobMsg::Chat(ChatMsg::Event(event)) => {
+                let mut payload = view::chat_event(&event);
+                if let Some(active) = locked(&bridge.inner).active.clone() {
+                    payload["member"] = json!(active.member);
                 }
-                emit(handle, &view::turn_end(&end));
+                emit(handle, &payload);
+            }
+            JobMsg::Chat(ChatMsg::Finished { agent, end }) => {
+                let answer = agent.as_ref().and_then(|a| a.last_answer());
+                let active = {
+                    let mut inner = locked(&bridge.inner);
+                    let active = inner.active.take();
+                    match (&active, agent) {
+                        (Some(a), Some(agent)) => {
+                            inner.members.insert(a.member.clone(), agent);
+                        }
+                        (Some(_), None) => {}
+                        (None, agent) => inner.agent = agent,
+                    }
+                    inner.running = false;
+                    active
+                };
+                let mut payload = view::turn_end(&end);
+                if let Some(active) = &active {
+                    crate::crew_cmd::finish_member_turn(&bridge, active, &end, answer.as_deref());
+                    payload["member"] = json!(active.member);
+                    payload["issue"] = json!(active.issue);
+                }
+                emit(handle, &payload);
                 refresh(&bridge);
             }
             JobMsg::Chat(ChatMsg::Failed(reason)) => {
-                {
+                let active = {
                     let mut inner = locked(&bridge.inner);
-                    inner.agent = None;
+                    let active = inner.active.take();
+                    match &active {
+                        Some(a) => {
+                            inner.members.remove(&a.member);
+                        }
+                        None => inner.agent = None,
+                    }
                     inner.running = false;
+                    active
+                };
+                if let Some(active) = &active {
+                    crate::crew_cmd::finish_member_turn(&bridge, active, &harness_cli::chat::TurnEnd::Failed(reason.clone()), None);
                 }
-                emit(
-                    handle,
-                    &json!({"type": "turn_end", "end": "failed", "message": reason}),
-                );
+                let mut payload = json!({"type": "turn_end", "end": "failed", "message": reason});
+                if let Some(active) = &active {
+                    payload["member"] = json!(active.member);
+                    payload["issue"] = json!(active.issue);
+                }
+                emit(handle, &payload);
             }
             JobMsg::Snapshot(snapshot) => {
                 emit(
@@ -174,7 +218,7 @@ fn stop_server_in(args: &LoadArgs, slot: &str) {
     }
 }
 
-fn emit(handle: &AppHandle, payload: &Value) {
+pub(crate) fn emit(handle: &AppHandle, payload: &Value) {
     let _ = handle.emit(EVENT, payload);
 }
 
@@ -227,6 +271,7 @@ pub fn new_chat(bridge: State<'_, Bridge>) -> Result<(), String> {
         return Err("stop the running turn first".to_owned());
     }
     inner.agent = None;
+    inner.members.clear();
     Ok(())
 }
 
@@ -683,8 +728,13 @@ pub fn switch_workspace(
     // Stops what this window started for the old folder, including a server that is still loading. The records stay, so
     // a start that finishes after this point is recognised as the old folder's and stopped as well.
     bridge.shutdown();
-    locked(&bridge.inner).agent = None;
+    {
+        let mut inner = locked(&bridge.inner);
+        inner.agent = None;
+        inner.members.clear();
+    }
     locked(&bridge.args).workspace = Some(workspace.clone());
+    crate::crew_cmd::recover_board(&workspace);
     remember_project(&workspace);
     set_window_title(&app, &workspace);
     refresh(&bridge);
