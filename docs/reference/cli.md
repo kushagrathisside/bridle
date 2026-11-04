@@ -104,7 +104,35 @@ Events: `tool-before`, `tool-after`, `permission`, `shell-env`, `event`, `messag
 
 ### `bridle egress`
 
-Lists every outbound destination the configuration can reach, and whether a proxy is set. It sends nothing.
+Lists every outbound destination the configuration can reach, and whether a proxy is set. It sends nothing. With web research on it lists
+the search providers and "any public web address"; with the browser on it adds the managed browser and says whether its egress proxy pins
+the addresses it connects to or hands names to your proxy.
+
+### `bridle web`
+
+Web research from the terminal. You are the one asking, so these do not need `security.network = "allow"`; they need `[web] enabled`.
+See [Web research](../guide/web-research.md).
+
+| Command | What it does |
+|---|---|
+| `bridle web status` / `providers` | The settings, the route, the recorded sources; each provider and whether its key variable is set. |
+| `bridle web search "query" [--news] [--limit N] [--domain D] [--after DATE]` | Search every usable provider and print the fused results. |
+| `bridle web open URL` / `download URL [--sha256 HEX]` / `inspect S-0002 or path` | Read a page, save a file, show a saved file. |
+
+### `bridle web browser`
+
+The managed Chromium. See [The managed browser](../guide/web-browser.md) and
+[ADR-0020](../decisions/0020-managed-browser-is-a-policy-gated-playwright-worker.md).
+
+| Command | What it does |
+|---|---|
+| `status` | Enabled or not; the runtime state, versions and the SHA-256 of `chrome.exe`; the limits; how the browser reaches the web. Exit code 1 if the runtime is not ready. |
+| `setup` | Downloads the pinned Node.js, playwright-core and Chromium (about 210 MB) through your proxy into `browser-runtime\` next to the machine configuration. Checks each against its published hash. Safe to repeat. |
+| `test [--live URL]` | Runs a real Chromium against a small site served from this machine (about 70 checks, no internet). `--live` also reads one real page. Exit code 1 if any check fails. |
+| `remove` | Deletes the runtime folder (only a folder named `browser-runtime`). |
+
+`bridle doctor` also prints a `browser` line when the browser is enabled or installed: off, not installed, incomplete, the wrong version,
+or ready.
 
 ## The model-side tools
 

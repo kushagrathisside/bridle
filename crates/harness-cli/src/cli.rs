@@ -96,6 +96,11 @@ enum Command {
     },
     /// List every outbound destination of this configuration, and the proxy state. Sends nothing.
     Egress,
+    /// Web research from the terminal: providers, status, search, open, download, inspect (ADR-0019).
+    Web {
+        #[command(subcommand)]
+        action: commands::web::WebAction,
+    },
     /// List the plugin manifests and their tools, with the class each tool is offered under, and what was not loaded.
     Plugins,
     /// Ask the subagent tier: a small local model reads a few bounded inputs and answers with cited evidence.
@@ -165,6 +170,7 @@ pub fn run() -> ExitCode {
                     commands::task::trace(&app, task.as_deref(), limit)
                 }
                 Command::Egress => commands::egress::run(&app),
+                Command::Web { action } => commands::web::run(&app, &action),
                 Command::Subagent {
                     role,
                     task,

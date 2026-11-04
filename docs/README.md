@@ -13,6 +13,8 @@ was made.
 | Open the interactive control center | [guide/tui.md](guide/tui.md) |
 | Open the desktop app (`bridle`) | [guide/desktop.md](guide/desktop.md) |
 | Use the team, the board and the ideas queue | [guide/team-and-board.md](guide/team-and-board.md) |
+| Search the web and download files, safely | [guide/web-research.md](guide/web-research.md) |
+| Read pages that need JavaScript with a managed Chromium | [guide/web-browser.md](guide/web-browser.md) |
 | Work on Windows without WSL | [guide/windows-only.md](guide/windows-only.md) |
 | Fix a problem seen on the tested machine | [guide/troubleshooting.md](guide/troubleshooting.md) |
 | Know which models and runtimes are used, and where to get them | [guide/models.md](guide/models.md) |

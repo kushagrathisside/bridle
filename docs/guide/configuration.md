@@ -42,7 +42,9 @@ each of these settings and names the key:
 - any `external.<name>` key except `enabled = false`;
 - a non-empty `security.allowed_paths` or `security.safe_commands`;
 - `security.secrets_redaction = false` or `security.require_worktree = false` where the layer below sets `true`;
-- a security verdict less strict than the layer below.
+- a security verdict less strict than the layer below;
+- a `[web]` table (search providers, endpoints, key variable names, and `[web.browser]`: whether the browser exists, how many sessions,
+  whether downloads and screenshots are kept) or a `[network]` table (the proxy). They decide where a person's traffic goes.
 
 The machine configuration and an explicit file may set any of these.
 
@@ -133,7 +135,7 @@ The shipped profiles satisfy these rules, so `bridle init` output loads as a pro
 ## Validation rules
 
 `bridle config validate` reports each issue with its rule id. The rules are in
-`crates/harness-core/src/config/validate.rs` (V1 to V41). The main ones:
+`crates/harness-core/src/config/validate.rs` (V1 to V49). The main ones:
 
 | Rule | Check |
 |---|---|
@@ -155,6 +157,8 @@ The shipped profiles satisfy these rules, so `bridle init` output loads as a pro
 | V42 | `external.laya` is enabled without an `endpoint`, or the endpoint is not `http://` to a loopback host |
 | V43 | `external.laya.timeout_ms` is outside 100 to 60000 |
 | V44 | warning: `routing.auto_slot` is on while `external.laya` is off, so requests the rules cannot place go to `main` |
+| V48 | `[web]`: an enabled provider needs what it needs (a SearXNG `base_url` without credentials, a Brave key variable name), `web.enabled` needs a usable provider, and the limits are inside their ranges |
+| V49 | `[web.browser]`: it needs `web.enabled`, `headless` stays `true`, 1 to 4 sessions, a navigation timeout of 1 to 120 s, an action timeout of 0.5 to 60 s, an idle time of 1 to 60 minutes, and 1,000 to 100,000 characters of page text |
 
 ## Workflow and loop limits
 
@@ -393,6 +397,29 @@ recent window keep only their failure lines.
 | `jev.api_key_env` | none | The name of the environment variable that holds the key. Required for a non-loopback endpoint (V33). |
 | `jev.timeout_ms` | 5000 | The time limit for one decision. Between 100 and 60000 (V34). |
 | `cloud_models.enabled` | `false` | Lets a model endpoint on another host use `https://` (V4). External services are not part of the verified release. See the [project status](../project/status.md). |
+
+### `[web]` and `[web.browser]`: machine settings
+
+Both are refused in a repository file. Search providers and the page fetcher are described in [Web research](web-research.md), the
+browser in [The managed browser](web-browser.md).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `web.enabled` | `false` | Turns on the web tools (`web_search`, `web_open`, `web_download`, `document_inspect`). |
+| `web.max_results`, `timeout_ms`, `max_fetch_bytes`, `max_download_mb` | 10, 20000, 2 MiB, 100 | Limits of a search, a fetch, a page and a download. |
+| `web.providers.<name>` | none | `kind` (`searxng` or `brave`), `enabled`, `base_url`, `api_key_env` (the NAME of a variable). |
+| `web.browser.enabled` | `false` | Offers `browser_navigate`, `browser_snapshot`, `browser_action`, `browser_close`. Needs `web.enabled` and an installed runtime (`bridle web browser setup`). |
+| `web.browser.engine` | `"chromium"` | The only engine. |
+| `web.browser.headless` | `true` | A visible browser is not offered (V49). |
+| `web.browser.max_sessions` | 2 | Open sessions at once, each its own Chromium (1 to 4). |
+| `web.browser.navigation_timeout_ms` / `action_timeout_ms` | 30000 / 10000 | How long a page load, and a click or fill, may take. |
+| `web.browser.session_idle_secs` | 600 | An unused session is closed after this long. |
+| `web.browser.max_page_content_chars` | 20000 | The most page text one snapshot returns. |
+| `web.browser.screenshots_enabled` | `false` | Whether `browser_snapshot` may keep a screenshot. |
+| `web.browser.downloads_enabled` | `false` | Whether a file a page offers is kept (through the download manager). Off: such a download is refused and nothing is written. |
+
+There is no key for a browser program, a launch flag, a profile or a download folder: those are not configurable. The runtime lives in
+`browser-runtime\` next to the machine configuration.
 
 ### `[paths]` and `[host]`: machine settings
 
