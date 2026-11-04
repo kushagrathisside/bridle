@@ -30,7 +30,7 @@ M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
 ## 2026-11-03 (later): Bridle names, one `bridle` program, a proxy setting in the app, and Windows-only tooling
 
-Branch `desktop-app`, uncommitted. All of this was checked on the tested machine; 935 tests passed and clippy was clean before the
+Branch `desktop-app`. All of this was checked on the tested machine; 935 tests passed and clippy was clean before the
 last small edits.
 
 - **Bridle is the only written name** ([ADR-0018](../decisions/0018-bridle-is-the-product-name.md)): `bridle.toml`, `.bridle/`,
@@ -51,7 +51,7 @@ last small edits.
 
 ## 2026-11-03: desktop app `bridle`, images, larger context, VRAM guard; the memory crash and its cause
 
-Branch `desktop-app`, not committed at the time of writing. Windows only; checked on the tested machine (Windows 11, RTX 4060
+Branch `desktop-app`. Windows only; checked on the tested machine (Windows 11, RTX 4060
 Laptop 8 GB, 16 GB RAM, a 16 GB pagefile on D:).
 
 **Built and verified in the real window.** The checks were driven through the window's debug port with a bounded client
