@@ -282,14 +282,23 @@ impl BoardStore {
 
     /// Creates the child issues of a plan in one step: all of them or none. Step `i` waits for the earlier steps named in
     /// `after[i]` (indexes into `steps`). A retried call returns the issues that already exist (their keys match).
-    pub fn create_plan(&self, actor: &str, steps: &[NewIssue], after: &[Vec<usize>]) -> Result<Vec<(Issue, bool)>> {
+    pub fn create_plan(
+        &self,
+        actor: &str,
+        steps: &[NewIssue],
+        after: &[Vec<usize>],
+    ) -> Result<Vec<(Issue, bool)>> {
         self.locked(|board, out| {
             let mut made: Vec<(Issue, bool)> = Vec::new();
             for (index, step) in steps.iter().enumerate() {
                 let mut step = step.clone();
                 for earlier in after.get(index).into_iter().flatten() {
                     let Some((issue, _)) = made.get(*earlier).filter(|_| *earlier < index) else {
-                        bail!("step {} waits for step {}, which does not come before it", index + 1, earlier + 1);
+                        bail!(
+                            "step {} waits for step {}, which does not come before it",
+                            index + 1,
+                            earlier + 1
+                        );
                     };
                     step.blocked_by.push(issue.id.clone());
                 }
@@ -613,95 +622,100 @@ fn depth(id: &str) -> usize {
 }
 
 /// The body of `create`, on a board that is already locked and read.
-fn create_in(board: &mut Board, out: &mut Vec<(String, Issue)>, actor: &str, new: &NewIssue) -> Result<(Issue, bool)> {
-            let title = clean_line("the title", &new.title, MAX_TITLE)?;
-            let body = clean_text("the description", &new.body, MAX_BODY)?;
-            if new.acceptance.len() > MAX_ACCEPTANCE {
-                bail!("at most {MAX_ACCEPTANCE} acceptance criteria");
+fn create_in(
+    board: &mut Board,
+    out: &mut Vec<(String, Issue)>,
+    actor: &str,
+    new: &NewIssue,
+) -> Result<(Issue, bool)> {
+    let title = clean_line("the title", &new.title, MAX_TITLE)?;
+    let body = clean_text("the description", &new.body, MAX_BODY)?;
+    if new.acceptance.len() > MAX_ACCEPTANCE {
+        bail!("at most {MAX_ACCEPTANCE} acceptance criteria");
+    }
+    let acceptance = new
+        .acceptance
+        .iter()
+        .map(|a| clean_line("an acceptance criterion", a, 300))
+        .collect::<Result<Vec<_>>>()?;
+    if let Some(key) = &new.key
+        && let Some(found) = board
+            .issues
+            .values()
+            .find(|i| i.key.as_deref() == Some(key) && i.parent == new.parent)
+    {
+        return Ok((found.clone(), false));
+    }
+    if board.issues.len() >= MAX_ISSUES {
+        bail!("the board is full: {MAX_ISSUES} issues");
+    }
+    let id = match &new.parent {
+        Some(parent) => {
+            let parent_issue = board
+                .issues
+                .get(parent)
+                .ok_or_else(|| anyhow::anyhow!("there is no issue {parent}"))?;
+            if depth(&parent_issue.id) >= MAX_DEPTH {
+                bail!("issues can be nested at most {MAX_DEPTH} deep");
             }
-            let acceptance = new
-                .acceptance
-                .iter()
-                .map(|a| clean_line("an acceptance criterion", a, 300))
-                .collect::<Result<Vec<_>>>()?;
-            if let Some(key) = &new.key
-                && let Some(found) = board
-                    .issues
-                    .values()
-                    .find(|i| i.key.as_deref() == Some(key) && i.parent == new.parent)
-            {
-                return Ok((found.clone(), false));
+            let siblings = board
+                .issues
+                .values()
+                .filter(|i| i.parent.as_deref() == Some(parent))
+                .count();
+            if siblings >= MAX_CHILDREN {
+                bail!("{parent} already has {MAX_CHILDREN} child issues");
             }
-            if board.issues.len() >= MAX_ISSUES {
-                bail!("the board is full: {MAX_ISSUES} issues");
+            let mut n = siblings + 1;
+            while board.issues.contains_key(&format!("{parent}.{n}")) {
+                n += 1;
             }
-            let id = match &new.parent {
-                Some(parent) => {
-                    let parent_issue = board
-                        .issues
-                        .get(parent)
-                        .ok_or_else(|| anyhow::anyhow!("there is no issue {parent}"))?;
-                    if depth(&parent_issue.id) >= MAX_DEPTH {
-                        bail!("issues can be nested at most {MAX_DEPTH} deep");
-                    }
-                    let siblings = board
-                        .issues
-                        .values()
-                        .filter(|i| i.parent.as_deref() == Some(parent))
-                        .count();
-                    if siblings >= MAX_CHILDREN {
-                        bail!("{parent} already has {MAX_CHILDREN} child issues");
-                    }
-                    let mut n = siblings + 1;
-                    while board.issues.contains_key(&format!("{parent}.{n}")) {
-                        n += 1;
-                    }
-                    format!("{parent}.{n}")
-                }
-                None => fresh_id(board, &title),
-            };
-            for blocker in &new.blocked_by {
-                if !board.issues.contains_key(blocker) {
-                    bail!("there is no issue {blocker} to wait for");
-                }
-            }
-            let waiting = new.blocked_by.iter().any(|b| {
-                board
-                    .issues
-                    .get(b)
-                    .is_some_and(|i| !matches!(i.status, Status::Done | Status::Cancelled))
-            });
-            let status = if new.assignee.is_none() {
-                Status::Backlog
-            } else if waiting {
-                Status::Blocked
-            } else {
-                Status::Ready
-            };
-            let time = now();
-            let issue = Issue {
-                id: id.clone(),
-                title,
-                body,
-                kind: new.kind.unwrap_or(Kind::Task),
-                status,
-                assignee: new.assignee.clone(),
-                track: new.track.clone(),
-                parent: new.parent.clone(),
-                blocked_by: new.blocked_by.clone(),
-                acceptance,
-                priority: new.priority.unwrap_or(2).min(3),
-                creator: actor.to_owned(),
-                created: time.clone(),
-                updated: time,
-                comments: Vec::new(),
-                hold: None,
-                run: None,
-                key: new.key.clone(),
-            };
-            board.issues.insert(id, issue.clone());
-            out.push((format!("{actor}\tcreated"), issue.clone()));
-            Ok((issue, true))
+            format!("{parent}.{n}")
+        }
+        None => fresh_id(board, &title),
+    };
+    for blocker in &new.blocked_by {
+        if !board.issues.contains_key(blocker) {
+            bail!("there is no issue {blocker} to wait for");
+        }
+    }
+    let waiting = new.blocked_by.iter().any(|b| {
+        board
+            .issues
+            .get(b)
+            .is_some_and(|i| !matches!(i.status, Status::Done | Status::Cancelled))
+    });
+    let status = if new.assignee.is_none() {
+        Status::Backlog
+    } else if waiting {
+        Status::Blocked
+    } else {
+        Status::Ready
+    };
+    let time = now();
+    let issue = Issue {
+        id: id.clone(),
+        title,
+        body,
+        kind: new.kind.unwrap_or(Kind::Task),
+        status,
+        assignee: new.assignee.clone(),
+        track: new.track.clone(),
+        parent: new.parent.clone(),
+        blocked_by: new.blocked_by.clone(),
+        acceptance,
+        priority: new.priority.unwrap_or(2).min(3),
+        creator: actor.to_owned(),
+        created: time.clone(),
+        updated: time,
+        comments: Vec::new(),
+        hold: None,
+        run: None,
+        key: new.key.clone(),
+    };
+    board.issues.insert(id, issue.clone());
+    out.push((format!("{actor}\tcreated"), issue.clone()));
+    Ok((issue, true))
 }
 
 fn fresh_id(board: &Board, title: &str) -> String {

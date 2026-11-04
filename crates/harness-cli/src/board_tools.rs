@@ -418,15 +418,26 @@ impl McpTool for Plan {
             None => board
                 .issues
                 .values()
-                .find(|i| i.status == Status::InProgress && i.assignee.as_deref() == Some(c.member.as_str()))
+                .find(|i| {
+                    i.status == Status::InProgress
+                        && i.assignee.as_deref() == Some(c.member.as_str())
+                })
                 .map(|i| i.id.clone())
                 .ok_or("say which issue the steps belong to (parent): you hold none")?,
         };
-        let parent_issue = board.issues.get(&parent).ok_or_else(|| format!("there is no issue {parent}"))?;
+        let parent_issue = board
+            .issues
+            .get(&parent)
+            .ok_or_else(|| format!("there is no issue {parent}"))?;
         if !c.lead() && parent_issue.assignee.as_deref() != Some(c.member.as_str()) {
-            return Err(format!("you can only split an issue assigned to you; {parent} is not"));
+            return Err(format!(
+                "you can only split an issue assigned to you; {parent} is not"
+            ));
         }
-        let steps = args.get("steps").and_then(Value::as_array).ok_or("`steps` must be a list")?;
+        let steps = args
+            .get("steps")
+            .and_then(Value::as_array)
+            .ok_or("`steps` must be a list")?;
         if steps.is_empty() || steps.len() > 8 {
             return Err("give between 1 and 8 steps".to_owned());
         }
@@ -442,7 +453,8 @@ impl McpTool for Plan {
             };
             let body = opt_str(step, "body").unwrap_or_default();
             let assignee = match opt_str(step, "assignee") {
-                Some(handle) => match resolver.resolve_assignee(handle, &format!("{title} {body}")) {
+                Some(handle) => match resolver.resolve_assignee(handle, &format!("{title} {body}"))
+                {
                     Ok(member) => Some(member),
                     Err(error) => {
                         problems.push(format!("step {number}: {error}"));
@@ -457,14 +469,25 @@ impl McpTool for Plan {
             let waits: Vec<usize> = step
                 .get("after")
                 .and_then(Value::as_array)
-                .map(|a| a.iter().filter_map(Value::as_u64).filter_map(|n| usize::try_from(n).ok()).collect::<Vec<_>>())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_u64)
+                        .filter_map(|n| usize::try_from(n).ok())
+                        .collect::<Vec<_>>()
+                })
                 .unwrap_or_default();
             if let Some(bad) = waits.iter().find(|n| **n == 0 || **n >= number) {
-                problems.push(format!("step {number} waits for step {bad}, which is not an earlier step"));
+                problems.push(format!(
+                    "step {number} waits for step {bad}, which is not an earlier step"
+                ));
                 continue;
             }
             after.push(waits.iter().map(|n| n - 1).collect());
-            let track = assignee.as_deref().and_then(|a| c.roster.member(a)).and_then(|m| c.roster.role(&m.role)).map(|r| r.team.clone());
+            let track = assignee
+                .as_deref()
+                .and_then(|a| c.roster.member(a))
+                .and_then(|m| c.roster.role(&m.role))
+                .map(|r| r.team.clone());
             new.push(NewIssue {
                 title: title.to_owned(),
                 body: body.to_owned(),
@@ -472,17 +495,45 @@ impl McpTool for Plan {
                 track,
                 parent: Some(parent.clone()),
                 acceptance: strings(step, "acceptance")?,
-                priority: step.get("priority").and_then(Value::as_u64).and_then(|p| u8::try_from(p).ok()),
+                priority: step
+                    .get("priority")
+                    .and_then(Value::as_u64)
+                    .and_then(|p| u8::try_from(p).ok()),
                 key: Some(format!("{parent}:{}", title.trim().to_lowercase())),
                 ..NewIssue::default()
             });
         }
         if !problems.is_empty() {
-            return Err(format!("nothing was created. Fix these and call board_plan again with all the steps:\n- {}", problems.join("\n- ")));
+            return Err(format!(
+                "nothing was created. Fix these and call board_plan again with all the steps:\n- {}",
+                problems.join("\n- ")
+            ));
         }
-        let made = c.store.create_plan(&c.member, &new, &after).map_err(Ctx::fail)?;
-        let list: Vec<String> = made.iter().enumerate().map(|(i, (issue, created))| format!("{}. {}{}", i + 1, if *created { "" } else { "(already existed) " }, line(issue))).collect();
-        Ok(out(format!("Planned {} issue(s) under {parent}:\n{}", made.len(), list.join("\n")), json!({"parent": parent, "ids": made.iter().map(|(i, _)| i.id.clone()).collect::<Vec<_>>()}), ctx))
+        let made = c
+            .store
+            .create_plan(&c.member, &new, &after)
+            .map_err(Ctx::fail)?;
+        let list: Vec<String> = made
+            .iter()
+            .enumerate()
+            .map(|(i, (issue, created))| {
+                format!(
+                    "{}. {}{}",
+                    i + 1,
+                    if *created { "" } else { "(already existed) " },
+                    line(issue)
+                )
+            })
+            .collect();
+        Ok(out(
+            format!(
+                "Planned {} issue(s) under {parent}:\n{}",
+                made.len(),
+                list.join("\n")
+            ),
+            json!({"parent": parent, "ids": made.iter().map(|(i, _)| i.id.clone()).collect::<Vec<_>>()}),
+            ctx,
+        ))
     }
 }
 
@@ -849,7 +900,18 @@ mod tests {
     fn a_plan_creates_every_step_with_its_dependencies_or_nothing() {
         let (_d, store, ctx) = setup();
         let pm = tools(&store, "priya");
-        let id = call(&pm, "board_create", json!({"title": "Add a cache", "assignee": "priya"}), &ctx).unwrap().structured.unwrap()["id"].as_str().unwrap().to_owned();
+        let id = call(
+            &pm,
+            "board_create",
+            json!({"title": "Add a cache", "assignee": "priya"}),
+            &ctx,
+        )
+        .unwrap()
+        .structured
+        .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
         call(&pm, "board_claim", json!({"id": id}), &ctx).unwrap();
         // One bad step: nothing is created, and every problem is listed.
         let bad = json!({"steps": [
@@ -857,7 +919,12 @@ mod tests {
             {"title": "Review", "assignee": "nobody-here", "after": [1]},
             {"title": "Note", "assignee": "product", "after": [3]}]});
         let error = call(&pm, "board_plan", bad, &ctx).unwrap_err();
-        assert!(error.contains("nothing was created") && error.contains("step 2") && error.contains("step 3"), "{error}");
+        assert!(
+            error.contains("nothing was created")
+                && error.contains("step 2")
+                && error.contains("step 3"),
+            "{error}"
+        );
         assert!(store.load().unwrap().children(&id).is_empty());
         let good = json!({"steps": [
             {"title": "Implement the cache", "assignee": "eng", "acceptance": ["tests pass"]},
@@ -876,9 +943,21 @@ mod tests {
         assert!(again.text.contains("already existed"), "{}", again.text);
         assert_eq!(store.load().unwrap().children(&id).len(), 3);
         // The parent defaults to the issue the member holds, and only a lead or the holder may split an issue.
-        let default_parent = call(&pm, "board_plan", json!({"steps": [{"title": "One more step", "assignee": "eng"}]}), &ctx).unwrap();
+        let default_parent = call(
+            &pm,
+            "board_plan",
+            json!({"steps": [{"title": "One more step", "assignee": "eng"}]}),
+            &ctx,
+        )
+        .unwrap();
         assert!(default_parent.text.contains(&id), "{}", default_parent.text);
-        let error = call(&tools(&store, "sam"), "board_plan", json!({"parent": id, "steps": [{"title": "x", "assignee": "qa"}]}), &ctx).unwrap_err();
+        let error = call(
+            &tools(&store, "sam"),
+            "board_plan",
+            json!({"parent": id, "steps": [{"title": "x", "assignee": "qa"}]}),
+            &ctx,
+        )
+        .unwrap_err();
         assert!(error.contains("assigned to you"), "{error}");
     }
 

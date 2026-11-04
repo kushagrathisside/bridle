@@ -34,14 +34,25 @@
 
       <aside id="sidebar">
         <section id="view-explorer" class="view active">
-          <div class="side-head"><span>Explorer</span>
+          <div class="explorer-head">
+            <div class="proj"><span id="explorer-project" class="proj-name">Explorer</span><span id="explorer-branch" class="proj-branch" hidden></span></div>
             <span class="head-actions">
-              <button id="new-file" class="icon" title="New file">+ File</button>
-              <button id="new-folder" class="icon" title="New folder">+ Folder</button>
-              <button id="tree-refresh" class="icon" title="Refresh">↻</button>
+              <button id="new-file" class="icon-btn" title="New file" aria-label="New file"></button>
+              <button id="new-folder" class="icon-btn" title="New folder" aria-label="New folder"></button>
+              <button id="tree-collapse" class="icon-btn" title="Collapse all folders" aria-label="Collapse all"></button>
+              <button id="tree-refresh" class="icon-btn" title="Refresh" aria-label="Refresh"></button>
             </span>
           </div>
-          <div id="tree" class="tree"></div>
+          <div class="filter-box">
+            <input id="tree-filter" type="text" placeholder="Filter files" autocomplete="off" spellcheck="false" aria-label="Filter files">
+            <button id="tree-filter-clear" class="icon-btn" title="Clear the filter" aria-label="Clear the filter" hidden></button>
+          </div>
+          <div class="explorer-body">
+            <details id="open-editors" class="sect" open><summary>Open editors <span id="oe-count" class="count"></span></summary><div id="oe-list" class="tree"></div></details>
+            <div class="sect-title">Files</div>
+            <div id="tree" class="tree" role="tree"></div>
+            <div id="filter-results" class="tree" role="listbox" hidden></div>
+          </div>
         </section>
 
         <section id="view-search" class="view">
@@ -143,6 +154,7 @@
           </span>
         </div>
         <div id="transcript" class="transcript" aria-live="polite"></div>
+        <button id="jump" class="jump" type="button" hidden title="Scroll to the latest message">↓ Latest</button>
         <form id="composer" class="composer">
           <div id="palette" class="palette" hidden></div>
           <div id="attachment" class="attachment" hidden></div>
@@ -191,8 +203,10 @@
   <script src="vendor/xterm/addon-fit.js"></script>
   <script src="vendor/monaco/vs/loader.js"></script>
   <script src="core.js"></script>
+  <script src="markdown.js"></script>
   <script src="chat.js"></script>
   <script src="editor.js"></script>
+  <script src="explorer.js"></script>
   <script src="panels.js"></script>
   <script src="ideas.js"></script>
   <script src="crew.js"></script>

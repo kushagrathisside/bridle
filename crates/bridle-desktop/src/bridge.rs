@@ -148,7 +148,13 @@ pub fn pump(rx: Receiver<JobMsg>, handle: &AppHandle) {
                 };
                 let mut payload = view::turn_end(&end);
                 if let Some(active) = &active {
-                    crate::crew_cmd::finish_member_turn(&bridge, active, &end, answer.as_deref(), guard);
+                    crate::crew_cmd::finish_member_turn(
+                        &bridge,
+                        active,
+                        &end,
+                        answer.as_deref(),
+                        guard,
+                    );
                     payload["member"] = json!(active.member);
                     payload["issue"] = json!(active.issue);
                 }
