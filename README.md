@@ -4,7 +4,8 @@
 
 Open a folder, type `bridle`, and a window opens: a chat with a local model, a code editor with diffs, project search, a
 real terminal, and image input. The model reads and edits the project with tools. A policy written in code, not in a
-prompt, decides what each call may do.
+prompt, decides what each call may do. A **team** of named members (project manager, product owner, engineers, QA and more) sits
+on the right edge of the window: tag one with `@`, and the work goes onto a **board** of issues that the members split and work.
 
 > **The model proposes; the harness decides.** No shell command runs without a verdict. A secret value never reaches the
 > model. A refusal names the rule that caused it.
@@ -51,6 +52,8 @@ of RAM). Sub-agents on small models and web search are planned, not built. See [
 | **Secrets stay out** | Secret files cannot be read, secret-looking environment variables are blanked for shell tools, and secret values in output are redacted before the model sees them. | [Security](docs/concepts/security.md#secrets) |
 | **Deterministic tools** | Git, tree-sitter code navigation, dependency search, test, lint and type-check runners, failure parsing, experiment comparison. | [Tool list](#tools-the-model-can-call) |
 | **Images** | Paste, drop or pick a PNG, JPEG, GIF or WebP; the model describes it when its slot has a vision projector. | [Desktop guide](docs/guide/desktop.md#the--menu-and-images) |
+| **Team and board** | Six teams of named members you can add to and rename. Tag a member, a role or a team with `@`; the request becomes an issue on a board, and members work the issues one at a time, splitting work into issues for other teams. What each member may do depends on their role and is checked in code. | [Team and board](docs/guide/team-and-board.md) |
+| **Ideas queue** | Notes saved while a run works are kept out of the conversation, shown as the first column of the board, and sent one per finished run, or turned into issues. | [Team and board](docs/guide/team-and-board.md#ideas) |
 | **Context compaction** | Old turns are folded into a rolling summary written by the model, so a long session stays inside the window. `/compact` does it on demand. | [Desktop guide](docs/guide/desktop.md#the--menu-and-images) |
 | **GPU memory guard** | A model server is refused when the model file's own header says it will not fit, instead of crashing half way through loading. | [Models and GPU memory](#models-and-gpu-memory) |
 | **Orchestrator** | Task state in a journal, loop detection, refusals with the rule named, worktree tasks. | [Tasks and loops](docs/concepts/tasks-and-loops.md) |
@@ -178,6 +181,8 @@ bridle --config my.toml   :: add an explicit configuration file
 | **Explorer** | Create, rename and delete (to `.bridle/trash`), and Ctrl+P to go to any file. |
 | **Search** | Project-wide text search. |
 | **Changes** | The changed files with a per-file revert. |
+| **Crew rail** | One avatar for each team member on the right edge: who is working, how many open issues each has. Click to tag a member; right-click for more. |
+| **Board** | A popup from the top bar, as in GitHub Projects: the ideas, then the issues by state, with a detail panel, a by-team view, filters and a runner that gives ready issues to their owners. |
 | **Terminal** | A real pseudo-terminal (ConPTY) with a shell picker: Git Bash, PowerShell, Command Prompt, or WSL on demand. What you type here is yours, and the model's policy does not check it. |
 | **Chat** | Streams the answer, shows each tool call as a card with its verdict, and has Open file and View diff buttons for file tools. |
 | **Models** | Start and stop a slot, and see its state, hardware and whether it has vision. |
@@ -199,7 +204,8 @@ bridle --config my.toml   :: add an explicit configuration file
 | Ctrl+\` | Terminal |
 | Ctrl+L | New chat |
 | Ctrl+O | Change project |
-| Esc | Stop a running turn |
+| Ctrl+Shift+Enter | Save the text in the box as an idea |
+| Esc | Close the board, or stop a running turn |
 
 While the terminal has focus, its keys belong to the shell.
 
@@ -214,6 +220,8 @@ Type `/` in the chat to open the menu.
 | `/image` | Attach an image from your computer. You can also paste an image or drop a file. |
 | `/team <request>` | Plan the request in up to five steps, work each step with the same tools and policy, then check the result. |
 | `/model <slot>` | Switch the model slot. |
+| `/idea <text>` | Save an idea; it is sent when the run finishes. |
+| `@name`, `@team.role`, `@team` | Tag a member, a role or a team (type `@`, or click an avatar on the right). |
 | a tool name | Fills in "Use the ... tool to", for the 25 tools the model can call. |
 
 **Images** are copied to `.bridle/attachments` and sent with your next message. They are limited to 4 MiB. The slot must have a vision
@@ -476,10 +484,10 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 ```
 
-- **Size and tests.** About 54,000 lines of Rust in four crates, and 955 test functions in the source. The last full run on 2026-11-03
-  passed 936 tests with none failed and 5 ignored. About 500 dependency crates are listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+- **Size and tests.** About 58,000 lines of Rust in four crates, and 997 test functions in the source. The last full run on 2026-11-04
+  passed 978 tests with none failed and 5 ignored. About 500 dependency crates are listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 - **Style.** `unsafe` is forbidden, clippy runs with `-D warnings`, and there is no `unwrap` outside tests.
-- **End-to-end suite.** `tools/e2e` launches the window on a throwaway project with WebView2's debug port open, runs 14 named checks
+- **End-to-end suite.** `tools/e2e` launches the window on a throwaway project with WebView2's debug port open, runs 19 named checks
   through a bounded client (a hard watchdog, read timeouts and size caps), closes the window, and verifies that no `bridle.exe` or
   `llama-server.exe` is left running. See [tools/e2e/README.md](tools/e2e/README.md).
 - **Build limits.** The tested machine has 16 GB of RAM and an 8 GB GPU, so builds run one at a time with `CARGO_BUILD_JOBS=4`.
@@ -526,6 +534,9 @@ setting were verified in the real window on 2026-11-03.
 - **Not a sandbox.** See [Security model](#security-model).
 - **No approvals.** `ask` is never allowed, so network, destructive and risky commands are denied, not offered for confirmation.
 - **One conversation at a time** in the window, and images are limited to 4 MiB.
+- **The team works in Solo mode.** One model answers every member, one member at a time, in the project's working copy. Members are
+  prompts and tools, not separate models, and how well a 9B model plays each role is not measured. The small-model fleet, the Git layer
+  (checkpoints, undo, worktrees, locks) and a model-based pick for a tagged team are planned, not built.
 - **No installer program and no automatic update.** `install.cmd` copies the executable and edits your user `PATH`.
 - **`bridle > file.txt` or `bridle | more`** keeps the pipe or file open until the window closes, because the detached window inherits the handle.
 - **Syntactic code index.** `find_references` matches identifiers by spelling and does not resolve imports, types or overloads. There is
@@ -542,16 +553,18 @@ setting were verified in the real window on 2026-11-03.
 
 ## Roadmap
 
-Queued and not built yet. None of this is in version 0.1.0.
+The first slice of the team, the board and the ideas queue is built (see [Team and board](docs/guide/team-and-board.md)). The rest is
+planned in [docs/spec/team-subagents-ideas-plan.md](docs/spec/team-subagents-ideas-plan.md), and none of it is built yet:
 
-1. **Sub-agents on small models.** A decision model manages workers that use small models. While a worker runs, the main model is
-   unloaded from the GPU and loaded again afterwards. This must keep the GPU memory guard and the policy on every worker call, and
-   builds on [ADR-0009](docs/decisions/0009-subagents-are-bounded-readers.md) and
-   [ADR-0011](docs/decisions/0011-multi-agent-orchestration-in-sequence-first.md).
-2. **Web search for literature review.** Search tools surveyed from other agents and libraries, preferably ones that come with a
+1. **A Git layer for shared work.** Checkpoints under `refs/bridle/`, undo for a step, a repository lock, file leases, worktrees for
+   parallel engineers, and recovery of a run after a crash, with a failure matrix and a manual runbook.
+2. **Sub-agents on small models.** A manager model (Qwen3.5-4B is the candidate) and workers (Granite-4.0-H-Micro and H-1B for code,
+   LFM2.5 for reading) on the GPU with the 9B model unloaded, run as parallel slots of one server each. Measured against the 9B before
+   anything is adopted, and bound by the GPU memory guard.
+3. **Web search for literature review.** Search tools surveyed from other agents and libraries, preferably ones that come with a
    harness, integrated as opt-in tools that pass the same policy, use the proxy setting, and name their sources. Network access
    stays off by default.
-3. **Window polish.** Further editor and layout refinements for the window.
+4. **Window polish.** Further editor and layout refinements for the window.
 
 Routing between model slots and several agents on one repository are the goal of the local-first application layer; see
 [Architecture](#architecture).

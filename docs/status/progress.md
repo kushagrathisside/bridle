@@ -28,6 +28,30 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-11-04: the team, the board and the ideas queue; the plan for the rest
+
+Branch `team-board`. Windows only; checked on the tested machine (Windows 11, RTX 4060 Laptop 8 GB, 16 GB RAM).
+
+- **Plan.** [team-subagents-ideas-plan.md](../spec/team-subagents-ideas-plan.md): how agents share files and Git with recovery from
+  crashes (30-row failure matrix, 16 workflows, a manual runbook), a small-model worker rig, teams with members, the board, the ideas
+  queue, search and polish, with phases and tests. A survey of small coding models found no SWE-bench score for any model under 4B;
+  the candidates are Granite-4.0-H-Micro (HumanEval 81, 4 attention layers) and H-1B for code, LFM2.5 for reading, and Qwen3.5-4B as
+  the manager. All of this is **unmeasured here**; nothing was downloaded.
+- **Slot readiness.** A server that is alive but still loading (HTTP 503 "Loading model") is `warming`, not `running`. Found while
+  taking a README screenshot: a message sent to it failed with a 503. The chat now refuses to send to a warming slot.
+- **Ideas queue**, now the first column of the board: file lock and atomic writes, 11 unit tests including 8 writers at once, and an
+  end-to-end check that an idea saved while a run works stays out of the chat and is sent when the run ends (passed with the model).
+- **Team and board.** Roster (six teams, nine roles, ten members, handles, rule-based pick), board (append-only checksummed log, states,
+  dependencies, ready queue, one claim per member, crash recovery), board tools limited by role and classed by the policy, member turns
+  through the same agent loop and policy, the crew rail, the board popup and the runner. Tests: 10 roster, 14 board, 4 board tool, 1
+  policy; end-to-end 19 of 19 with the model, nothing left running.
+- **Measured: the project manager.** The same `@priya` request ran twice on Qwen3.5-9B: once the whole chain completed (two child
+  issues, both worked in order, parent closed); once she created one of two issues and her turn ended blocked. Not reliable yet.
+- **Environment note.** From a session that is not the Claude app the machine config is not in `%APPDATA%\bridle` but in the app's
+  virtualised copy under `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\bridle`; set `BRIDLE_HOME` to it to run the model checks.
+- **Not built:** the Git layer, the scheduler, the small-model fleet, search, a model-based pick for a tagged team, and a new README
+  screenshot showing the crew rail and the board.
+
 ## 2026-11-03 (later): Bridle names, one `bridle` program, a proxy setting in the app, and Windows-only tooling
 
 Branch `desktop-app`. All of this was checked on the tested machine; 935 tests passed and clippy was clean before the
