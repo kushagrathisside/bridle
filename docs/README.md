@@ -12,6 +12,7 @@ was made.
 | Change the machine or repository configuration | [guide/configuration.md](guide/configuration.md) |
 | Open the interactive control center | [guide/tui.md](guide/tui.md) |
 | Open the desktop app (`bridle`) | [guide/desktop.md](guide/desktop.md) |
+| Use the team, the board and the ideas queue | [guide/team-and-board.md](guide/team-and-board.md) |
 | Work on Windows without WSL | [guide/windows-only.md](guide/windows-only.md) |
 | Fix a problem seen on the tested machine | [guide/troubleshooting.md](guide/troubleshooting.md) |
 | Know which models and runtimes are used, and where to get them | [guide/models.md](guide/models.md) |

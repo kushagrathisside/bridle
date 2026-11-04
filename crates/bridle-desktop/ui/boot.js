@@ -26,6 +26,7 @@ $("input").addEventListener("keydown", (e) => {
     if (e.key === "Escape") { e.preventDefault(); closePalette(); return; }
     if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") { e.preventDefault(); acceptPalette(); return; }
   }
+  if (e.key === "Enter" && e.ctrlKey && e.shiftKey && !e.isComposing) { e.preventDefault(); $("idea").click(); return; }
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
 });
 $("input").addEventListener("input", () => { autosize(); updatePalette(); });
@@ -75,6 +76,7 @@ document.addEventListener("keydown", (e) => {
   else if (e.ctrlKey && !e.shiftKey && key === "o") { e.preventDefault(); chooseFolder(); }
   else if (e.ctrlKey && !e.shiftKey && key === "j") { e.preventDefault(); toggleChat(); if (!$("app").classList.contains("no-chat")) $("input").focus(); }
   else if (e.ctrlKey && e.key === "`") { e.preventDefault(); toggleBottom(); }
+  else if (e.key === "Escape" && board.open && $("overlay").hidden) toggleBoard(false);
   else if (e.key === "Escape" && state.busy && !palette.open && $("overlay").hidden) invoke("stop_turn");
 });
 window.addEventListener("focus", () => { if (activeId !== null || editors.size) syncOpenFiles(); });
@@ -90,4 +92,8 @@ listen("tauri://drag-drop", (e) => {
 loadNetwork().catch(() => {});
 invoke("get_snapshot").then(applySnapshot).catch((error) => addNote("error", `Cannot read the folder: ${error}`));
 setInterval(() => { if (!state.busy) invoke("refresh_snapshot"); }, 5000);
+// A model that is still loading is checked more often, so Send is enabled as soon as it answers.
+setInterval(() => {
+  if (!state.busy && state.snapshot && state.snapshot.slots.some((s) => s.server === "warming")) invoke("refresh_snapshot");
+}, 1500);
 $("input").focus();
