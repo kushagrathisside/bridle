@@ -31,6 +31,19 @@ Bridle does not send the repository's files anywhere.
 OpenCode itself fetches its model catalogue when it starts. That is outside Bridle's control, and it is listed in
 [status and limits](status.md).
 
+## A capability, never an authority
+
+Anything Bridle adds around the model, such as a browser, a background command, a window capture or a small-model fleet, is a
+capability that Bridle controls. It is built on the same decision path, off by default when it reaches beyond the project, refused in a
+repository's own configuration when it could change what a person's machine does, and recorded in the same log. Nothing in the model's
+reach can widen it. A text the model reads, from a file or a web page, is data and never an instruction; where Bridle adds its own words
+to a tool's result (a notice), it frames them with a marker no tool output can forge.
+
+## A person merges; the model does not
+
+Work that several members do at once happens in separate working copies, and the result comes back as a diff. Putting it into the project
+is the person's step, it writes nothing when two pieces conflict, and it can be undone. See [lanes](../guide/lanes.md).
+
 ## Small surface, one adapter
 
 Bridle's core does not know about OpenCode. Only one module reads OpenCode's payloads, and the plugin that OpenCode

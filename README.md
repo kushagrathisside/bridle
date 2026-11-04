@@ -267,9 +267,13 @@ and for machines with no display. Every command takes `--config FILE` and `--wor
 | `bridle mcp` | Serves Bridle's tools over MCP on standard input and output. OpenCode starts it. |
 | `bridle hook EVENT` | The entry point the OpenCode plugin calls. Reads one JSON payload and writes one answer. |
 | `bridle egress` | Lists every outbound destination the configuration can reach. Sends nothing. |
+| `bridle web ...` | Web research and the managed browser from the terminal: `status`, `providers`, `search`, `open`, `download`, `inspect`, `browser status / setup / test / remove`. Off by default. |
+| `bridle lanes new / list / path / diff / integrate / undo / remove` | Separate working copies for parallel members, and your merge of them. See [lanes](docs/guide/lanes.md). |
+| `bridle fleet status / up / down / recover / run` | The small-model fleet and its scheduler. See [the fleet](docs/guide/fleet.md). |
+| `bridle desktop screenshot PROGRAM` | Starts a program, takes a picture of its window only, stops it. Off by default. |
 | `bridle subagent` | Asks the optional subagent tier about a few files. Off by default. |
 | `bridle route`, `bridle plugins` | Shows which slot a request would go to and why, and lists the plugin manifests and their tools. |
-| `bridle eval-decisions`, `bridle eval-routing`, `bridle bench` | Evaluation of the decision rules, the routing choice and the task corpus. For evaluating Bridle, not for daily use. |
+| `bridle eval-decisions`, `bridle eval-routing`, `bridle bench`, `bridle eval-agent` | Evaluation of the decision rules, the routing choice, the task corpus, and a real model's use of notices, the planner and lanes. For evaluating Bridle, not for daily use. |
 
 Exit code 0 is success, including success with warnings, and 1 is an error. The full reference is in
 [docs/reference/cli.md](docs/reference/cli.md).
@@ -422,6 +426,9 @@ five file tools. Every path a tool reads passes the read policy, and every outpu
 | Commands and configuration | `run_command` (one program, no shell syntax), `inspect_config`, `harness_info` |
 | Results and experiments | `inspect_artifact`, `summarize_experiment`, `compare_experiments` |
 | Adapters | `adapter_<name>`, declared in the machine config; a repository cannot add tools |
+| Web and browser (off by default) | `web_search`, `web_open`, `web_download`, `document_inspect`, `browser_navigate`, `browser_snapshot`, `browser_action`, `browser_close` |
+| Background commands (off by default) | `command_start`, `command_status`, `command_stop` (when `workflow.background_commands`) |
+| Windows (off by default) | `window_screenshot` (when `[desktop] screenshots_enabled`) |
 | Optional | `subagent` (when `subagents.enabled`), `task_status` (when `workflow.task_status`) |
 
 The verification tools run only the steps declared in the project configuration, and each step is classified by the command policy
@@ -497,8 +504,9 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 ```
 
-- **Size and tests.** About 59000 lines of Rust in four crates, and 1006 test functions in the source. The last full run on 2026-11-04
-  passed 987 tests with none failed and 5 ignored. About 500 dependency crates are listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+- **Size and tests.** About 81000 lines of Rust in four crates, and 1195 test functions in the source. The last full run on 2026-11-05
+  passed 1176 tests with none failed and 5 ignored (the ignored ones need the network, the GPU or a real window). About 500 dependency
+  crates are listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 - **Style.** `unsafe` is forbidden, clippy runs with `-D warnings`, and there is no `unwrap` outside tests.
 - **End-to-end suite.** `tools/e2e` launches the window on a throwaway project with WebView2's debug port open, runs 22 named checks
   through a bounded client (a hard watchdog, read timeouts and size caps), closes the window, and verifies that no `bridle.exe` or
@@ -523,15 +531,22 @@ The full index is [docs/README.md](docs/README.md). The main pages:
 | [Working on Windows without WSL](docs/guide/windows-only.md) | What replaced each WSL step |
 | [Configuration](docs/guide/configuration.md) | Machine and project configuration, profiles, verification steps, validation rules |
 | [Serve the models](docs/guide/models.md) | Files, sources, checksums, runtimes, measured figures |
+| [Adding models, runtimes and plugins](docs/guide/models-runtimes-and-plugins.md) | How to add, update and remove them, and when a change takes effect |
 | [Set up a repository](docs/guide/set-up-a-repository.md) | What `bridle init` writes and why |
 | [Run a task](docs/guide/run-a-task.md), [verification](docs/guide/run-verification.md) | The orchestrator workflow and the verification tools |
 | [Terminal UI](docs/guide/tui.md) | `bridle tui` |
+| [Team and board](docs/guide/team-and-board.md), [lanes](docs/guide/lanes.md), [the fleet](docs/guide/fleet.md) | Working with members, in parallel, and with small models |
+| [Web research](docs/guide/web-research.md), [the browser](docs/guide/web-browser.md), [window screenshots](docs/guide/window-screenshots.md), [background commands](docs/guide/background-commands.md) | The optional capabilities, each off by default |
+| [Instruction manual](docs/MANUAL.txt) | The plain-text manual that ships in the release zip: install, every command, troubleshooting |
+| [Releasing](docs/project/releasing.md) | The whole release process, step by step, by hand |
+| [The documentation site](site) | Astro Starlight, built from these files (`cd site && npm ci && npm run build`) |
 | [Troubleshooting](docs/guide/troubleshooting.md) | Problems seen on the tested machine and their fixes |
 | [Architecture](docs/concepts/architecture.md) | Layers, request flow, where state lives |
 | [Security](docs/concepts/security.md) | Policy decisions, command classes, secret handling, residual risks |
 | [Command line](docs/reference/cli.md), [MCP tools](docs/reference/mcp-tools.md), [modules](docs/reference/modules/README.md) | Reference |
 | [Progress log](docs/status/progress.md) | What was verified, with dates and evidence. The source for status. |
-| [Decisions](docs/decisions) | Architecture decision records, 0001 to 0018 |
+| [Decisions](docs/decisions) | Architecture decision records, 0001 to 0023 |
+| [Lessons from Infinity and Harness²](docs/spec/lessons-from-infinity-and-harness2.md) | What was learned from two research projects, and what was built from it |
 
 ---
 

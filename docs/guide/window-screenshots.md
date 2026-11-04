@@ -1,24 +1,26 @@
 # Window screenshots
 
-Bridle can start a program, wait for its window, take a picture of **that window only**, and stop the program. It is for checking what a
-program you built looks like. It is **off by default**, **Windows only**, and a command like any other: the program is judged by the same
-rules as `run_command`. The design and what it does not do are in
+Bridle can start a program, wait for its window to appear, take a picture of **that window only**, and then stop the program. The facility
+is intended for checking what a program that you have built looks like. It is **off by default**, available on **Windows only**, and is a
+command like any other: the program is judged by the same rules as `run_command`. The design, and what it deliberately does not do, are
+described in
 [ADR-0021](../decisions/0021-window-screenshots-start-the-program-and-capture-only-its-window.md).
 
-## Turn it on
+## Enabling it
 
-In the **machine** configuration (`%APPDATA%\bridle\config.toml`; a repository's `bridle.toml` cannot set it):
+Enable it in the **machine** configuration (`%APPDATA%\bridle\config.toml`); a repository's `bridle.toml` cannot set it:
 
 ```toml
 [desktop]
 screenshots_enabled = true
-max_wait_ms = 30000          # the most a call may wait for the window to appear (1000 to 120000)
+max_wait_ms = 30000          # the longest a call may wait for the window to appear (1000 to 120000)
 
 [security]
-safe_commands = ["myapp"]    # the program must be allowed to run, as for any command
+safe_commands = ["myapp"]    # the program must be permitted to run, as for any other command
 ```
 
-`bridle config validate` checks the limits (rule V50). Nothing needs installing: the capture uses the PowerShell that comes with Windows.
+`bridle config validate` checks the limits (rule V50). Nothing needs to be installed: the capture uses the PowerShell that is supplied with
+Windows.
 
 ## From the terminal
 
@@ -28,41 +30,43 @@ bridle desktop screenshot python app.py --wait-ms 15000
 bridle desktop screenshot myapp --title "Settings"
 ```
 
-The program must be a bare name found on `PATH`; its arguments may use letters, digits and `_ . / - = : , @ +` only. If the policy would
-not let `run_command` start it, it is not started here, and the answer names the rule.
+The program must be a bare name that can be found on `PATH`, and its arguments may contain only letters, digits and the characters
+`_ . / - = : , @ +`. If the policy would not allow `run_command` to start the program, it is not started here either, and the answer names
+the rule that refused it.
 
-## What the model gets
+## What the model receives
 
-The tool `window_screenshot` (offered only when enabled) takes `program`, `args`, `cwd` (inside the workspace), `wait_ms` and
-`title_contains`. It answers in text, in this shape (the values here are placeholders):
+The tool `window_screenshot`, which is offered only when the facility is enabled, accepts `program`, `args`, `cwd` (inside the workspace),
+`wait_ms` and `title_contains`. It answers in text of the following form, in which the values are placeholders:
 
 ```text
 Window screenshot [ID] of `PROGRAM`: WIDTH x HEIGHT pixels, title "TITLE", drawn by printwindow; about N distinct colours. The window has content.
 Saved as .bridle/web/screenshots/NAME.png (sha256 ...). `PROGRAM` was started by Bridle and stopped after the picture.
 ```
 
-- **`drawn by`** is `printwindow` (the window drew itself, which also works for windows drawn by the GPU) or `screen` (a copy of that part
-  of the screen; the window must be visible and not covered).
-- **BLANK** means one colour all over: the window may not have drawn yet, or cannot be captured. Try a longer `wait_ms`.
-- The picture is a source record (`kind: "screenshot"`, `extraction: "window"`) in `.bridle/web/sources.jsonl` with its SHA-256. A model
-  that can look at pictures sees it only if you attach the file.
+- **`drawn by`** states the method. `printwindow` means that the window drew itself, which also works for windows that use the graphics
+  processor; `screen` means that the corresponding part of the screen was copied, which requires the window to be visible and uncovered.
+- **BLANK** means that the picture is a single colour throughout: the window may not yet have been drawn, or it cannot be captured. A longer
+  `wait_ms` is the usual remedy.
+- The picture is recorded as a source (`kind: "screenshot"`, `extraction: "window"`) in `.bridle/web/sources.jsonl`, together with its SHA-256
+  value. A model that can interpret pictures sees it only if you attach the file.
 
-## What it will not do
+## What it does not do
 
-- It does not click, type or move the mouse, and it does not look at the desktop or at any other program's window.
-- It stops the whole process tree it started, whatever happened.
-- A window over 16 million pixels is refused, and a picture over 8 MiB is not kept.
-- It is not offered on other systems, and a repository cannot turn it on.
+- It does not click, type or move the mouse, and it does not look at the desktop or at the window of any other program.
+- It always stops the whole process tree that it started, whatever the outcome.
+- A window of more than sixteen million pixels is refused, and a picture of more than 8 MiB is not kept.
+- It is not offered on other operating systems, and a repository cannot enable it.
 
-## Things to know
+## Points to note
 
-- **A picture can show personal data** (the About box of Windows shows your user name). It stays in `.bridle/` in the project, which Git
-  ignores; you decide whether to attach or share it.
-- Tried on one program (`winver`) on one display. Windows that cannot print themselves and are covered by another window can come back
-  wrong; the blank check catches a single colour, not a half-drawn window.
-- To test the real thing yourself: `set BRIDLE_WINDOW_TESTS=1` and run the window test, which opens a real window.
+- **A picture may show personal data.** The About window of Windows, for example, shows your user name. The picture remains in `.bridle/`
+  in the project, which Git ignores, and you decide whether to attach or share it.
+- The facility has been tried on one program (`winver`) on one display. A window that cannot render itself and is covered by another window
+  may be captured incorrectly; the blank check detects a single colour, but not a window that is only partly drawn.
+- To test the facility yourself, set `BRIDLE_WINDOW_TESTS=1` and run the window test, which opens a real window.
 
 ## Related
 
-- [The managed browser](web-browser.md) takes pictures of pages with `browser_snapshot`.
+- [The managed browser](web-browser.md) takes pictures of web pages with `browser_snapshot`.
 - [Configuration](configuration.md)

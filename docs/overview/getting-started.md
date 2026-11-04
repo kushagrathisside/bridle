@@ -1,48 +1,50 @@
 # Getting started
 
-This page takes you from a Windows machine to a first policy decision, and then to a repository the agent can work in.
-It has three parts. The first two do not need a model. The third does.
+This page takes you from a Windows machine to a working Bridle, in two parts. **Part 1 needs no model:** you install Bridle and watch
+it make a policy decision. **Part 2 starts a model** and opens the window on a project.
 
-You need Windows 11, the Visual Studio 2022 C++ build tools, and Git. The full list is in [install Bridle](../guide/installation.md).
+You need Windows 11 and, for the model, an NVIDIA GPU with a current driver. The full list is in [install Bridle](../guide/installation.md).
 
-## 1. Build the `bridle` command
+## Part 1: install Bridle and see a decision
 
-```bat
-git clone https://github.com/kushagrathisside/bridle.git
-cd bridle
-cargo build -p harness-cli --bin agent
-```
+### 1. Install
 
-Cargo uses the Rust version pinned in `rust-toolchain.toml`. The binary is `target\debug\bridle-cli.exe`. Check it:
+From the release zip, unpack it, check the download, and run the installer:
 
 ```bat
-target\debug\bridle-cli.exe --version
+certutil -hashfile bridle.exe SHA256
+install.cmd
 ```
 
-Expected output:
+The first command prints a hash to compare with `SHA256SUMS.txt`. `install.cmd` copies `bridle.exe` to
+`%LOCALAPPDATA%\Bridle\bin` and adds that folder to your user `PATH`; it changes nothing else. Open a **new** terminal and check:
+
+```bat
+bridle --version
+```
 
 ```text
-agent 0.1.0
+bridle 0.1.0
 ```
 
-From here on, the examples call the binary as `bridle`. Add its folder to your `PATH`, or write out the full path.
+To build from source instead, see [install Bridle](../guide/installation.md#build-from-source).
 
-## 2. See a policy decision
+### 2. See a policy decision
 
-Bridle decides each tool call before it runs. You can see that without a model. Make a folder with a JSON file that
-describes a call, the way OpenCode sends it:
+Bridle decides each tool call before it runs, and you can watch that without a model. Make an empty folder, save a file `try-read.json`
+in it that describes a call the way OpenCode sends it:
 
 ```json
 {"sessionID":"try-1","callID":"c1","tool":"read","args":{"filePath":"config/.env"}}
 ```
 
-Save it as `try-read.json` in an empty folder and run:
+and run the real hook on it:
 
 ```bat
 bridle hook tool-before --workspace . < try-read.json
 ```
 
-Expected output, on one line:
+The output, on one line:
 
 ```json
 {"action":"block","message":"blocked by policy (READ_ONLY, secret_file): config/.env may contain credentials and is never sent to a model","class":"READ_ONLY","verdict":"deny","rule":"secret_file"}
@@ -50,70 +52,71 @@ Expected output, on one line:
 
 The call is blocked, the rule that blocked it is named, and the reason is in the message. The file does not need to exist.
 
-## 3. Set up a repository
-
-Go to the repository you want the agent to work in. Use a clean copy or a branch: the agent will edit files there.
+### 3. Check the machine
 
 ```bat
-cd path\to\your\repo
-bridle init --profile local-only
-bridle config validate
+bridle doctor
 ```
 
-`init` writes four things:
+`doctor` checks the host, the runtimes, the model files, the endpoints and the configuration. Before you have set anything up, it
+reports the endpoints as unreachable; those are warnings. It exits with code 1 only when a configured runtime is missing or the
+configuration has errors.
 
-```text
-✓ wrote bridle.toml (profile local-only)
-✓ wrote opencode.json
-✓ wrote .opencode/plugins/bridle.ts
-✓ .gitignore: added .bridle/, .worktrees/
+## Part 2: a model and a project
+
+### 4. Get the model files
+
+Bridle does not download models. [Serve the models](../guide/models.md) lists the files, where to get them and their SHA-256 values.
+You need the `main` model (Qwen3.5-9B) and the llama.cpp runtime; the other slots are optional. Put them in two folders, for example
+`D:\models` and `D:\runtimes`.
+
+### 5. Open a project
+
+```bat
+cd D:\projects\myproject
+bridle
 ```
 
-`config validate` checks the configuration. A repository with no verification steps gets one warning, which is expected
-until you add a test command (see [run your tests](../guide/run-verification.md)):
+The first time on a computer, Bridle asks where your models and runtimes are and writes your machine configuration. The first time in a
+project folder, it asks before it writes `bridle.toml`, a `.bridle\` state folder and the `.gitignore` lines for them. It then starts the
+default model by itself; the first start takes about ten seconds, and the status bar shows `unloaded`, then `warming`, then `ready`. Type
+in the chat and press Enter.
 
-```text
-⚠ [V15] verification.steps - verification is required for DONE but no steps are defined
-```
-
-The command exits with code 0 when there are only warnings, and with code 1 when there is an error.
-
-## 4. Start a model and check it
-
-Bridle needs a model server for the agent's own reasoning. Download the model files and put them where your
-configuration expects them: [serve the models](../guide/models.md) explains the layout and the checksums.
+To check a model from the terminal:
 
 ```bat
 bridle models serve main --detach
 bridle health main
+bridle models stop main
 ```
 
-`serve --detach` starts the server and returns when it answers its health endpoint. `health` runs a set of checks, one
-line each, and ends with a result line. A fully working server ends with `result: pass`. If it ends with `result: fail`,
-read the failing line and [troubleshoot](../guide/troubleshooting.md).
+`health` ends with `result: pass` when the server works. If it ends with `result: fail`, read the failing line and
+[troubleshoot](../guide/troubleshooting.md). Always stop a model with `bridle models stop`, never with a task killer.
 
-## 5. Run the agent
+### 6. Or use OpenCode
 
-From the repository folder, start a task through OpenCode:
+If you prefer OpenCode's interface, set the repository up for it and run it as usual:
 
 ```bat
+bridle init --profile local-only
+bridle config validate
 opencode run "Describe the files in this repository."
 ```
 
-OpenCode loads the Bridle plugin from `.opencode/plugins/`, so every tool call goes through the policy. The record is in
-`.bridle/` in the repository.
+`init` writes `bridle.toml`, `opencode.json` and `.opencode/plugins/bridle.ts`, and adds `.bridle/` and `.worktrees/` to `.gitignore`.
+OpenCode loads the plugin, so every tool call goes through the same policy. A repository with no verification steps gets one warning
+from `config validate`, which is expected until you add a test command (see [run your tests](../guide/run-verification.md)).
 
 ## What success looks like
 
-- `agent --version` prints `agent 0.1.0`.
+- `bridle --version` prints `bridle 0.1.0`.
 - The policy check in step 2 returns `"action":"block"` for the `.env` file.
-- `bridle config validate` exits with code 0 and lists no errors.
-- `bridle health main` ends with `result: pass`, once the model is running.
-- `opencode run` answers. Every verdict is recorded in `.bridle/tool-events.jsonl`. `bridle explain` shows the
-  loop decisions once the task workflow is enabled; see [run a task](../guide/run-a-task.md).
+- `bridle doctor` exits with code 0 and lists no errors.
+- `bridle health main` ends with `result: pass` once the model is running.
+- Every verdict is recorded in `.bridle/tool-events.jsonl` in the project.
 
 ## Next steps
 
 - [Run the worked example](../examples/fix-a-failing-test.md): the agent fixes a failing test in a small repository.
-- [Set up a repository](../guide/set-up-a-repository.md) for profiles and the generated files.
-- [Configuration reference](../guide/configuration.md) for every key and its default.
+- [The desktop app](../guide/desktop.md) for the window, and [team and board](../guide/team-and-board.md) for working with members.
+- [Configuration](../guide/configuration.md) for every key and its default.

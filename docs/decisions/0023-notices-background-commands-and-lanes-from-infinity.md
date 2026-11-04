@@ -93,9 +93,26 @@ repository cannot have worktrees, and the command says so.
   three, stop-all) and the lane operations (two lanes merging, a conflict that writes nothing, `--skip-conflicts`, a dry run, undo,
   stacked lanes, removal) are covered by tests; the lane tests use real temporary Git repositories. See the progress entry for the
   numbers and the live checks.
-- **Not measured:** whether a small model reads a notice correctly, calls `command_status` when told to, or does better with background
-  commands than without. **Not built:** lanes inside the board runner (a member is not yet given a lane automatically), a button for
-  integration in the window, board and lease notices.
+- **Measured with a real model** (`bridle eval-agent`, Qwen3.5-9B, five runs per scenario; small samples):
+  - *Told to start a background command and read it with `command_status`:* it did, 5 of 5 (after the scoring was corrected, see below).
+  - *Told only that Bridle will announce the end:* it saw the notice and read the result 4 of 5; in the fifth the command ended before any
+    other result carried the notice, and the model never read it.
+  - *Polling:* the model called `command_status` over and over (up to 21 times in one run) instead of waiting. The tool's description and
+    its answer for a running command now say "do not poll: pass `wait_ms` or carry on"; in the five runs after that change the calls
+    dropped to 0 to 4 for each run. The two sets of runs also differ in the scoring and the machine's timing, so this is an indication, not a result.
+  - *A file changed by the person after the model read it:* the notice arrived after the next call and the model re-read the file 5 of 5
+    and kept both edits 5 of 5. **But the control, with nobody changing the file, had the same edit failures** (`old_string was not found`:
+    the model copies the line-number column of `read_file` into its edit), so these runs do not show that the notice saved anything. They show
+    that the notice is delivered and that the model reacts to it.
+  - *Scoring correction, disclosed:* the first run scored the answers on what `ping` printed, but a ping to this machine times out inside the
+    sandbox, so all 10 background runs failed on the check and not on the model. The check was widened to accept any report of the outcome and
+    the runs repeated; the first run's files are kept (`ev-notices-first`).
+  - *The project manager's plan, ten runs:* all three conditions 7 of 10 (see the lessons note).
+  - *Two real turns in two lanes:* each touched only its own file and `integrate` merged them, no conflict.
+- **Built since this record was first written:** notices for a refused write that is free now (`lease_free`) and for the person changing the
+  issue a member is working on (`board_change`); records of running background commands so `doctor --repair` stops orphans.
+  **Not built:** lanes inside the board runner (a member is not yet given a lane automatically, and the runner runs one turn at a time), a
+  button for integration in the window, fleet notices.
 
 ## Related
 

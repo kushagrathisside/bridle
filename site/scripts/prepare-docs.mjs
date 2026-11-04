@@ -29,18 +29,32 @@ const PAGES = [
   { source: 'docs/guide/run-verification.md', route: 'guides/run-verification', description: 'Declare your test, lint and type-check commands so the agent can run them through Bridle.' },
   { source: 'docs/guide/models.md', route: 'guides/serve-models', description: 'Download the model files, check their checksums, and start and check the local model servers.' },
   { source: 'docs/guide/run-a-task.md', route: 'guides/run-a-task', description: 'Start, inspect, resume and reset a Bridle task, and read the decisions it recorded.' },
+  { source: 'docs/guide/models-runtimes-and-plugins.md', route: 'guides/models-runtimes-and-plugins', description: 'How to add, update and remove models, runtimes and plugins, and when a change takes effect.' },
+  { source: 'docs/guide/desktop.md', route: 'guides/desktop', description: 'The Bridle window: chat, editor, diffs, search, terminal, images, and the menus that control them.' },
+  { source: 'docs/guide/tui.md', route: 'guides/tui', description: 'The terminal Control Center: configuration, models, health and tasks without the window.' },
+  { source: 'docs/guide/team-and-board.md', route: 'guides/team-and-board', description: 'Named team members, the board of issues, the ideas queue, and how a tagged request becomes work.' },
+  { source: 'docs/guide/lanes.md', route: 'guides/lanes', description: 'Separate working copies for parallel members, and your merge of them, with undo.' },
+  { source: 'docs/guide/fleet.md', route: 'guides/fleet', description: 'A fleet of small models loaded together while the big one is unloaded, and the scheduler that swaps them safely.' },
+  { source: 'docs/guide/background-commands.md', route: 'guides/background-commands', description: 'Commands that run in the background while the model works, and the notices that tell it what happened.' },
+  { source: 'docs/guide/web-research.md', route: 'guides/web-research', description: 'Search, read pages and download files with checksums, off by default and checked at every step.' },
+  { source: 'docs/guide/web-browser.md', route: 'guides/web-browser', description: 'A pinned Chromium driven through Playwright, behind Bridle\'s own egress proxy.' },
+  { source: 'docs/guide/window-screenshots.md', route: 'guides/window-screenshots', description: 'Start a program, take a picture of its window only, and stop it.' },
+  { source: 'docs/guide/windows-only.md', route: 'guides/windows-only', description: 'Why release 1 runs on native Windows only, and what that means for you.' },
   { source: 'docs/guide/troubleshooting.md', route: 'guides/troubleshoot', description: 'Fixes for the problems people hit most when setting up Bridle on Windows.' },
   { source: 'docs/concepts/how-decisions-are-made.md', route: 'concepts/how-decisions-are-made', description: 'How Bridle decides whether each tool call runs, is blocked, or is refused, and why.' },
   { source: 'docs/concepts/tasks-and-loops.md', route: 'concepts/tasks-and-loops', description: 'Tasks, the journal that records them, and the loop rules that refuse repeated calls.' },
   { source: 'docs/concepts/models.md', route: 'concepts/models-and-slots', description: 'The model slots Bridle uses, what each one does, and which ones are optional.' },
   { source: 'docs/reference/cli.md', route: 'reference/cli', description: 'Every agent command and its options.' },
   { source: 'docs/guide/configuration.md', route: 'reference/configuration', description: 'Configuration files, profiles, keys with their defaults, and the validation rules.' },
+  { source: 'docs/reference/run-recovery.md', route: 'reference/run-recovery', description: 'Checkpoints, undo and recovery of a run that was cut short, and how to do each by hand.' },
   { source: 'docs/reference/mcp-tools.md', route: 'reference/mcp-tools', description: 'The tools Bridle serves to the agent over MCP, with the policy class of each.' },
   { source: 'docs/reference/modules/README.md', route: 'reference/developer', title: 'Developer reference', description: 'Module-level reference for the Bridle crates, for people changing the code.' },
   { source: 'docs/project/principles.md', route: 'project/principles', description: 'The design principles behind Bridle\'s policy, its state, and its boundaries.' },
   { source: 'docs/concepts/architecture.md', route: 'project/architecture', description: 'How Bridle is layered, what happens to one tool call, and where its state is kept.' },
   { source: 'docs/concepts/security.md', route: 'project/security-model', description: 'What Bridle protects, the rules it applies to each tool call, and the risks that remain.' },
   { source: 'docs/project/status.md', route: 'project/status', description: 'What is stable, what is optional or experimental, what is not live yet, and the known limits.' },
+  { source: 'docs/project/releasing.md', route: 'project/releasing', description: 'The whole release process, step by step, so that it can be done by hand.' },
+  { source: 'docs/spec/lessons-from-infinity-and-harness2.md', route: 'project/lessons-from-infinity-and-harness2', description: 'What Bridle learned from AWS\'s Infinity and Google\'s Harness2, and what it built and did not build.' },
   { source: 'CONTRIBUTING.md', route: 'project/contributing', description: 'How to build, test and change Bridle, and what a change must pass before it is merged.' },
   { source: 'CHANGELOG.md', route: 'project/changelog', description: 'What changed in each version of Bridle.' },
   { source: 'SECURITY.md', route: 'project/security-policy', description: 'How to report a security problem in Bridle privately.' },
@@ -177,7 +191,7 @@ function main() {
   for (const page of PAGES) {
     const file = path.join(ROOT, page.source);
     const { title, body } = transform(fs.readFileSync(file, 'utf8'), path.dirname(file), page.source);
-    const resolvedTitle = page.title ?? title ?? path.basename(page.source, '.md');
+    const resolvedTitle = (page.title ?? title ?? path.basename(page.source, '.md')).replace(/`/g, '');
     const description = page.description ?? summary(body);
     const frontmatter = [
       '---',

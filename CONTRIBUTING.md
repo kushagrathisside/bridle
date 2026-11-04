@@ -11,7 +11,14 @@ Read [architecture](docs/concepts/architecture.md) and [security](docs/concepts/
 
 ## Checks
 
-Run the same checks as CI before you open a change:
+Bridle is built natively on Windows. The task runner runs the same checks as CI, offline, from vendored dependencies:
+
+```bat
+scripts\dev.cmd gate        :: format check, clippy with warnings denied, all tests
+scripts\dev.cmd e2e         :: drives the real window (needs the GPU model; --skip-model avoids it)
+```
+
+Run **one build at a time**; the tested machine has 16 GB of memory. Without the task runner, the commands are:
 
 ```bash
 cargo fmt --all -- --check
@@ -50,6 +57,11 @@ npm run build
 ```
 
 The build fails on a broken link, so check the links you add.
+
+## Releases
+
+[Releasing Bridle](docs/project/releasing.md) is the whole release process, written to be done by hand: the version, the checks, the build,
+the bundle, the tag and the site.
 
 ## Commits and code
 

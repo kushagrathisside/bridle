@@ -298,6 +298,18 @@ Settings that matter most
     web.* and web.browser.*              see sections 11 and 12                                          [machine only]
 The full list is in guide/configuration.md.
 
+Adding, updating and removing models, runtimes and plugins (full steps: guide/models-runtimes-and-plugins.md)
+    They are declared ONLY in the machine file. In the window: Info, then "Show in Explorer" opens it. Edit and save; the Models and
+    Info panes read it again every few seconds (the Reload button does it at once). Terminal commands read it each time.
+    A runtime:  unpack llama.cpp under the runtimes folder, add   [runtimes.NAME]  kind, server_bin, build.
+    A model:    put the .gguf under the models folder, add   [models.NAME]  and  [models.NAME.launch]  (runtime, model_file),
+                then   bridle config validate,  bridle models serve NAME --detach,  bridle health NAME.
+    Updating:   change the file names (and build, source.sha256), stop the server, start it again. A running server keeps its old settings.
+    Removing:   stop the server (bridle models stop NAME), then delete the section.
+    A plugin:   write a plugin.toml manifest, list its absolute path under   [plugins] manifests = ['D:\plugins\x\plugin.toml']
+                check with   bridle plugins   (or the Plugins card in Info), then start a NEW chat.
+    The window has no form for these edits yet, and it never downloads models or runtimes.
+
 
 10. WHAT BRIDLE WILL AND WILL NOT LET THE MODEL DO
 --------------------------------------------------
@@ -516,8 +528,9 @@ A NOTICE is a short block that Bridle adds after a tool result to tell the model
 
 The model is told, once, the random id (marker) of the block. Tool results are scrubbed of that id and of the frame words, so a file, a
 commit message or a web page cannot pose as a notice. A notice is a hint: it can be lost, and it names the tool that shows the real
-state. At most 32 wait, 400 characters each, 8 are shown at once. Notices come from background commands that ended, and from files the
-model read that someone else (you in an editor, another run) changed or deleted since.
+state. At most 32 wait, 400 characters each, 8 are shown at once. Notices come from background commands that ended, from files the
+model read that someone else (you in an editor, another run) changed or deleted since, from a file it was refused because another run held it
+and that is free now, and from you changing or commenting on the issue it is working on.
 
 BACKGROUND COMMANDS run while the model goes on working. Off by default (every tool costs prompt tokens):
 
@@ -527,7 +540,9 @@ BACKGROUND COMMANDS run while the model goes on working. Off by default (every t
 Tools: command_start (program, args, cwd, timeout_ms: judged exactly like run_command; returns an id such as bg-1),
 command_status (state, exit code, last 4 KB of output; wait_ms up to 10 s; no id = list), command_stop (ends a command Bridle started).
 Limits: three at once, time limit 1 s to 10 min (default 5), 64 KiB of output kept. They are stopped when the tool server ends; if
-Bridle itself is killed, a running command goes on until it ends. Not measured: how well a 9B model uses them.
+Bridle itself is killed, a running command goes on until it ends, and "bridle doctor --repair" then stops it (after checking the process
+still is that program). With a real 9B model, five runs per scenario: it read a notice and acted on it in 4 to 5 runs of 5, and it polled
+command_status more than it should (the tool now tells it to wait).
 See guide/background-commands.md and decisions/0023-notices-background-commands-and-lanes-from-infinity.md.
 
 
@@ -546,7 +561,8 @@ each lane's diff and merge. Needs a real Git repository.
     bridle lanes remove NAME | list | path NAME
 
 Files Git ignores (build folders, .env) are not in a lane. The model cannot integrate: it is your step. The board does not give members
-lanes by itself yet. Checked with real Git repositories and through the built program; not yet with two real models at once.
+lanes by itself yet. Checked with real Git repositories, through the built program, and with two real model turns in two lanes at the same time (one model
+server answers them in turn).
 See guide/lanes.md.
 
 
@@ -568,6 +584,7 @@ Global options:  --config FILE   --workspace DIR   -h/--help   -V/--version     
     bridle desktop screenshot PROGRAM [ARGS...] [--wait-ms N] [--title T]     a picture of that program's window (section 12A)
     bridle fleet status | up | down | recover | run TASKS.json     the small-model fleet and its scheduler (section 12B)
     bridle lanes new | list | path | diff | integrate | undo | remove     parallel working copies and your merge of them (section 12D)
+    bridle eval-agent notices | plan | lanes     runs a real model through scripted scenarios and scores it (for evaluating Bridle)
     bridle subagent --role explore|summarise --task T [--path F ...] [--text T]     the small-model reader tier (off by default)
     bridle tui                           the terminal Control Center (guide/tui.md)
     bridle mcp                           serve Bridle's tools over MCP (OpenCode starts this)
@@ -646,7 +663,8 @@ Model files and runtimes are yours; Bridle never deletes them.
     embedded font encodings, scans and other compressions. It was tried on generated samples, not on a collection of real papers.
   * The code index is syntactic: find_references matches names by spelling and does not resolve types or imports.
   * The context budget and the video-memory guard are estimates.
-  * Notices, background commands and lanes are tested and were run through the built program, but no real model has used them yet.
+  * Notices, background commands and lanes are tested and were run through the built program and with a real 9B model on small samples
+    (five runs per scenario); how well it uses them is only partly known.
   * Window screenshots were tried on one program on one display; a covered or half-drawn window can come back wrong.
   * Web research providers are untested against the real services. The browser has been run on one machine and one company proxy.
   * No installer program and no automatic update.

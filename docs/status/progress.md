@@ -28,7 +28,51 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
-## 2026-11-04 (latest): lessons from Infinity and Harness²; notices, background commands, lanes (ADR-0023)
+## 2026-11-05 (latest): real-model measurements, more notices, orphan cleanup, the site and the release guide
+
+Branch `main`, after `e21efc4`. Windows only. **Gate:** fmt, clippy `-D warnings`, **1,176 tests passed, 0 failed, 5 ignored** (`D:\e2e\gate8.out`).
+
+| Item | What was done | Evidence |
+|---|---|---|
+| Real-model measurements | `bridle eval-agent notices | plan | lanes`: scripted scenarios in fresh Git repositories through the real chat loop and tools, Qwen3.5-9B, bounded by a time limit per turn | `D:\e2e\ev-notices.json`, `ev-notices-first.json`, `ev-plan.json`, `ev-lanes.json` |
+| More notices | `lease_free` (a refused write is free now), `board_change` (the person changed the issue a member is working on); the desktop tells the active member | 3 tests |
+| Orphan cleanup | Running background commands leave `.bridle/background/<id>-<owner>.json` (program name only); `doctor --repair` stops the ones whose Bridle is gone after checking the process id belongs to that program | 2 tests, with a fake process table |
+| A polling model | `command_status` says "do not poll" and says so again in its answer for a running command | See below |
+| Site | New Starlight home page and theme (light, dark, phone), the guides published, `.github/workflows/site.yml`; links checked by the build (0 broken, 71 pages) | Screenshots of light, dark and a phone viewport |
+| Documentation | Rewritten: introduction, getting started, installation, status, principles, docs index, CONTRIBUTING; new `docs/project/releasing.md` | Reviewed against the code and the manual |
+
+**Measurements** (small samples; read them as indications):
+
+- *Notices, five runs per scenario.* Told what to do, the model used `command_start` and `command_status` 5 of 5. Told only that Bridle will
+  announce the end, it read the result after the notice 4 of 5 (in the fifth the command ended before a notice could ride on another result).
+  First run scored 0 of 10 on the background scenarios **because the check was wrong**: a ping to this machine times out inside the sandbox,
+  so the answer never contained what ping prints. The check was widened to any report of the outcome and the scenarios were rerun; both sets of
+  files are kept. The model polled `command_status` up to 21 times in a run before the "do not poll" text and 0 to 4 times after, but the
+  runs also differ in timing, so this is an indication only.
+- *A file changed under the model.* The notice arrived after the next call and the model re-read the file 5 of 5, keeping both edits.
+  The control (nobody changes the file) shows the same edit failures: the model copies the line-number column of `read_file` into its
+  `edit_file` text (`old_string was not found`), 5 of 5. So the runs do not show that the notice prevented a failure. Making `edit_file`
+  tolerate that prefix is a likely, small improvement and has not been tried.
+- *The project manager's plan, ten runs.* Two or more child issues 10 of 10; an engineering and a QA issue 8 of 10; QA waiting for
+  engineering 7 of 10; all three 7 of 10. Failures: an issue assigned to neither role (twice, both at the step limit), and one plan with
+  two engineering issues where QA waited for neither.
+- *Lanes with two real turns at once.* Passed: each touched only its own file and `integrate` merged them. One model server answers in turn.
+
+- **Settings audit (the window).** Findings before the change: the Models pane lists the slots and starts, stops and health-checks them, and
+  the configuration is read again every five seconds, but nothing in the window said how to add a model, a runtime or a plugin; plugins were
+  not shown at all; the Info pane's configuration file path had no way to be opened; and long paths in the narrow side panes wrapped one
+  character per line. Changes: a **Machine settings** card (file, models folder, runtimes folder, **Show in Explorer**, **Reload**), a
+  **Runtimes** card (program, present or missing, kind and build, slots that use it), a **Plugins** card (each tool with its class, and why a
+  tool was not loaded), a **Reload** button and a help line in the Models pane, and a stacked label-over-value layout. Checked by launching
+  the real window on a throwaway project, with a plugin configured, and reading screenshots of both panes (`D:\e2e\info_shot.py`). A new guide,
+  `docs/guide/models-runtimes-and-plugins.md`, gives the steps and when each change takes effect. **Not done:** a form for adding, editing or
+  removing a model, a runtime or a plugin (they are edited in the file), and any download of models or runtimes.
+- **Not done.** Lanes are still not given to members by the board runner (it runs one turn at a time) and the window has no integration
+  button; both are changes to the window that were not made and could not be checked without driving it. Fleet notices. The planner prompt-tuning
+  loop (only its baseline exists). The GitHub Pages workflow has not run on GitHub yet. The `edit_file` line-number prefix.
+- **Nothing was left running:** `nvidia-smi` read 0 MiB after the evaluations.
+
+## 2026-11-04 (earlier): lessons from Infinity and Harness²; notices, background commands, lanes (ADR-0023)
 
 Branch `main`, after `daaccf4`. Windows only. Not committed, not pushed. The video the owner mentioned is the AWS post on Infinity; "harness2"
 is Google Research's `google-research/harness2` (arXiv 2610.14224). Both were read (the post, the READMEs, the paper's text through its

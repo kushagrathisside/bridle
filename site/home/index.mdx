@@ -1,100 +1,133 @@
 ---
-title: Home
-description: A local-first harness for coding agents. The model proposes; the harness decides.
+title: Bridle
+description: A local-first coding agent for Windows. It runs on your own GPU, and every action it takes passes through a policy you can read.
 template: splash
 hero:
-  title: Bridle
-  tagline: The model proposes. The harness decides.
+  tagline: A local-first coding agent for Windows. It runs on your own GPU, and every action it takes passes through a policy you can read.
+  image:
+    file: ../../assets/window.png
+    alt: The Bridle window, with a file explorer, a side-by-side diff, a terminal, a chat with a team member's tool calls, and the crew rail on the right edge.
   actions:
     - text: Get started
       link: ./getting-started/
       icon: right-arrow
-    - text: Read the examples
-      link: ./examples/
-      variant: minimal
-    - text: View the source
+    - text: How a call is decided
+      link: ./concepts/how-decisions-are-made/
+      variant: secondary
+    - text: Source on GitHub
       link: https://github.com/kushagrathisside/bridle
       variant: minimal
       icon: external
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Card, CardGrid, LinkCard, Tabs, TabItem, Steps, Aside } from '@astrojs/starlight/components';
 
-Bridle is a local-first harness for coding agents. It runs inside OpenCode and checks every tool call against a policy
-written in code. Secret files are denied, command output is redacted before the model reads it, and repeated failing
-calls are refused with the rule named. Everything runs on your machine, with the models you start yourself.
+<div class="manifesto">
+  <p class="manifesto__line">The model proposes.</p>
+  <p class="manifesto__line manifesto__line--accent">The harness decides.</p>
+  <p class="manifesto__sub">
+    No shell command runs without a verdict. A secret value never reaches the model. A refusal names the rule that caused it.
+  </p>
+</div>
 
-## What it does
+## One window, one policy
+
+Open a folder, type `bridle`, and a window opens: a chat with a local model, a code editor with diffs, project search, a real
+terminal, and image input. The model reads and edits your project with tools. What each call may do is decided by a policy written
+**in code, not in a prompt**.
 
 <CardGrid>
-  <Card title="Decides every call" icon="terminal">
-    Each tool call is allowed, blocked or refused before it runs. The reason is returned to the agent and recorded.
+  <Card title="Decides every call" icon="approve-check">
+    Each tool call is classified and given a verdict before it runs. `ask` is never allowed, and a failure to decide blocks the call.
   </Card>
-  <Card title="Keeps secrets out of the model" icon="approve-check">
-    Secret files are denied to file tools and shell commands. Output is redacted before the model reads it.
+  <Card title="Keeps secrets out" icon="padlock">
+    Secret files cannot be read. Secret-looking environment variables are blanked for shell tools. Secret values in output are redacted before the model sees them.
   </Card>
-  <Card title="Stops repeated failures" icon="warning">
-    Repeated edits and repeated commands are refused, and the agent is told which rule fired and what to try next.
+  <Card title="Runs on your GPU" icon="desktop">
+    Models run through llama.cpp on your own machine, one GPU model at a time, guarded against running out of video memory. No cloud service is needed.
   </Card>
-  <Card title="Runs on your machine" icon="laptop">
-    Models are servers you start on loopback. The default configuration uses no external service.
+  <Card title="Catches loops" icon="warning">
+    Repeated edits and repeated commands are refused, with the rule named, and the agent is told what to try next.
   </Card>
 </CardGrid>
 
-Bridle is a release candidate for native Windows. It is not a sandbox: an allowed test run executes code the model wrote,
-with your user's rights. Read the [status and limits](project/status/) before you rely on it.
+## What happens to a tool call
 
-## First success
+The window, the terminal UI and [OpenCode](https://opencode.ai) are different front ends to one decision path. Nothing a host does can skip it.
 
-You need the Windows build tools and Rust, which the [install guide](guides/install/) covers. Then, from the repository:
+<div class="flow" role="img" aria-label="The model sends a tool call to the host. The policy and loop rules decide. An allowed call runs and its output is redacted before the model reads it. A refused call returns its reason to the model.">
+  <div class="flow__node">Model<small>llama.cpp, on this machine</small></div>
+  <div class="flow__arrow" aria-hidden="true">tool call</div>
+  <div class="flow__node">Host<small>window, TUI or OpenCode</small></div>
+  <div class="flow__arrow" aria-hidden="true">before it runs</div>
+  <div class="flow__node flow__node--decide">Policy and loop rules<small>allow · ask · deny</small></div>
+  <div class="flow__branches">
+    <div class="flow__branch flow__branch--ok"><b>allow</b> The tool runs, secret values are redacted, the result goes back to the model.</div>
+    <div class="flow__branch flow__branch--no"><b>ask or deny</b> The call is blocked and the reason goes back to the model.</div>
+  </div>
+</div>
 
-```bat
-cargo build -p harness-cli --bin agent
-target\debug\agent.exe --version
-```
-
-```text
-agent 0.1.0
-```
-
-Set up a repository and validate its configuration:
-
-```bat
-agent init --profile local-only
-agent config validate
-```
+Five calls, run through the real hook on Windows 11 against the example repository:
 
 ```text
-✓ wrote local-agent.toml (profile local-only)
-✓ configuration is valid (2 file(s))
+read calc.py                      allow   READ_ONLY  tool_kind
+read .env                         block   READ_ONLY  secret_file    ".env may contain credentials and is never sent to a model"
+bash: cat .env                    block   READ_ONLY  secret_file    "shell access to it is denied"
+bash: git status --short          allow   READ_ONLY  command_risk
+bash: curl https://example.com    block   NETWORK    command_risk   "curl contacts the network"
 ```
 
-A policy decision, made without a model. The file does not need to exist:
+## Beyond a single agent
 
-```json
-{"action":"block","message":"blocked by policy (READ_ONLY, secret_file): config/.env may contain credentials and is never sent to a model","class":"READ_ONLY","verdict":"deny","rule":"secret_file"}
-```
+<CardGrid>
+  <Card title="A team and a board" icon="open-book">
+    Named members (project manager, product owner, engineers, QA and more) sit on the right edge of the window. Tag one with `@`, and the work goes onto a board of issues the members split and work. [Team and board](./guides/team-and-board/)
+  </Card>
+  <Card title="Lanes for parallel work" icon="random">
+    Give each member a separate working copy, review each one's diff, and merge them yourself. Nothing is written if two lanes conflict. [Lanes](./guides/lanes/)
+  </Card>
+  <Card title="A small-model fleet" icon="rocket">
+    Small models loaded together while the big one is unloaded, with a scheduler that swaps them safely and a record that survives a crash. [The fleet](./guides/fleet/)
+  </Card>
+  <Card title="Web research and a browser" icon="external">
+    Search, read pages, download files with a checksum, and drive a pinned Chromium. Off by default, and behind Bridle's own proxy. [Web research](./guides/web-research/)
+  </Card>
+</CardGrid>
 
-These outputs were produced by the commands on the tested machine. The [getting started](getting-started/) page covers
-the model step and the first agent run.
+## Start in five minutes
+
+<Tabs>
+  <TabItem label="From the release zip">
+    <Steps>
+    1. Unpack `bridle-<version>-windows-x64.zip` and run `install.cmd`.
+    2. Open a new terminal in a project folder and run `bridle`.
+    3. The first time, Bridle asks where your models and the llama.cpp runtime are, and offers to set up the folder.
+    </Steps>
+  </TabItem>
+  <TabItem label="From source">
+    ```bat
+    git clone https://github.com/kushagrathisside/bridle.git
+    cd bridle
+    scripts\dev.cmd release
+    scripts\dev.cmd install
+    ```
+  </TabItem>
+</Tabs>
+
+Model weights are **not** included. The [models guide](./guides/serve-models/) lists the files and their SHA-256 values.
+
+<Aside type="caution" title="What Bridle is not">
+Bridle is not a sandbox: an allowed test run executes code the model wrote, with your user's rights. It is version 0.1.0, for native
+Windows 11 only, and verified on one machine. Read the [status and limits](./project/status/) before you rely on it.
+</Aside>
 
 ## Where to go next
 
 <CardGrid>
-  <Card title="Getting started" icon="rocket">
-    The shortest path from a build to a first agent run, with what success looks like at each step.
-    [Start here](getting-started/).
-  </Card>
-  <Card title="Guides" icon="document">
-    Set up a repository, run your tests through Bridle, serve the models, run a task, and fix common problems.
-    [Browse the guides](guides/install/).
-  </Card>
-  <Card title="Reference" icon="setting">
-    Every command, every configuration key with its default, and every tool the agent can call.
-    [Open the reference](reference/cli/).
-  </Card>
-  <Card title="Contributing" icon="pencil">
-    How to build, test and change Bridle, and what a change must pass before it is merged.
-    [Read the guide](project/contributing/).
-  </Card>
+  <LinkCard title="Getting started" description="From a build to a first policy decision and a first run." href="./getting-started/" />
+  <LinkCard title="Guides" description="Install, set up a repository, run your tests, serve models, run a task." href="./guides/install/" />
+  <LinkCard title="Concepts" description="How decisions are made, tasks and loops, models and slots." href="./concepts/how-decisions-are-made/" />
+  <LinkCard title="Reference" description="Every command, every setting and its default, every tool." href="./reference/cli/" />
+  <LinkCard title="Releasing" description="The whole release process, step by step, by hand." href="./project/releasing/" />
+  <LinkCard title="Decisions" description="Why Bridle is built the way it is: every architecture decision record." href="./project/decisions/adr-0001-rust-core-thin-host-adapter/" />
 </CardGrid>
