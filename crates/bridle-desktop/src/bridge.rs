@@ -166,7 +166,12 @@ pub fn pump(rx: Receiver<JobMsg>, handle: &AppHandle) {
                     active
                 };
                 if let Some(active) = &active {
-                    crate::crew_cmd::finish_member_turn(&bridge, active, &harness_cli::chat::TurnEnd::Failed(reason.clone()), None);
+                    crate::crew_cmd::finish_member_turn(
+                        &bridge,
+                        active,
+                        &harness_cli::chat::TurnEnd::Failed(reason.clone()),
+                        None,
+                    );
                 }
                 let mut payload = json!({"type": "turn_end", "end": "failed", "message": reason});
                 if let Some(active) = &active {

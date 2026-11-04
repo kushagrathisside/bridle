@@ -26,7 +26,9 @@ fn roster() -> (Roster, Option<String>) {
 }
 
 fn board(bridge: &Bridge) -> Result<BoardStore, String> {
-    workspace_of(&bridge.args()).map(|ws| BoardStore::open(&ws)).map_err(|e| format!("{e:#}"))
+    workspace_of(&bridge.args())
+        .map(|ws| BoardStore::open(&ws))
+        .map_err(|e| format!("{e:#}"))
 }
 
 /// After the window opens a folder no turn is running, so any issue left in progress was cut short by a close or a crash.
@@ -36,11 +38,21 @@ pub fn recover_board(workspace: &std::path::Path) {
 
 fn crew_json(bridge: &Bridge) -> Value {
     let (roster, warning) = roster();
-    let load = board(bridge).ok().and_then(|b| b.load().ok()).map(|b| b.load_by_member()).unwrap_or_default();
+    let load = board(bridge)
+        .ok()
+        .and_then(|b| b.load().ok())
+        .map(|b| b.load_by_member())
+        .unwrap_or_default();
     let working: Vec<String> = board(bridge)
         .ok()
         .and_then(|b| b.load().ok())
-        .map(|b| b.issues.values().filter(|i| i.status == Status::InProgress).filter_map(|i| i.assignee.clone()).collect())
+        .map(|b| {
+            b.issues
+                .values()
+                .filter(|i| i.status == Status::InProgress)
+                .filter_map(|i| i.assignee.clone())
+                .collect()
+        })
         .unwrap_or_default();
     json!({"ok": true, "roster": roster, "warning": warning, "load": load, "working": working})
 }
@@ -63,13 +75,29 @@ fn edit_roster(bridge: &Bridge, change: impl FnOnce(&mut Roster) -> anyhow::Resu
 }
 
 #[tauri::command(async)]
-pub fn crew_add_member(bridge: State<'_, Bridge>, role: String, name: Option<String>, speciality: String) -> Value {
-    edit_roster(&bridge, |r| r.add_member(&role, name.as_deref(), &speciality).map(|_| ()))
+pub fn crew_add_member(
+    bridge: State<'_, Bridge>,
+    role: String,
+    name: Option<String>,
+    speciality: String,
+) -> Value {
+    edit_roster(&bridge, |r| {
+        r.add_member(&role, name.as_deref(), &speciality)
+            .map(|_| ())
+    })
 }
 
 #[tauri::command(async)]
-pub fn crew_update_member(bridge: State<'_, Bridge>, id: String, name: Option<String>, speciality: Option<String>, enabled: Option<bool>) -> Value {
-    edit_roster(&bridge, |r| r.update_member(&id, name.as_deref(), speciality.as_deref(), enabled))
+pub fn crew_update_member(
+    bridge: State<'_, Bridge>,
+    id: String,
+    name: Option<String>,
+    speciality: Option<String>,
+    enabled: Option<bool>,
+) -> Value {
+    edit_roster(&bridge, |r| {
+        r.update_member(&id, name.as_deref(), speciality.as_deref(), enabled)
+    })
 }
 
 #[tauri::command(async)]
@@ -108,7 +136,11 @@ pub fn resolve_tags(text: String) -> Value {
 
 /// The first line of a request, cut to a title.
 fn title_of(text: &str) -> String {
-    let first = text.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("Request");
+    let first = text
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("Request");
     let mut title: String = first.chars().take(90).collect();
     if first.chars().count() > 90 {
         title.push('…');
@@ -139,12 +171,29 @@ pub fn create_tagged_issues(bridge: State<'_, Bridge>, text: String) -> Value {
                 continue;
             }
         };
-        let team = roster.member(&pick.member).and_then(|m| roster.role(&m.role)).map(|r| r.team.clone());
-        let new = NewIssue { title: title_of(&text), body: text.trim().to_owned(), assignee: Some(pick.member.clone()), track: team, priority: Some(1), ..NewIssue::default() };
+        let team = roster
+            .member(&pick.member)
+            .and_then(|m| roster.role(&m.role))
+            .map(|r| r.team.clone());
+        let new = NewIssue {
+            title: title_of(&text),
+            body: text.trim().to_owned(),
+            assignee: Some(pick.member.clone()),
+            track: team,
+            priority: Some(1),
+            ..NewIssue::default()
+        };
         match store.create("user", &new) {
             Ok((issue, _)) => {
-                notes.push(format!("{} takes it ({})", roster.member(&pick.member).map_or(pick.member.clone(), |m| m.name.clone()), pick.reason));
-                issues.push(json!({"id": issue.id, "assignee": pick.member, "reason": pick.reason}));
+                notes.push(format!(
+                    "{} takes it ({})",
+                    roster
+                        .member(&pick.member)
+                        .map_or(pick.member.clone(), |m| m.name.clone()),
+                    pick.reason
+                ));
+                issues
+                    .push(json!({"id": issue.id, "assignee": pick.member, "reason": pick.reason}));
             }
             Err(error) => notes.push(format!("{error:#}")),
         }
@@ -175,7 +224,10 @@ pub fn get_board(bridge: State<'_, Bridge>) -> Value {
 }
 
 /// Runs a board change for the person (the actor is `user`) and answers with the issue, or with the reason it was refused.
-fn user_change(bridge: &Bridge, change: impl FnOnce(&BoardStore, &Roster) -> anyhow::Result<Issue>) -> Value {
+fn user_change(
+    bridge: &Bridge,
+    change: impl FnOnce(&BoardStore, &Roster) -> anyhow::Result<Issue>,
+) -> Value {
     let store = match board(bridge) {
         Ok(store) => store,
         Err(error) => return fail(error),
@@ -188,27 +240,62 @@ fn user_change(bridge: &Bridge, change: impl FnOnce(&BoardStore, &Roster) -> any
 }
 
 #[tauri::command(async)]
-pub fn board_new_issue(bridge: State<'_, Bridge>, title: String, body: Option<String>, assignee: Option<String>, parent: Option<String>, acceptance: Option<Vec<String>>) -> Value {
+pub fn board_new_issue(
+    bridge: State<'_, Bridge>,
+    title: String,
+    body: Option<String>,
+    assignee: Option<String>,
+    parent: Option<String>,
+    acceptance: Option<Vec<String>>,
+) -> Value {
     user_change(&bridge, |store, roster| {
         let handle = assignee.as_deref().map(str::trim).filter(|a| !a.is_empty());
         let member = match handle {
             Some(handle) => {
-                let target = roster.resolve(handle).ok_or_else(|| anyhow::anyhow!("`{handle}` is not a member, role or team"))?;
+                let target = roster
+                    .resolve(handle)
+                    .ok_or_else(|| anyhow::anyhow!("`{handle}` is not a member, role or team"))?;
                 let load = store.load()?.load_by_member();
-                Some(roster.assign(&target, &format!("{title} {}", body.as_deref().unwrap_or("")), &load)?.member)
+                Some(
+                    roster
+                        .assign(
+                            &target,
+                            &format!("{title} {}", body.as_deref().unwrap_or("")),
+                            &load,
+                        )?
+                        .member,
+                )
             }
             None => None,
         };
-        let track = member.as_deref().and_then(|m| roster.member(m)).and_then(|m| roster.role(&m.role)).map(|r| r.team.clone());
-        let new = NewIssue { title, body: body.unwrap_or_default(), assignee: member, track, parent, acceptance: acceptance.unwrap_or_default(), ..NewIssue::default() };
+        let track = member
+            .as_deref()
+            .and_then(|m| roster.member(m))
+            .and_then(|m| roster.role(&m.role))
+            .map(|r| r.team.clone());
+        let new = NewIssue {
+            title,
+            body: body.unwrap_or_default(),
+            assignee: member,
+            track,
+            parent,
+            acceptance: acceptance.unwrap_or_default(),
+            ..NewIssue::default()
+        };
         store.create("user", &new).map(|(issue, _)| issue)
     })
 }
 
 #[tauri::command(async)]
-pub fn board_set_status(bridge: State<'_, Bridge>, id: String, status: String, note: Option<String>) -> Value {
+pub fn board_set_status(
+    bridge: State<'_, Bridge>,
+    id: String,
+    status: String,
+    note: Option<String>,
+) -> Value {
     user_change(&bridge, |store, _| {
-        let to = Status::parse(&status).ok_or_else(|| anyhow::anyhow!("unknown status `{status}`"))?;
+        let to =
+            Status::parse(&status).ok_or_else(|| anyhow::anyhow!("unknown status `{status}`"))?;
         store.set_status("user", &id, to, note.as_deref())
     })
 }
@@ -273,12 +360,18 @@ pub fn run_issue(app: AppHandle, bridge: State<'_, Bridge>, id: String, slot: St
         Ok(board) => board.issues.get(&id).cloned(),
         Err(error) => return fail(error),
     };
-    let Some(issue) = current else { return fail(format!("there is no issue {id}")) };
-    let Some(member) = issue.assignee.clone() else { return fail(format!("{id} has nobody assigned")) };
+    let Some(issue) = current else {
+        return fail(format!("there is no issue {id}"));
+    };
+    let Some(member) = issue.assignee.clone() else {
+        return fail(format!("{id} has nobody assigned"));
+    };
     if !roster.member(&member).is_some_and(|m| m.enabled) {
         return fail(format!("{member} is not an enabled member of the team"));
     }
-    let Some(persona) = roster.persona(&member) else { return fail(format!("{member} has no role")) };
+    let Some(persona) = roster.persona(&member) else {
+        return fail(format!("{member} has no role"));
+    };
     let args = bridge.args();
     let (agent, cancel) = {
         let mut inner = locked(&bridge.inner);
@@ -292,7 +385,18 @@ pub fn run_issue(app: AppHandle, bridge: State<'_, Bridge>, id: String, slot: St
                 let built = args
                     .load_app()
                     .map_err(|e| format!("{e:#}"))
-                    .and_then(|app| Agent::for_member(app, format!("{persona}\n\n{}", board_tools::GUIDE), board_tools::member_tools(store.clone(), roster.clone(), &member, &format!("run-{id}"))));
+                    .and_then(|app| {
+                        Agent::for_member(
+                            app,
+                            format!("{persona}\n\n{}", board_tools::GUIDE),
+                            board_tools::member_tools(
+                                store.clone(),
+                                roster.clone(),
+                                &member,
+                                &format!("run-{id}"),
+                            ),
+                        )
+                    });
                 match built {
                     Ok(agent) => Box::new(agent),
                     Err(error) => return fail(error),
@@ -301,7 +405,10 @@ pub fn run_issue(app: AppHandle, bridge: State<'_, Bridge>, id: String, slot: St
         };
         inner.running = true;
         inner.cancel = Arc::new(AtomicBool::new(false));
-        inner.active = Some(Active { member: member.clone(), issue: id.clone() });
+        inner.active = Some(Active {
+            member: member.clone(),
+            issue: id.clone(),
+        });
         (agent, Arc::clone(&inner.cancel))
     };
     // The harness takes the issue for the member; the turn starts only when that succeeds.
@@ -315,8 +422,20 @@ pub fn run_issue(app: AppHandle, bridge: State<'_, Bridge>, id: String, slot: St
             return fail(error);
         }
     };
-    emit(&app, &json!({"type": "member_start", "member": member, "issue": claimed.id, "title": claimed.title}));
-    jobs::spawn_chat(Turn { text: brief(&claimed), slot, agent: Some(agent), cancel }, args, bridge.tx.clone());
+    emit(
+        &app,
+        &json!({"type": "member_start", "member": member, "issue": claimed.id, "title": claimed.title}),
+    );
+    jobs::spawn_chat(
+        Turn {
+            text: brief(&claimed),
+            slot,
+            agent: Some(agent),
+            cancel,
+        },
+        args,
+        bridge.tx.clone(),
+    );
     json!({"ok": true, "issue": issue_json(&claimed)})
 }
 
@@ -325,22 +444,35 @@ pub fn finish_member_turn(bridge: &Bridge, active: &Active, end: &TurnEnd, answe
     let Ok(store) = board(bridge) else { return };
     let (roster, _) = roster();
     let Ok(current) = store.load() else { return };
-    let Some(issue) = current.issues.get(&active.issue) else { return };
-    let report = answer.map(|a| a.chars().take(1_200).collect::<String>()).filter(|a| !a.trim().is_empty());
+    let Some(issue) = current.issues.get(&active.issue) else {
+        return;
+    };
+    let report = answer
+        .map(|a| a.chars().take(1_200).collect::<String>())
+        .filter(|a| !a.trim().is_empty());
     if let (Some(report), true) = (&report, matches!(end, TurnEnd::Done)) {
         let _ = store.comment(&active.member, &active.issue, report);
     }
     if issue.status != Status::InProgress {
         return; // the member moved it on with the board tools
     }
-    let review = roster.member(&active.member).and_then(|m| roster.role(&m.role)).is_some_and(|r| r.review_required);
-    let open_children = current.children(&active.issue).iter().any(|c| c.status.is_open());
+    let review = roster
+        .member(&active.member)
+        .and_then(|m| roster.role(&m.role))
+        .is_some_and(|r| r.review_required);
+    let open_children = current
+        .children(&active.issue)
+        .iter()
+        .any(|c| c.status.is_open());
     let (to, note): (Status, Option<String>) = match end {
         TurnEnd::Done if open_children => return, // it is waiting for the issues it created
         TurnEnd::Done if review => (Status::InReview, None),
         TurnEnd::Done => (Status::Done, None),
         TurnEnd::Stopped => (Status::Ready, Some("Stopped by the user.".to_owned())),
-        TurnEnd::StepLimit => (Status::Blocked, Some("The turn used all its model calls. Continue it from the board.".to_owned())),
+        TurnEnd::StepLimit => (
+            Status::Blocked,
+            Some("The turn used all its model calls. Continue it from the board.".to_owned()),
+        ),
         TurnEnd::Failed(reason) => (Status::Blocked, Some(format!("The turn failed: {reason}"))),
     };
     let _ = store.set_status("bridle", &active.issue, to, note.as_deref());
