@@ -4,8 +4,10 @@ r"""Builds the Windows release bundle: a zip with bridle.exe, the installer, a q
     python scripts\make_bundle.py [--exe target\release\bridle.exe] [--out %USERPROFILE%\Downloads]
 
 The version comes from `[workspace.package]` in Cargo.toml. The zip holds one folder, `bridle-<version>-windows-x64`, with:
-bridle.exe, install.cmd (the installer, which finds bridle.exe next to itself), README.txt, SHA256SUMS.txt, LICENSE, NOTICE,
-THIRD_PARTY_LICENSES.md, CHANGELOG.md and licenses\ (Monaco and xterm.js, which are built into the exe). A `.zip.sha256` file
+bridle.exe, install.cmd (the installer, which finds bridle.exe next to itself), README.txt, MANUAL.txt (the instruction manual),
+SHA256SUMS.txt, LICENSE, NOTICE,
+THIRD_PARTY_LICENSES.md, CHANGELOG.md, docs\ (the web research and browser guides and their decision records) and licenses\
+(Monaco and xterm.js, which are built into the exe). A `.zip.sha256` file
 is written next to the zip. Build the exe first (`scripts\dev.cmd release`). Nothing here talks to the network.
 """
 import argparse
@@ -34,6 +36,9 @@ What you need
     project's docs (guide/models.md), and put them in two folders, for example D:\\models and D:\\runtimes.
   * Git for Windows is recommended: its Git Bash is the terminal's default shell.
 
+The full instruction manual is MANUAL.txt in this folder: install, first run, the window, the team and board, configuration,
+web research, the browser, every command, troubleshooting and uninstall.
+
 Install
 -------
   1. Unpack this folder anywhere.
@@ -46,6 +51,14 @@ Install
 If your network only lets traffic out through a proxy, set it in the window: Info, then Network. Your local model servers never
 use a proxy.
 
+Optional: web research and the browser
+--------------------------------------
+Both are OFF by default and are switched on in your machine configuration, not in a project. See docs\\web-research.md and
+docs\\web-browser.md in this folder. The managed browser (Chromium) is NOT in this bundle: only if you run
+`bridle web browser setup` does Bridle download Node.js, playwright-core and Chromium (about 210 MB, 560 MB on disk), check each
+against its hash, and install them next to your configuration. `bridle web browser test` checks the install without the internet and
+`bridle web browser remove` deletes it. The model gets no browser tools unless you also set security.network = "allow".
+
 Check the download
 ------------------
   certutil -hashfile bridle.exe SHA256       (compare with SHA256SUMS.txt)
@@ -56,10 +69,13 @@ Known limits ({version})
     SmartScreen may warn the first time.
   * One conversation is open at a time, and images are limited to 4 MiB (PNG, JPEG, GIF, WebP).
   * `bridle > file.txt` or `bridle | more` keeps the pipe or file open until the window closes.
+  * The browser and the search providers were checked on that one machine and one company proxy. The providers have never talked to
+    the real services (docs\\web-research.md says what was and was not verified).
   * No installer program and no automatic update. See CHANGELOG.md for what is in this version.
 
 Licences: LICENSE (Apache-2.0), NOTICE, THIRD_PARTY_LICENSES.md, and licenses\\ for the editor (Monaco, MIT) and the terminal
-(xterm.js, MIT) that are built into bridle.exe.
+(xterm.js, MIT) that are built into bridle.exe. The browser runtime that `bridle web browser setup` downloads is not part of
+this bundle: Node.js is MIT, playwright-core is Apache-2.0, and Chromium carries the Chromium Project's BSD-style licences.
 """
 
 
@@ -94,15 +110,25 @@ def main() -> int:
     if stage.exists():
         shutil.rmtree(stage)
     (stage / "licenses").mkdir(parents=True)
+    (stage / "docs").mkdir()
     shutil.copy(exe, stage / "bridle.exe")
     shutil.copy(ROOT / "scripts" / "install-bridle.cmd", stage / "install.cmd")
     for item in ("LICENSE", "NOTICE", "THIRD_PARTY_LICENSES.md", "CHANGELOG.md"):
         shutil.copy(ROOT / item, stage / item)
+    for doc in (
+        "docs/guide/web-research.md",
+        "docs/guide/web-browser.md",
+        "docs/decisions/0019-web-research-is-policy-gated-native-tools.md",
+        "docs/decisions/0020-managed-browser-is-a-policy-gated-playwright-worker.md",
+    ):
+        shutil.copy(ROOT / doc, stage / "docs" / Path(doc).name)
     vendor = ROOT / "crates" / "bridle-desktop" / "ui" / "vendor"
     shutil.copy(vendor / "monaco" / "LICENSE", stage / "licenses" / "monaco-editor-LICENSE.txt")
     shutil.copy(vendor / "monaco" / "ThirdPartyNotices.txt", stage / "licenses" / "monaco-editor-ThirdPartyNotices.txt")
     shutil.copy(vendor / "xterm" / "LICENSE", stage / "licenses" / "xterm.js-LICENSE.txt")
     (stage / "README.txt").write_text(README.format(version=ver), encoding="utf-8", newline="\r\n")
+    manual = (ROOT / "docs" / "MANUAL.txt").read_text(encoding="utf-8")
+    (stage / "MANUAL.txt").write_text(manual, encoding="utf-8", newline="\r\n")
     (stage / "SHA256SUMS.txt").write_text(f"{sha256(stage / 'bridle.exe')}  bridle.exe\n", encoding="utf-8", newline="\r\n")
     archive = out / f"{name}.zip"
     if archive.exists():

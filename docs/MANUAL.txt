@@ -1,0 +1,525 @@
+BRIDLE - INSTRUCTION MANUAL
+===========================
+
+For Bridle 0.1.0 on Windows 11 (x64). This is a plain-text manual: every step you need, in the order you will need it.
+The longer guides are in the project's docs\ folder; names like "guide/web-browser.md" point at them.
+
+Contents
+--------
+  1.  What Bridle is
+  2.  What you need
+  3.  Install
+  4.  First run
+  5.  Models and runtimes (they are not included)
+  6.  The window
+  7.  The team, the board and the ideas queue
+  8.  Set up a project and run your tests
+  9.  Configuration
+  10. What Bridle will and will not let the model do
+  11. Web research (off by default)
+  12. The managed browser (off by default, optional install)
+  13. Command line reference
+  14. Where Bridle keeps things
+  15. Troubleshooting
+  16. Uninstall
+  17. Limits, stated plainly
+
+
+1. WHAT BRIDLE IS
+-----------------
+Bridle is a local-first coding agent. "bridle" opens a window on a project folder: a chat with a model that runs on your own
+computer, a code editor with diffs, search, a terminal, and image input. Everything the model wants to do (read a file, change a
+file, run a command, reach the network) goes through ONE policy that decides, in code and not in a prompt, whether it may.
+
+The rule behind everything: the model proposes, Bridle decides. The default answer to anything risky is "no". Bridle never asks
+you to approve a risky action in the middle of a run; a verdict of "ask" is treated as "not allowed".
+
+Bridle is one program, bridle.exe. With no arguments it opens the window. With a command (for example "bridle doctor") it works
+as a command line tool.
+
+
+2. WHAT YOU NEED
+----------------
+  * Windows 11 (the WebView2 runtime that the window uses ships with it). Bridle is checked on native Windows only; WSL is not
+    supported.
+  * An NVIDIA GPU and a current driver, for the local models. The shipped settings are tuned for 8 GB of video memory.
+    "nvidia-smi" must work in a terminal.
+  * Model files and the llama.cpp runtime. They are NOT in the download. See section 5.
+  * Git for Windows is recommended: the window's terminal uses Git Bash by default, and Bridle uses git for checkpoints.
+  * Optional: OpenCode 1.19.3 if you want to drive Bridle from OpenCode instead of its own window.
+
+
+3. INSTALL
+----------
+From the zip (bridle-0.1.0-windows-x64.zip):
+
+  1. Unpack the folder anywhere.
+  2. Check the download:   certutil -hashfile bridle.exe SHA256     and compare with SHA256SUMS.txt.
+  3. Double-click install.cmd (or run it in a terminal). It copies bridle.exe to %LOCALAPPDATA%\Bridle\bin and adds that folder
+     to your USER path. It changes nothing else on the machine.
+  4. Open a NEW terminal (so the new path is read).
+  5. Check:   bridle --version      it prints "bridle 0.1.0".
+
+Windows SmartScreen may warn the first time: the program is not code-signed.
+
+If you prefer not to install, run bridle.exe from where you unpacked it.
+
+From source (developers): clone https://github.com/kushagrathisside/bridle, install Visual Studio 2022 with the C++ workload and
+Rust (the version in rust-toolchain.toml), then:
+    cargo build --release -p bridle-desktop
+    scripts\install-bridle.cmd target\release\bridle.exe
+See guide/installation.md.
+
+
+4. FIRST RUN
+------------
+  1. In a terminal, go to a project folder:      cd D:\projects\myproject
+  2. Start Bridle:                               bridle
+     (or "bridle D:\projects\myproject" from anywhere)
+  3. The FIRST time on a computer, Bridle asks where your model weights and your runtimes are, and writes your "machine
+     configuration" (see section 9). Pick the folders from section 5.
+  4. The FIRST time in a project folder, Bridle asks before it writes:
+       - bridle.toml   the project's settings (profile "local-only": no outside services),
+       - a .bridle\    state folder (logs, records, the board), and
+       - .gitignore lines for .bridle\ and .worktrees\.
+     Say yes if you want Bridle to work in that folder.
+  5. Bridle starts the default model by itself and stops the servers it started when you close the window.
+     The first start of a model takes about 10 seconds. The status bar shows the slot and its state:
+       unloaded -> warming (server is loading) -> ready
+     Do not send a message while it says "warming": the window will not let you.
+  6. Type in the chat and press Enter.
+
+If something does not start, run   bridle doctor   and read section 15.
+
+
+5. MODELS AND RUNTIMES (NOT INCLUDED)
+-------------------------------------
+Bridle does not download models. You get the files yourself, check them, and put them in two folders (for example D:\models and
+D:\runtimes).
+
+  Slot   Model                    File                                      Size     Needed?
+  main   Qwen3.5-9B Q4_K_M        Qwen3.5-9B\Qwen3.5-9B-Q4_K_M.gguf         5.68 GB  yes, for the agent
+  micro  LFM2.5-1.2B-Thinking     LFM2.5-1.2B-Thinking\...-Q4_K_M.gguf      0.73 GB  optional
+  deep   Ternary Bonsai 2 27B     Ternary-Bonsai-2-27B\...-PTQ1_0.gguf      5.95 GB  optional (needs the PrismML fork)
+  image  Qwen3.5-9B\mmproj-F16.gguf (the vision projector, 918 MB)                   only for pictures in the chat
+
+Sources, exact revisions and SHA-256 values are in guide/models.md. Check each file:
+
+    certutil -hashfile D:\models\Qwen3.5-9B\Qwen3.5-9B-Q4_K_M.gguf SHA256
+
+For "main" the value must be   03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8
+
+Runtime: llama.cpp build b11756 for CUDA 12.4 (plus the CUDA runtime archive of the same release), placed at
+    <runtimes>\llama.cpp\b11756-cuda12.4\llama-server.exe
+
+Start, check and stop a model from the terminal:
+    bridle models serve main --detach      start it and return when it answers
+    bridle health main                     ends with "result: pass" when it works
+    bridle models status                   unloaded / warming / ready / error
+    bridle models stop main                stop it (always use this, never a task killer)
+
+Bridle runs ONE GPU model at a time and refuses to start a second one. It also refuses to start a model that it estimates will
+not fit in free video memory (the check is an estimate, tuned on one GPU).
+
+
+6. THE WINDOW
+-------------
+Left bar (Activity bar): Files, Search, Changes, Models, Info. Clicking the active one again hides the sidebar.
+
+  Explorer     Project name and branch at the top; a filter box (type to find files, best match first, Enter opens it); the list
+               of open editors; the file tree with Git colours (yellow = modified, green = new, red = deleted) and a dot on
+               folders that contain changes. Arrow keys move, Right/Left open and close folders, Enter opens, F2 renames,
+               Delete deletes. Drag a file or folder onto a folder to move it.
+  Editor       Tabs and breadcrumbs. Ctrl+S saves. If the agent changes a file you have open and you have no unsaved edits, the
+               tab updates by itself; if you do have edits, the tab shows "!" and saving asks what to do.
+  Diff tabs    The working copy against the last commit, side by side (read only).
+  Terminal     Your own shell: Git Bash, PowerShell, Command Prompt or WSL. What you type in it is NOT checked by the model's
+               policy, because you typed it.
+  Chat         The conversation. Each tool the model uses appears as a card with the policy verdict. Answers are shown as
+               Markdown (tables, lists, headings, code blocks with a Copy button). A Copy button sits over each answer, and a
+               "Latest" button jumps to the newest message. Links are shown but not followed (a click copies the address).
+  Status bar   Git branch, model slot and state, tokens used, and for the open file the line, column and language.
+
+Keyboard shortcuts
+    Ctrl+P  go to file          Ctrl+Shift+F  search          Ctrl+Shift+E  explorer      Ctrl+Shift+G  changes
+    Ctrl+S  save                Ctrl+W        close tab       Ctrl+J        chat          Ctrl+`        terminal
+    Ctrl+L  new chat            Ctrl+O        change project  Esc           stop a running turn
+When the terminal has focus its keys belong to the shell.
+
+The "/" menu in the chat
+    Type "/" to see the commands (/compact, /clear, /image, /team, /model) and the tools the model can use. Picking a tool
+    fills in "Use the ... tool to".
+
+Pictures
+    Use the Image button, /image, paste, or drop a PNG, JPEG, GIF or WebP file (up to 4 MiB). It is copied to
+    .bridle\attachments and sent with your next message. The model slot must have a vision projector (launch.mmproj_file);
+    otherwise the window says so before sending.
+
+Long conversations
+    When the history passes its budget, the oldest turns are folded into a summary automatically. /compact does it for the whole
+    conversation. The meter next to Send shows tokens used out of the model's window.
+
+Network settings (Info view, "Network" card)
+    How Bridle reaches the internet (cloud models, web tools, downloads). Local model servers NEVER use a proxy. Choose:
+      - the system proxy (the HTTPS_PROXY environment variables; the default),
+      - a proxy you type (http://host:port, https://host:port or socks5://host:port; no password in the address), or
+      - no proxy.
+    "Test" sends one request using the values in the form before you save. A proxy with a password goes in the environment
+    variable BRIDLE_PROXY, which overrides the setting and is never shown.
+
+
+7. THE TEAM, THE BOARD AND THE IDEAS QUEUE
+------------------------------------------
+The crew rail: round avatars on the right edge of the window, one per team member. Hover for name, role, speciality and what
+they are doing. A pulsing green dot means "working now"; a number is how many open issues they have; a faded avatar is off the
+team for now. Click an avatar to put "@name " in the chat box. Right-click for: tag, show their issues, edit the team, take them
+off the team. The "+" under the avatars opens the team editor.
+
+Tagging (type @ in the chat)
+    @maya                       one member
+    @eng.intern                 any member in that role
+    @eng                        any member of that team
+    @maya @sam review this      several; each gets the request
+A tagged message is NOT sent to the model as typed. Bridle makes one issue for each tag and the board runner gives it to the
+member. For a team or role, the member is picked by rules: best match between your request and the members' specialities, then
+the fewest open issues, then the roster order. The reason is shown. A tag always wins: @maya is Maya.
+
+Teams (each with roles and starting members; change them in the editor)
+    Project Management (@pm): Project Manager - Priya.      Product (@product): Product Owner - Omar.
+    Technical Management (@tech): Technical Manager - Ravi. Engineering (@eng): Senior Engineer Maya; Engineers Sam, Noor; Intern Kai.
+    Research (@research): Researcher - Iris.                Quality (@qa): QA Lead Lena; QA Tester Ben.
+In the editor you set how many members each role has, and each member's name, speciality and whether they are on the team.
+The team is saved in team.json next to your machine configuration, so it follows you to every project and no repository can
+change it. At most 40 members.
+
+The board (button at the top right; Esc or a click outside closes it)
+    Columns: Ideas | Backlog | Ready | In progress | In review | Blocked | Done.
+    Click a card for its detail: description, what must be true for it to be done, what it waits for, child issues, comments, and
+    actions (assign to a member or team, move to another state, comment, Run now, Undo changes).
+    Toolbar: filter by member, group by team, Auto-run on/off, Run ready work, New issue, Export as Markdown, Team editor.
+    An issue has an id like B-a3f8 (children B-a3f8.1), a title, a description, acceptance criteria, a priority 0 (most urgent)
+    to 3, an owner, what it waits for, and comments. When the issue it waits for is done, it becomes ready by itself. When the last
+    child is done the parent moves to review.
+
+The runner gives ready issues to their owners ONE AT A TIME, in priority order. It runs after a tag, after a turn that finished
+well, and from "Run ready work". A turn you stop (Esc) or that fails PAUSES the runner until you press "Run ready work" or tag
+someone again.
+
+Ideas
+    While a run is working, Enter (or the Idea button, or "/idea text", or Ctrl+Shift+Enter) SAVES what you typed as an idea
+    instead of sending it. Ideas are not in the conversation and the model does not see them. When a run finishes well, the oldest
+    idea is sent as a normal message, one per finished run. On an idea: move up/down, Edit, Make issue, Send now, delete, Hold.
+    Ideas are kept in .bridle\ideas.json (at most 50, 8,000 characters each).
+
+Your files are protected: before a member works on an issue Bridle saves the state of your files as a Git checkpoint (under
+refs/bridle/runs/..., not on any branch), and again afterwards. "Undo changes" on an issue puts back what the last run changed;
+files you changed yourself since are left alone. Only one Bridle can run a team in a project at a time. A run cut short by a crash
+is found when the window next opens. Details: guide/team-and-board.md and reference/run-recovery.md.
+
+Be realistic: the team works in "Solo mode": one model answers every member, one at a time, in your project folder. A project
+manager on a 9B model sometimes completes the whole plan and sometimes stops half way. Expect to step in.
+
+
+8. SET UP A PROJECT AND RUN YOUR TESTS
+--------------------------------------
+The window offers to do this for you the first time. From a terminal:
+
+    cd D:\projects\myproject
+    bridle init --profile local-only      writes bridle.toml, opencode.json, .opencode\plugins\bridle.ts, .gitignore lines
+    bridle config validate                prints "configuration is valid" and exits 0, or names the rule and the key
+
+Profiles: "local-only" (default; no outside services) and "development" (longer logs; for working on Bridle itself).
+bridle init never overwrites an existing bridle.toml; "--force" replaces the generated files.
+
+Tell Bridle how to run your tests, so the agent can run them through the policy. In bridle.toml, one table per command:
+
+    [[verification.steps]]
+    name = "unit tests"
+    command = "python -m unittest -q"
+    timeout_ms = 120000          # optional; default 600000 (10 minutes)
+    kind = "test"                # test, lint, typecheck, build or other
+    cwd = "."                    # optional, relative to the project
+
+Built-in safe commands (no entry needed): pytest, python -m pytest/unittest/mypy/ruff, cargo test/build/check/clippy/fmt/doc,
+go test/build/vet, cmake --build, ruff check, ctest, mypy, pyright, tsc, eslint, nvidia-smi.
+A program that is not on that list is treated as risky and blocked. To allow one you use every day, add its name to
+security.safe_commands in the MACHINE configuration (a project file cannot do this).
+
+Tasks (optional workflow with loop rules)
+    Turn it on in bridle.toml:   [workflow]  enabled = true
+    bridle task start --prompt "what to do"   [--worktree  to work in its own git worktree]
+    bridle task status [task]                 state of a task
+    bridle task reset                         end a block and restart the loop counters
+    bridle task resume <task> | repair | prune
+    bridle explain [task]                     recent decisions with the reason for each
+    bridle trace [task]                       the ordered record of a task
+
+
+9. CONFIGURATION
+----------------
+Bridle reads these, later ones winning:
+    1. built-in defaults
+    2. the MACHINE configuration:  %APPDATA%\bridle\config.toml   (set the environment variable BRIDLE_HOME to use another folder)
+    3. the PROJECT file:           bridle.toml in the project (or a parent folder)
+    4. an explicit file:           bridle --config FILE   or the environment variable BRIDLE_CONFIG
+    5. the environment variables BRIDLE_MODELS_DIR and BRIDLE_RUNTIMES_DIR, which replace the two folders in [paths]
+A table merges key by key with the layer below; a list (such as verification.steps) replaces the list below it.
+
+Why two files: the project file arrives with the code, so Bridle does not trust it with anything that could loosen security.
+A project file CANNOT: declare tools, set [paths] or the OpenCode path, choose model files outside the models folder or
+endpoints that are not this machine, set api keys or external services, set security.allowed_paths or safe_commands, loosen a
+security verdict, set the [network] proxy, or set anything under [web] (search providers, the browser). The machine file can.
+
+See what applies:
+    bridle config paths       the files loaded and where the machine file is
+    bridle config show        the merged result (values under secret-looking keys are shown as [REDACTED])
+    bridle config validate    checks every rule (V1 ... V49); warnings exit 0, errors exit 1
+
+Write the machine file the first time (the window does this for you):
+    bridle init --machine --models-dir D:\models --runtimes-dir D:\runtimes --opencode-bin D:\tools\opencode.exe
+
+Settings that matter most
+    models.main.context                  65,536 by default: the model's window
+    models.main.launch.mmproj_file       the vision projector, relative to the models folder
+    models.main.launch.mmproj_offload    false keeps the projector in system memory (saves ~700 MiB video memory)
+    network.proxy_mode                   environment (default), custom (with network.proxy) or none     [machine only]
+    security.network                     ask (default; never allowed), allow, or deny: whether the MODEL may use the network tools
+    security.safe_commands               extra programs the model may run                                [machine only]
+    web.* and web.browser.*              see sections 11 and 12                                          [machine only]
+The full list is in guide/configuration.md.
+
+
+10. WHAT BRIDLE WILL AND WILL NOT LET THE MODEL DO
+--------------------------------------------------
+Every tool call gets a verdict: allow, ask or deny, and a class:
+    READ_ONLY       allowed.        WRITE            allowed inside the project; control files (bridle.toml, .bridle, .git,
+    EXECUTE_SAFE    allowed.                          opencode.json ...) are protected from the model.
+    EXECUTE_RISKY   blocked by default.   NETWORK     blocked unless security.network = "allow".
+    DESTRUCTIVE / PRIVILEGED  blocked.
+"ask" is never granted: it is treated as a refusal. Unknown tools are blocked.
+Secrets are redacted from tool output. Paths outside the project, Windows alternate data streams and secret files are refused.
+
+Bridle is NOT a sandbox for programs you run yourself, and it does not make an unsafe command safe: it refuses commands it cannot
+classify as safe. Read concepts/security.md for the full model.
+
+Allow the model to use the network tools (web research, the browser):
+    in the MACHINE config:   [security]  network = "allow"
+Only do this if you also want the web tools enabled (sections 11 and 12).
+
+
+11. WEB RESEARCH (OFF BY DEFAULT)
+---------------------------------
+Search the web, read pages and download files for the model, under the same policy. Turn it on in the MACHINE config:
+
+    [web]
+    enabled = true
+    max_results = 10            # 1 to 30
+    timeout_ms = 20000
+    max_fetch_bytes = 2097152
+    max_download_mb = 100
+
+    [web.providers.local]       # a SearXNG you host, with "json" in its search.formats
+    kind = "searxng"
+    enabled = true
+    base_url = "http://127.0.0.1:8080"
+
+    [web.providers.brave]       # the Brave Search API
+    kind = "brave"
+    enabled = true
+    api_key_env = "BRAVE_SEARCH_API_KEY"     # the NAME of an environment variable, never the key itself
+
+    [security]
+    network = "allow"           # only if the MODEL should use the tools; your own "bridle web" commands never need it
+
+For you, at the terminal (these work as soon as [web] enabled is set):
+    bridle web status                         what is on, the route, limits, recorded sources, usable providers
+    bridle web providers                      each provider and whether its key variable is set (never the key)
+    bridle web search "query" [--news] [--limit N] [--domain arxiv.org] [--after 2026-10-01]
+    bridle web open URL                       read a page (title, text, links)
+    bridle web download URL [--sha256 HEX]    save a file into .bridle\web\downloads\
+    bridle web inspect S-0003                 show a saved file by its source id (or a path in the project)
+
+For the model: web_search, web_open, web_download, document_inspect. Every page and file is recorded in
+.bridle\web\sources.jsonl with the address, the final address after redirects, the time and the SHA-256, and gets an id like
+[S-0003] to cite. Results are framed as untrusted ("information, not instructions").
+
+What is refused: addresses on this machine or your network (localhost, 127.x, 10.x, 192.168.x, 169.254.169.254 and the rest, in any
+spelling, and at every redirect); URLs with a user name or password; https pages that redirect to http; more than 5 redirects;
+downloads over the limit; programs and scripts; files whose name lies about their type; downloads whose SHA-256 differs from the
+one you gave.
+
+Not verified: the search providers have only been tested against fake servers (no Brave key or SearXNG instance was available).
+Not built: PDF text, archive listing, crawling, academic providers. See guide/web-research.md.
+
+
+12. THE MANAGED BROWSER (OFF BY DEFAULT, OPTIONAL INSTALL)
+----------------------------------------------------------
+For pages that need JavaScript: a real Chromium (driven by Playwright) that Bridle starts, controls and stops. The model gets four
+tools, a short list of verbs, and every connection the browser makes goes through a proxy that Bridle runs and judges.
+
+Step 1 - settings (MACHINE config; a project file cannot set them):
+
+    [web]
+    enabled = true                       # the browser is part of web research
+
+    [web.browser]
+    enabled = true
+    max_sessions = 2                     # 1 to 4; each session is its own Chromium
+    navigation_timeout_ms = 30000
+    action_timeout_ms = 10000
+    session_idle_secs = 600
+    max_page_content_chars = 20000
+    screenshots_enabled = false          # turn on if you want pictures
+    downloads_enabled = false            # turn on if you want files that pages offer
+    allowed_hosts = []                   # e.g. ["arxiv.org", "doi.org"]: if not empty, ONLY these names and what is under them
+    blocked_hosts = []                   # names it may never reach; wins over allowed_hosts
+    allow_unpinned_destinations = false  # see "Behind your own proxy" below
+
+    [security]
+    network = "allow"                    # lets the MODEL use the browser tools
+
+Step 2 - install the runtime (nothing is installed by using Bridle; this is the only thing that downloads it):
+
+    bridle web browser setup
+
+  Downloads Node.js 24.22.2 (~35 MB), playwright-core 1.64.1 (~4 MB) and Chromium 156.0.8078.4 (~170 MB) through your proxy into
+  "browser-runtime\" next to your machine configuration (560 MB on disk), checks each against its published hash and Chromium
+  against the hash pinned in Bridle, and records versions and hashes in manifest.json. Safe to run again.
+
+Step 3 - check it (needs no internet):
+
+    bridle web browser test               about 70 checks against a small site served from this machine
+    bridle web browser test --live https://example.com     also reads one real page (optional smoke check)
+    bridle web browser status             enabled?, runtime state, versions, limits, how the browser reaches the web
+    bridle web browser remove             delete the runtime folder
+    bridle doctor                         shows a "browser" line; bridle egress lists the browser as a destination
+
+The tools the model gets (only when web.enabled and web.browser.enabled are on, and security.network = "allow"):
+    browser_navigate   url, optional session_id (omit to start a session), optional wait_until (commit, domcontentloaded, load)
+    browser_snapshot   session_id; optional include_links, include_metadata, include_accessibility, max_content_chars, screenshot
+    browser_action     session_id and an action:
+                         click, fill, select, scroll, press, wait, wait_download, back, forward
+                       The element is found by what a person sees, never by a selector:
+                         {"role": "button", "name": "Continue"}   {"label": "Your name"}   {"placeholder": "Search"}   {"text": "Next"}
+                       with optional "exact" and "index" (when several match, the answer says how many; add index).
+    browser_close      session_id. Always allowed, so a session can be freed.
+There is NO way to run script, send a DevTools command, choose a file path, change how Chromium starts, upload a file, or type
+into a password field.
+
+What the browser keeps
+    Every page read is a source record (.bridle\web\sources.jsonl): address asked for, final address, time, title, Chromium and
+    Playwright versions, SHA-256 of the rendered page; if the same address was read without the browser, the new record points to
+    the old one. Downloads (only when downloads_enabled) go through the SAME checks as web_download (size limit, programs refused,
+    SHA-256, atomic move) into .bridle\web\downloads\. Screenshots (only when screenshots_enabled; the visible window only) go to
+    .bridle\web\screenshots\. Every call is a line in .bridle\tool-events.jsonl.
+
+What the browser cannot do
+    It uses none of your profiles, cookies or logins: each session has a throw-away profile; sessions share nothing. Chromium's
+    sandbox stays on. It cannot reach localhost, your network, the metadata address or a file: URL, nor a host outside
+    allowed_hosts or under blocked_hosts. A page's text can never give the model orders: it arrives framed as untrusted text with
+    markers the page cannot forge.
+
+Behind your own proxy: Bridle resolves each name itself, checks the answers, and asks your proxy for a tunnel to the ADDRESS it
+checked. If this machine cannot resolve the name, the connection is refused; set allow_unpinned_destinations = true to hand such
+names to your proxy by name (then your proxy is the only boundary for those connections, and the model is told).
+
+Not closed: rebinding is shown against a scripted resolver, not a hostile DNS server; checked on one machine and one proxy;
+Windows x64 only. See guide/web-browser.md and decisions/0020-managed-browser-is-a-policy-gated-playwright-worker.md.
+
+
+13. COMMAND LINE REFERENCE
+--------------------------
+Global options:  --config FILE   --workspace DIR   -h/--help   -V/--version        "bridle COMMAND --help" shows any command.
+
+    bridle                              open the window on the current folder          bridle FOLDER   open a given folder
+    bridle init [--profile P] [--force] [--machine --models-dir D --runtimes-dir D --opencode-bin F]
+    bridle config show | validate | paths
+    bridle models list | status [slot] | serve SLOT [--detach] [--wait-secs N] | stop SLOT | manifest [slot] [--no-hash]
+    bridle health [slot] [--quick] [--json]
+    bridle doctor [--json]               host, runtimes, model files, endpoints, OpenCode, browser, configuration
+    bridle task start [--prompt T] [--worktree] | status [task] [--json] | resume T | reset | repair | prune
+    bridle explain [task] [--limit N]    bridle trace [task] [--limit N]
+    bridle egress                        every outbound destination of this configuration, and the proxy state; sends nothing
+    bridle web status | providers | search | open | download | inspect | browser status|setup|test|remove     (sections 11-12)
+    bridle subagent --role explore|summarise --task T [--path F ...] [--text T]     the small-model reader tier (off by default)
+    bridle tui                           the terminal Control Center (guide/tui.md)
+    bridle mcp                           serve Bridle's tools over MCP (OpenCode starts this)
+    bridle hook EVENT                    the policy hook used by the OpenCode plugin
+    bridle eval-decisions CASES | bench ...     evaluation tools, not for daily use
+
+Exit codes: 0 success (including warnings); 1 an error: a failing check, or a configuration with errors.
+
+
+14. WHERE BRIDLE KEEPS THINGS
+-----------------------------
+  Machine settings            %APPDATA%\bridle\config.toml      (or %BRIDLE_HOME%\config.toml)
+  The team                    next to it: team.json
+  The browser runtime         next to it: browser-runtime\      (Node.js, playwright-core, Chromium, manifest.json)
+  Project settings            bridle.toml in the project
+  Project state               .bridle\ in the project (ignored by git):
+      logs\main.log           the model server's log
+      tool-events.jsonl       every tool call and policy decision (secrets redacted)
+      web\sources.jsonl       every page and file the web tools read, with SHA-256
+      web\downloads\          files saved by web_download or the browser;  web\screenshots\  browser screenshots
+      board\events.jsonl      the team board (append-only)         ideas.json   the saved ideas
+      manifests\              what was run: model hash, revision, runtime build, hardware
+      attachments\            pictures attached in the chat
+  Checkpoints                 git refs  refs/bridle/runs/<issue>/...   (your branch, index and stash are never touched)
+  Install location            %LOCALAPPDATA%\Bridle\bin\bridle.exe
+
+
+15. TROUBLESHOOTING
+-------------------
+  "health: endpoint unreachable ... (os error 10061)" - nothing is listening: the model server is not running.
+        bridle models status ; bridle models serve main --detach ; bridle health main
+  A server starts and exits - usually a missing model file or a wrong runtime path. Read .bridle\logs\main.log, then
+        bridle config show ; bridle config paths
+  The chat says the model is "warming" - the server is still loading; wait for "ready" (about 10 seconds).
+  "blocked by policy (EXECUTE_RISKY, command_risk)" - the program is not on the safe list. If it is a program your project uses
+        for tests or builds, add its name to security.safe_commands in the MACHINE config.
+  A web or browser tool says "blocked by policy ... never allows an ask" - set security.network = "allow" in the MACHINE config.
+  "the browser is not installed" - run   bridle web browser setup   (it is never installed by itself).
+  "the browser is off" - set [web] enabled = true and [web.browser] enabled = true in the MACHINE config.
+  The browser reports the runtime "incomplete" or "not the version this Bridle needs" - run   bridle web browser setup   again
+        (or "remove" first).
+  The browser refused an address - read the reason: it names the host and the rule (local address, host not on allowed_hosts,
+        blocked_hosts, a port that is not a web port, or a name this machine cannot resolve).
+  "unable to find any user-specified roots in the final cert chain" (older versions) - HTTPS now uses the Windows certificate
+        store; if you still see a certificate error behind a company proxy, make sure the proxy's root certificate is installed
+        in the Windows store.
+  "Windows reports Out of memory", PowerShell will not start, or nvidia-smi cannot reach the driver - the commit limit was used up.
+        Look in the System event log for event 2004 (Resource-Exhaustion-Detector), stop model servers with
+        "bridle models stop <slot>", and see guide/troubleshooting.md.
+  A path is blocked - write it the way your shell expects (D:\dir in PowerShell and cmd, D:/dir in Git Bash).
+  "bridle > file.txt" or "bridle | more" keeps the pipe open until the window closes (the window inherits the handle).
+  Anything else: run   bridle doctor   and   bridle config validate   first.
+
+
+16. UNINSTALL
+-------------
+  1. Close Bridle (it stops the model servers it started).
+  2. Delete  %LOCALAPPDATA%\Bridle  and remove  %LOCALAPPDATA%\Bridle\bin  from your USER path.
+  3. Optional: delete  %APPDATA%\bridle  (machine settings, team, browser runtime - or run "bridle web browser remove" first).
+  4. Per project, optional: delete bridle.toml, opencode.json, .opencode\, .bridle\ and the two lines Bridle added to .gitignore.
+Model files and runtimes are yours; Bridle never deletes them.
+
+
+17. LIMITS, STATED PLAINLY
+--------------------------
+  * Windows only, checked on ONE machine (Windows 11, RTX 4060 Laptop 8 GB, 16 GB RAM). The program is not code-signed.
+  * Bridle is not a sandbox. "ask" is never allowed, so network, destructive and risky actions are denied, not offered.
+  * One conversation at a time; images up to 4 MiB.
+  * The team works in Solo mode (one model, one member at a time); how well a 9B model plays each role is barely measured.
+    Not built yet: file leases and a stale-write check, worktrees for parallel engineers, the small-model fleet and scheduler.
+  * The code index is syntactic: find_references matches names by spelling and does not resolve types or imports.
+  * The context budget and the video-memory guard are estimates.
+  * Web research providers are untested against the real services. The browser has been run on one machine and one company proxy.
+  * No installer program and no automatic update.
+  * Optional services (Jev decision backend, LiteLLM gateway) are tested against mocks or a local gateway only.
+  * OpenCode's own model-catalogue fetch and your model downloads are outside Bridle's control.
+
+Licences: Bridle is Apache-2.0 (LICENSE, NOTICE, THIRD_PARTY_LICENSES.md; licenses\ holds Monaco and xterm.js, which are built
+in). Model weights keep their own licences. Node.js (MIT), playwright-core (Apache-2.0) and Chromium (BSD-style) are downloaded
+by "bridle web browser setup" and are not part of this download.
+
+Project: https://github.com/kushagrathisside/bridle        Authors: Kushagra Srivastava and trickybutshruti.
