@@ -36,6 +36,11 @@ Shortcuts: Ctrl+P go to file, Ctrl+Shift+F search, Ctrl+Shift+E explorer, Ctrl+S
 Ctrl+J chat, Ctrl+` terminal, Ctrl+L new chat, Ctrl+O change project, Esc stops a running turn. While the terminal has focus its
 keys belong to the shell.
 
+## The team, the board and ideas
+
+The crew rail on the right edge shows the team; the board button at the top right opens the board as a popup, with the saved ideas as
+its first column. Tag a member in the chat with `@name`. See [the team, the board and the ideas queue](team-and-board.md).
+
 ## The `/` menu and images
 
 Type `/` in the chat for the commands (`/compact`, `/clear`, `/image`, `/team`, `/model`) and for the tools the model can use;

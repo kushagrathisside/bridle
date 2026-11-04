@@ -811,8 +811,8 @@ The owner confirmed the design. It stays as written, and it ships with checks th
 - Each idea can be **edited, reordered, deleted, or sent now**. A **Hold** switch stops delivery. Ideas are never sent when the
   window starts; only when a run that this window watched ends.
 - **Storage:** `.bridle/ideas.json` per project, written atomically under a file lock, so ideas survive a restart and are not shared
-  across projects. It is under `.bridle/`, already in `.gitignore`. Limits: 50 ideas, 8,000 characters each. Secrets typed in an idea
-  are redacted when it is sent, as with any message. No images in version 1.
+  across projects. It is under `.bridle/`, already in `.gitignore`. Limits: 50 ideas, 8,000 characters each. An idea is sent exactly as
+  it was written, like any message you type. No images in version 1.
 
 **Checks that must pass** (end-to-end suite):
 1. An idea saved during a run is listed, with the badge, and does not appear in the model's request (the request body is inspected).
@@ -924,3 +924,30 @@ setting; none is hard to undo.
   above and each has a test; any other found in use is added.
 - **CI.** The workflow also runs on `ubuntu-latest`, which has no WebKit packages, so `bridle-desktop` may fail to build there. That is
   outside this plan and is raised separately.
+
+## 13. Build status
+
+Updated 2026-11-04. Building started after the owner asked not to wait for confirmation. Everything below was run on the tested
+machine; the numbers are in [progress.md](../status/progress.md).
+
+| Item | State |
+|---|---|
+| F0.1 slot readiness (`warming`) | **Built.** A server that is alive but answers 503 is `warming`; the chat refuses to send to it. Two unit tests. |
+| F3 ideas queue | **Built, and shown as the first column of the board.** Saving while a run works, one idea per finished run, hold, edit, reorder, delete, send now, make an issue. 11 unit tests (8 writers at once) and 2 end-to-end checks that pass with the model. |
+| F2 teams, roles and members (data) | **Built.** Six teams, nine roles, ten starting members, handles for a member, a role and a team, a rule-based pick, per-member prompts, a saved roster (`team.json`), headcount editing. 10 unit tests. |
+| F2.1 crew rail | **Built.** Avatars on the right edge with working state and open-issue badges; click to tag, right-click menu, team editor. End-to-end checked. |
+| F2.2 board | **Built (first slice).** Append-only log with checksums, states, children, dependencies, ready queue, one claim per member, idempotent creation, recovery after a crash, Markdown export, role-limited board tools, a popup with columns, detail panel, filters and a runner. 14 + 4 unit tests, one policy test, and 3 end-to-end checks. |
+| F1 sub-agents, small-model fleet, F0.2 scheduler | **Not built.** Needs the P0 measurements first. |
+| F0.4 to F0.6 Git layer, leases, recovery of runs | **Not built.** Members edit the working copy one at a time through the existing file tools and policy. |
+| F0.7 handoff envelope and artifact store | **Replaced for now** by issues and comments on the board (a handoff is an issue or a comment). The envelope is not built. |
+| F4 web search, F5 further polish, F6 slot save and restore | **Not built.** |
+
+**One real measurement.** The same request, `@priya` (project manager) asked to split "add `sub(a, b)` to `calc.py`" into one issue for
+engineering and one for QA that waits for it, was run twice on Qwen3.5-9B. In one run she created both child issues, the runner gave them
+to their owners in order, and the parent closed. In the other she created one of the two issues and her turn ended with the issue blocked,
+so the runner stopped. The team flow works, and a 9B model playing the project manager is **not reliable** yet: it needs better
+prompts or a small plan schema, and an evaluation set, before it is trusted (risk in [section 12](#12-risks-and-what-is-not-known)).
+
+**Deviations from this plan.** The board popup replaced the separate ideas panel (requested by the owner). The roster is `team.json`
+next to the machine configuration, not a section of the machine config. A tagged request becomes an issue for each tag instead of being
+sent to the model directly.
