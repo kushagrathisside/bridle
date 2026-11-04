@@ -2,9 +2,11 @@
 
 pub mod bench;
 pub mod config;
+pub mod desktop;
 pub mod doctor;
 pub mod egress;
 pub mod eval;
+pub mod fleet;
 pub mod health;
 pub mod hook;
 pub mod init;

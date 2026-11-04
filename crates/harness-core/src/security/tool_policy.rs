@@ -155,6 +155,8 @@ const EXECUTING_HARNESS_TOOLS: &[&str] = &[
     "run_linter",
     "run_typechecker",
     "run_command",
+    // Starts a program to take a picture of its window; the program goes through the same command checks as `run_command`.
+    "window_screenshot",
 ];
 
 #[derive(Debug, Clone)]

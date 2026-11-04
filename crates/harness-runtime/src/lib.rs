@@ -7,6 +7,7 @@
 pub mod artifacts;
 pub mod code;
 pub mod decision;
+pub mod desktop;
 pub mod event_log;
 pub mod health;
 pub mod http;
@@ -21,6 +22,7 @@ pub mod process;
 pub mod providers;
 pub mod routing;
 pub mod sandbox;
+pub mod scheduler;
 pub mod state;
 pub mod subagent;
 pub mod sysprobe;

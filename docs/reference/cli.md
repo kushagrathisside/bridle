@@ -134,6 +134,24 @@ The managed Chromium. See [The managed browser](../guide/web-browser.md) and
 `bridle doctor` also prints a `browser` line when the browser is enabled or installed: off, not installed, incomplete, the wrong version,
 or ready.
 
+### `bridle desktop`
+
+| Command | What it does |
+|---|---|
+| `screenshot PROGRAM [ARGS...] [--wait-ms N] [--title TEXT]` | Starts the program (a bare name on `PATH`, judged like `run_command`), waits for its window, saves a picture of that window under `.bridle\web\screenshots\`, stops the program. Needs `[desktop] screenshots_enabled`. See [Window screenshots](../guide/window-screenshots.md) and [ADR-0021](../decisions/0021-window-screenshots-start-the-program-and-capture-only-its-window.md). |
+
+### `bridle fleet`
+
+The small-model fleet and its scheduler; needs `[fleet] enabled`. See [The fleet](../guide/fleet.md) and
+[ADR-0022](../decisions/0022-the-fleet-is-small-models-loaded-together-and-a-deterministic-scheduler-swaps-them.md).
+
+| Command | What it does |
+|---|---|
+| `status` | The slots, whether each runs, what each needs in video memory, whether they fit together, and any unfinished swap. |
+| `up [--wait-secs N]` | Checks the fleet fits, writes `.bridle\swap.json`, stops the GPU slots that are not in the fleet, starts the fleet. Refused while a swap is unfinished. |
+| `down [--wait-secs N]` / `recover [--wait-secs N]` | Stops the fleet, starts again what `up` stopped, removes the record. `recover` is the same restore, for a swap a crash cut short. |
+| `run TASKS.json [--parallel N] [--out FILE] [--keep-up] [--wait-secs N]` | Brings the fleet up, sends the tasks to the worker several at a time, prints each checked answer and the speedup, puts the big model back (unless `--keep-up`). |
+
 ## The model-side tools
 
 These commands use a model. Each one needs the slot it uses to be running.

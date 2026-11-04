@@ -99,6 +99,36 @@ impl McpTool for RunCommandTool {
     }
 }
 
+/// The full policy for one command line: secret and path checks on every word, then the command class. `Ok` when the command may run;
+/// `Err((rule, text))` with the rule that refused it and the (redacted) sentence to show. Shared by every tool that starts a program,
+/// so a program is judged the same way whichever tool starts it.
+pub(super) fn authorize(
+    ctx: &ToolContext,
+    line: &str,
+    cwd: Option<&str>,
+) -> Result<(), (String, String)> {
+    let mut request = ToolRequest::new(ToolKind::Shell);
+    request.command = Some(line.to_owned());
+    request.workdir = cwd.map(str::to_owned);
+    let decision = ctx.policy.evaluate(&request);
+    let assessment = ctx.policy.assess_in(line, STEP_SHELL);
+    let allowed = decision.verdict == Verdict::Allow
+        && ctx.policy.class_verdict(assessment.class) == Verdict::Allow;
+    if allowed {
+        return Ok(());
+    }
+    let reasons = if decision.reasons.is_empty() {
+        format!("command class {}", assessment.class.as_str())
+    } else {
+        decision.reasons.join("; ")
+    };
+    let text = ctx
+        .redactor
+        .redact(&format!("blocked by policy ({}): {reasons}", decision.rule))
+        .into_owned();
+    Err((decision.rule, text))
+}
+
 /// Runs one program with plain words under the full policy (see the module docs). Shared by
 /// `run_command` and the configured adapters, so both get the same checks.
 pub(super) fn execute_plain(
@@ -114,30 +144,13 @@ pub(super) fn execute_plain(
         line.push_str(word);
     }
 
-    // The full policy: secret and path checks on every word, then the command class.
-    let mut request = ToolRequest::new(ToolKind::Shell);
-    request.command = Some(line.clone());
-    request.workdir = cwd.clone();
-    let decision = ctx.policy.evaluate(&request);
-    let assessment = ctx.policy.assess_in(&line, STEP_SHELL);
-    let allowed = decision.verdict == Verdict::Allow
-        && ctx.policy.class_verdict(assessment.class) == Verdict::Allow;
-    if !allowed {
-        let reasons = if decision.reasons.is_empty() {
-            format!("command class {}", assessment.class.as_str())
-        } else {
-            decision.reasons.join("; ")
-        };
-        let text = ctx
-            .redactor
-            .redact(&format!("blocked by policy ({}): {reasons}", decision.rule))
-            .into_owned();
+    if let Err((rule, text)) = authorize(ctx, &line, cwd.as_deref()) {
         return Ok(ToolOutput {
             text: text.clone(),
             structured: Some(json!({
                 "status": "blocked",
                 "command": ctx.redactor.redact(&line).into_owned(),
-                "rule": decision.rule,
+                "rule": rule,
                 "reason": text,
             })),
             is_error: false,

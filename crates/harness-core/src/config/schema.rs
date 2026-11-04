@@ -47,6 +47,10 @@ pub struct Config {
     pub network: NetworkSection,
     /// Web research: search providers, fetching and downloads (ADR-0019). Off by default. Machine config only.
     pub web: WebSection,
+    /// Seeing the desktop: window screenshots of a program the harness starts. Off by default. Machine config only.
+    pub desktop: DesktopSection,
+    /// The small-model fleet and its scheduler (plan F1, F0.2). Off by default. Machine config only.
+    pub fleet: FleetSection,
 }
 
 impl Default for Config {
@@ -73,6 +77,8 @@ impl Default for Config {
             plugins: PluginsSection::default(),
             network: NetworkSection::default(),
             web: WebSection::default(),
+            desktop: DesktopSection::default(),
+            fleet: FleetSection::default(),
         }
     }
 }
@@ -199,6 +205,59 @@ pub enum WebProviderKind {
     Searxng,
     /// The Brave Search API.
     Brave,
+}
+
+/// Window screenshots (`window_screenshot`): Bridle starts a program, waits for its window, saves a picture of that window, and stops the
+/// program. Off by default and machine config only: a repository must not be able to make Bridle start programs to look at them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DesktopSection {
+    pub screenshots_enabled: bool,
+    /// The longest a call may wait for the program's window to appear, in milliseconds.
+    pub max_wait_ms: u64,
+}
+
+impl Default for DesktopSection {
+    fn default() -> Self {
+        Self {
+            screenshots_enabled: false,
+            max_wait_ms: 30_000,
+        }
+    }
+}
+
+/// The small-model fleet: a few small models that run **together** on the GPU while the big one is unloaded, and do bounded work in
+/// parallel (docs/spec/team-subagents-ideas-plan.md section 3.4). `bridle fleet up` stops the running GPU slots that are not in the fleet,
+/// starts the fleet's slots, and records what it stopped so `down` (or the next start, after a crash) can start exactly those again. The scheduler counts
+/// these swaps against `swap_budget`. Off by default and machine config only: a repository must not decide which models are loaded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FleetSection {
+    pub enabled: bool,
+    /// The slots that run together while the fleet is up, in the order they are started. Each must be defined under `[models]` with a
+    /// `launch` section.
+    pub slots: Vec<String>,
+    /// The slot that plans and checks the work (may be empty: then the person or a program supplies the tasks).
+    pub manager: String,
+    /// The slot that does the bounded tasks, several at a time (its `launch.parallel` sets how many at once).
+    pub worker: String,
+    /// How many swaps one run may make (stopping the big model counts as one; putting it back as one).
+    pub swap_budget: u32,
+    /// How many tasks `bridle fleet run` sends to the worker at once.
+    pub parallel: usize,
+}
+
+impl Default for FleetSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            slots: Vec::new(),
+            manager: String::new(),
+            worker: String::new(),
+            swap_budget: 2,
+            parallel: 4,
+        }
+    }
 }
 
 /// How the harness reaches remote endpoints (a cloud model, a gateway, a web tool, a download). The model servers on

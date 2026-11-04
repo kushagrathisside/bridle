@@ -109,12 +109,18 @@ pub fn cache_bytes_per_token(model_file: &Path, cache_type: Option<&str>) -> Opt
         .unwrap_or(1)
         .max(1);
     let heads = number("attention.head_count")?;
-    let kv_heads = number("attention.head_count_kv").unwrap_or(heads);
     let embedding = number("embedding_length")?;
     let key_len = number("attention.key_length").unwrap_or(embedding / heads.max(1));
     let value_len = number("attention.value_length").unwrap_or(key_len);
-    let layers = blocks.div_ceil(interval);
-    let elements = layers * kv_heads * (key_len + value_len);
+    // Some hybrid models (Granite 4.0 H) list the key-value heads of every layer, with 0 for the layers that hold a state instead of a
+    // cache: only the layers that have heads count.
+    let elements = if let Some(per_layer) = header.array(&format!("{arch}.attention.head_count_kv"))
+    {
+        per_layer.iter().map(|kv| kv * (key_len + value_len)).sum()
+    } else {
+        let kv_heads = number("attention.head_count_kv").unwrap_or(heads);
+        blocks.div_ceil(interval) * kv_heads * (key_len + value_len)
+    };
     // Bits per element: the cache types llama.cpp offers.
     let (num, den) = match cache_type.unwrap_or("f16") {
         "f32" => (4, 1),
@@ -132,6 +138,8 @@ pub fn cache_bytes_per_token(model_file: &Path, cache_type: Option<&str>) -> Opt
 enum Value {
     Number(u64),
     Text(String),
+    /// A list of integers (only kept for the per-layer key-value head counts).
+    Array(Vec<u64>),
     Other,
 }
 
@@ -149,6 +157,13 @@ impl Header {
     fn number(&self, key: &str) -> Option<u64> {
         match self.0.get(key) {
             Some(Value::Number(n)) => Some(*n),
+            _ => None,
+        }
+    }
+
+    fn array(&self, key: &str) -> Option<&[u64]> {
+        match self.0.get(key) {
+            Some(Value::Array(items)) => Some(items),
             _ => None,
         }
     }
@@ -256,6 +271,40 @@ fn read_header(path: &Path) -> io::Result<Header> {
             }
             10 | 11 => Value::Number(read_u64(&mut reader)?),
             8 => Value::Text(read_text(&mut reader)?),
+            9 => {
+                let element = read_u32(&mut reader)?;
+                let count = read_u64(&mut reader)?;
+                match fixed_size(element) {
+                    // The per-layer head counts: a short list of integers.
+                    Some(size)
+                        if key.ends_with("head_count_kv")
+                            && count <= 4096
+                            && matches!(element, 0..=5 | 10 | 11) =>
+                    {
+                        let mut items = Vec::with_capacity(usize::try_from(count).unwrap_or(0));
+                        for _ in 0..count {
+                            let mut buf = [0u8; 8];
+                            reader.read_exact(&mut buf[..usize::try_from(size).unwrap_or(8)])?;
+                            items.push(u64::from_le_bytes(buf));
+                        }
+                        Value::Array(items)
+                    }
+                    Some(size) => {
+                        skip(
+                            &mut reader,
+                            size.checked_mul(count)
+                                .ok_or_else(|| bad("an array is too large"))?,
+                        )?;
+                        Value::Other
+                    }
+                    None => {
+                        for _ in 0..count {
+                            skip_value(&mut reader, element)?;
+                        }
+                        Value::Other
+                    }
+                }
+            }
             other => {
                 skip_value(&mut reader, other)?;
                 Value::Other
@@ -315,6 +364,48 @@ mod tests {
         let path = dir.join("demo.gguf");
         File::create(&path).unwrap().write_all(&bytes).unwrap();
         path
+    }
+
+    /// A header shaped like Granite 4.0 H: 40 blocks, only 4 of them with attention (4 key-value heads of 64), listed per layer.
+    fn granite_like(dir: &Path) -> std::path::PathBuf {
+        let mut bytes = b"GGUF".to_vec();
+        bytes.extend(3u32.to_le_bytes());
+        bytes.extend(0u64.to_le_bytes());
+        bytes.extend(7u64.to_le_bytes());
+        text(&mut bytes, "general.architecture");
+        bytes.extend(8u32.to_le_bytes());
+        text(&mut bytes, "hybrid");
+        entry_u32(&mut bytes, "hybrid.block_count", 40);
+        entry_u32(&mut bytes, "hybrid.attention.head_count", 32);
+        entry_u32(&mut bytes, "hybrid.attention.key_length", 64);
+        entry_u32(&mut bytes, "hybrid.attention.value_length", 64);
+        entry_u32(&mut bytes, "hybrid.embedding_length", 2048);
+        text(&mut bytes, "hybrid.attention.head_count_kv");
+        bytes.extend(9u32.to_le_bytes());
+        bytes.extend(5u32.to_le_bytes());
+        bytes.extend(40u64.to_le_bytes());
+        for layer in 0..40 {
+            bytes.extend(
+                (if matches!(layer, 5 | 15 | 25 | 35) {
+                    4i32
+                } else {
+                    0
+                })
+                .to_le_bytes(),
+            );
+        }
+        let path = dir.join("granite.gguf");
+        File::create(&path).unwrap().write_all(&bytes).unwrap();
+        path
+    }
+
+    #[test]
+    fn a_hybrid_model_that_lists_its_heads_per_layer_counts_only_the_layers_with_a_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = granite_like(dir.path());
+        // 4 layers x 4 heads x (64 + 64) = 2,048 elements: 4,096 bytes per token at f16, 2,176 at q8_0. Not 40 layers of 32 heads.
+        assert_eq!(cache_bytes_per_token(&path, Some("f16")), Some(4_096));
+        assert_eq!(cache_bytes_per_token(&path, Some("q8_0")), Some(2_176));
     }
 
     #[test]

@@ -18,6 +18,8 @@ Contents
   10. What Bridle will and will not let the model do
   11. Web research (off by default)
   12. The managed browser (off by default, optional install)
+  12A. Window screenshots (off by default)
+  12B. The small-model fleet (off by default)
   13. Command line reference
   14. Where Bridle keeps things
   15. Troubleshooting
@@ -435,6 +437,72 @@ Not closed: rebinding is shown against a scripted resolver, not a hostile DNS se
 Windows x64 only. See guide/web-browser.md and decisions/0020-managed-browser-is-a-policy-gated-playwright-worker.md.
 
 
+12A. WINDOW SCREENSHOTS (OFF BY DEFAULT)
+----------------------------------------
+Bridle can start a program, wait for its window, take a picture of THAT window only, and stop the program. It is for checking what a
+program you built looks like. Windows only. A repository cannot turn it on.
+
+Turn it on, in %APPDATA%\bridle\config.toml:
+
+    [desktop]
+    screenshots_enabled = true
+    max_wait_ms = 30000                  (the most a call may wait for the window; 1000 to 120000)
+    [security]
+    safe_commands = ["myapp"]            (the program must be allowed to run, as for any command)
+
+From the terminal:
+
+    bridle desktop screenshot winver
+    bridle desktop screenshot python app.py --wait-ms 15000
+    bridle desktop screenshot myapp --title "Settings"      (when the program opens several windows)
+
+The model gets the tool window_screenshot (program, args, cwd, wait_ms, title_contains). The program must be a bare name on PATH and
+is judged by the same rules as run_command. The answer is text: size, title, how it was drawn (printwindow, or screen = a copy of
+that part of the screen, which needs the window visible and uncovered) and a verdict, "has content" or BLANK (one colour all over; try a
+longer wait). The PNG is kept in .bridle\web\screenshots\ and recorded in .bridle\web\sources.jsonl with its SHA-256. A model that
+can look at pictures sees it only when you attach the file.
+
+It never clicks, types or moves the mouse, never looks at the desktop or another program's window, and always stops the whole
+program it started. A picture can show personal data (the About box of Windows shows your user name); it stays in .bridle\.
+Tried on one program on one display. See guide/window-screenshots.md and
+decisions/0021-window-screenshots-start-the-program-and-capture-only-its-window.md.
+
+
+12B. THE SMALL-MODEL FLEET (OFF BY DEFAULT)
+-------------------------------------------
+A fleet is a few small models that run together on the GPU WHILE THE BIG ONE IS UNLOADED, doing bounded work in parallel (reading
+files and answering a question, condensing a log). An 8 GB card cannot hold the 9B model and a fleet, so Bridle swaps: a scheduler
+that is plain code (not a model) checks that the fleet fits, writes a record, stops the big model, starts the fleet, and later puts
+the big model back. Machine configuration only.
+
+    [fleet]
+    enabled = true
+    slots = ["manager", "worker"]        (models defined under [models], each with a [launch] section)
+    worker = "worker"                    (one server with several task slots: set launch.parallel to at least fleet.parallel)
+    manager = "manager"                  (optional; loaded, but it has no job yet)
+    swap_budget = 2                      (swaps a run may make: stop the big model, put it back)
+    parallel = 4                         (tasks at once)
+
+Commands:
+
+    bridle fleet status                  slots, whether each runs, video memory needed, whether they fit, any unfinished swap
+    bridle fleet up                      write the record, stop the GPU slots that are not in the fleet, start the fleet
+    bridle fleet down                    stop the fleet, start again what "up" stopped, remove the record
+    bridle fleet recover                 the same restore, for a swap that a crash cut short
+    bridle fleet run TASKS.json [--parallel N] [--out RESULTS.json] [--keep-up]
+
+TASKS.json is a list of {"id", "role": "explore" or "summarise", "task", "paths": [...], "text"}. Each answer is checked and printed as
+"a small model's reading, not a verified fact"; a reference to an input or a line that does not exist is dropped and counted. Nothing
+a small model returns is ever run.
+
+Safety: if the fleet does not fit in video memory, nothing is stopped. The record (.bridle\swap.json) is written BEFORE the first
+process is stopped; while it exists a second "up" is refused; a failed start puts things back.
+Measured here (Granite-4.0-H-Micro as manager, Granite-4.0-H-1B with 4 slots as worker): eight tasks in 7.1 s of wall time for 26.0 s
+of work (about 3.7 times), the big model back in 7.6 s. The answers were not graded; one cited a line that does not exist.
+Not built: worktrees for parallel engineers, a manager that plans work, use inside the board runner. See guide/fleet.md and
+decisions/0022-the-fleet-is-small-models-loaded-together-and-a-deterministic-scheduler-swaps-them.md.
+
+
 13. COMMAND LINE REFERENCE
 --------------------------
 Global options:  --config FILE   --workspace DIR   -h/--help   -V/--version        "bridle COMMAND --help" shows any command.
@@ -450,6 +518,8 @@ Global options:  --config FILE   --workspace DIR   -h/--help   -V/--version     
     bridle explain [task] [--limit N]    bridle trace [task] [--limit N]
     bridle egress                        every outbound destination of this configuration, and the proxy state; sends nothing
     bridle web status | providers | search | open | download | inspect | browser status|setup|test|remove     (sections 11-12)
+    bridle desktop screenshot PROGRAM [ARGS...] [--wait-ms N] [--title T]     a picture of that program's window (section 12A)
+    bridle fleet status | up | down | recover | run TASKS.json     the small-model fleet and its scheduler (section 12B)
     bridle subagent --role explore|summarise --task T [--path F ...] [--text T]     the small-model reader tier (off by default)
     bridle tui                           the terminal Control Center (guide/tui.md)
     bridle mcp                           serve Bridle's tools over MCP (OpenCode starts this)
@@ -471,6 +541,8 @@ Exit codes: 0 success (including warnings); 1 an error: a failing check, or a co
       web\sources.jsonl       every page and file the web tools read, with SHA-256
       web\downloads\          files saved by web_download or the browser;  web\screenshots\  browser screenshots
       board\events.jsonl      the team board (append-only)         ideas.json   the saved ideas
+      swap.json               exists only while a fleet swap is unfinished (bridle fleet recover)
+      leases.json             which run holds which file;  shadow.git  checkpoints for a folder without Git
       manifests\              what was run: model hash, revision, runtime build, hardware
       attachments\            pictures attached in the chat
   Checkpoints                 git refs  refs/bridle/runs/<issue>/...   (your branch, index and stash are never touched)
@@ -519,11 +591,13 @@ Model files and runtimes are yours; Bridle never deletes them.
   * Bridle is not a sandbox. "ask" is never allowed, so network, destructive and risky actions are denied, not offered.
   * One conversation at a time; images up to 4 MiB.
   * The team works in Solo mode (one model, one member at a time); how well a 9B model plays each role is barely measured.
-    Not built yet: worktrees for parallel engineers, the small-model fleet and scheduler.
+    Not built yet: worktrees for parallel engineers, a manager that plans work, the fleet inside the board runner. The fleet and its
+    scheduler exist (section 12B) but its small models' answers were not graded and are often shallow.
   * PDF text is best effort: it handles single-byte fonts and Flate compression, and says so (and shows no text) for encrypted files,
     embedded font encodings, scans and other compressions. It was tried on generated samples, not on a collection of real papers.
   * The code index is syntactic: find_references matches names by spelling and does not resolve types or imports.
   * The context budget and the video-memory guard are estimates.
+  * Window screenshots were tried on one program on one display; a covered or half-drawn window can come back wrong.
   * Web research providers are untested against the real services. The browser has been run on one machine and one company proxy.
   * No installer program and no automatic update.
   * Optional services (Jev decision backend, LiteLLM gateway) are tested against mocks or a local gateway only.
