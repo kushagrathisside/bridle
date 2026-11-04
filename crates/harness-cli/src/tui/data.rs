@@ -73,6 +73,25 @@ pub enum FileState {
     Missing,
 }
 
+/// One configured inference runtime (`[runtimes.<name>]`): where its server program is, whether that file exists, and which slots use it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RuntimeRow {
+    pub name: String,
+    pub kind: String,
+    pub build: Option<String>,
+    pub bin: Option<String>,
+    pub state: FileState,
+    pub used_by: Vec<String>,
+}
+
+/// One tool offered by a plugin (`[plugins] manifests`), with the class it is offered under.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginRow {
+    pub tool: String,
+    pub class: String,
+    pub description: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SlotRow {
     pub name: String,
@@ -171,6 +190,16 @@ pub struct Snapshot {
     pub machine_config: Option<(String, bool)>,
     pub issues: Vec<IssueRow>,
     pub slots: Vec<SlotRow>,
+    pub runtimes: Vec<RuntimeRow>,
+    /// The folder `paths.models_dir` names, if set.
+    pub models_dir: Option<String>,
+    /// The folder `paths.runtimes_dir` names, if set.
+    pub runtimes_dir: Option<String>,
+    pub plugins: Vec<PluginRow>,
+    /// Why a plugin manifest or tool was not loaded.
+    pub plugin_reports: Vec<String>,
+    /// How many manifests the configuration names.
+    pub plugin_manifests: usize,
     /// The slot named by `agent.default_model`.
     pub default_slot: Option<String>,
     pub config_lines: Vec<ConfigLine>,
@@ -256,6 +285,57 @@ impl Snapshot {
             .iter()
             .map(|(name, model)| slot_row(app, name, model))
             .collect();
+        self.runtimes = app
+            .config
+            .runtimes
+            .iter()
+            .map(|(name, rt)| {
+                let bin = app.config.resolve_runtime_bin(name);
+                RuntimeRow {
+                    name: sanitize(name),
+                    kind: wire_name(&rt.kind),
+                    build: rt.build.as_deref().map(sanitize),
+                    bin: bin.as_ref().map(|p| p.display().to_string()),
+                    state: file_state(bin.as_deref(), true),
+                    used_by: app
+                        .config
+                        .models
+                        .iter()
+                        .filter(|(_, m)| m.launch.as_ref().is_some_and(|l| &l.runtime == name))
+                        .map(|(slot, _)| sanitize(slot))
+                        .collect(),
+                }
+            })
+            .collect();
+        self.models_dir = app
+            .config
+            .paths
+            .models_dir
+            .as_ref()
+            .map(|p| p.display().to_string());
+        self.runtimes_dir = app
+            .config
+            .paths
+            .runtimes_dir
+            .as_ref()
+            .map(|p| p.display().to_string());
+        self.plugin_manifests = app.config.plugins.manifests.len();
+        if self.plugin_manifests > 0 {
+            let loaded = harness_runtime::mcp::tools::plugins::load(&app.config);
+            self.plugins = loaded
+                .tools
+                .iter()
+                .map(|tool| PluginRow {
+                    tool: sanitize(tool.name()),
+                    class: loaded
+                        .classes
+                        .get(tool.name())
+                        .map_or_else(|| "unknown".to_owned(), |c| format!("{c:?}")),
+                    description: sanitize(tool.description()),
+                })
+                .collect();
+            self.plugin_reports = loaded.reports.iter().map(|r| shown(r)).collect();
+        }
         self.config_lines = match redacted_toml(app) {
             Ok(text) => annotate(&text, &app.origins),
             Err(e) => vec![ConfigLine {

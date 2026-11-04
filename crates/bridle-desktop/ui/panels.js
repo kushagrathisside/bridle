@@ -41,7 +41,7 @@ function renderEvents() {
 function renderSlots() {
   const slots = state.snapshot.slots;
   $("slots").replaceChildren(...(slots.length === 0
-    ? [el("p", { class: "muted", text: "No model slots are configured for this folder." })]
+    ? [el("p", { class: "muted", text: "No model slots are configured. Add a [models.NAME] section to the machine configuration file (Info, then “Show in Explorer”); the list updates by itself." })]
     : slots.map((s) => el("div", { class: "card" },
       el("h4", {}, `${s.name}`, el("span", { class: "chip", text: s.role }),
         el("span", { class: `chip ${s.server === "running" ? "ok" : ""}`, text: s.server }),
@@ -81,13 +81,48 @@ function renderHealth(result) {
   box.prepend(card);
 }
 
+function fileChip(state) {
+  return el("span", { class: `chip ${state === "present" ? "ok" : (state === "missing" || state === "unresolved" ? "bad" : "")}`, text: state });
+}
+
+async function revealMachineConfig() {
+  try {
+    await invoke("reveal_machine_config");
+  } catch (error) {
+    toast(String(error), "bad");
+  }
+}
+
 function renderSettings() {
   const s = state.snapshot;
   const parts = [];
   if (s.config_error) parts.push(el("div", { class: "card" }, el("h4", { text: "Configuration error" }), el("pre", { class: "block", text: s.config_error })));
+  parts.push(el("div", { class: "card" }, el("h4", { text: "Machine settings" }),
+    el("p", { class: "muted note", text: "Models, runtimes and plugins are declared in the machine configuration file. Edit it, save, and this window reads it again by itself (or press Reload)." }),
+    el("div", { class: "kv" },
+      el("div", { text: "Configuration file" }), el("div", { class: "mono", text: s.machine_config ? `${s.machine_config.path} (${s.machine_config.exists ? "found" : "missing"})` : "-" }),
+      el("div", { text: "Models folder" }), el("div", { class: "mono", text: s.models_dir || "not set" }),
+      el("div", { text: "Runtimes folder" }), el("div", { class: "mono", text: s.runtimes_dir || "not set" })),
+    el("div", { class: "row mt" },
+      button("Show in Explorer", revealMachineConfig, "small primary"),
+      button("Reload", () => { invoke("refresh_snapshot"); toast("Configuration read again", "ok"); }, "small"))));
+  parts.push(el("div", { class: "card" }, el("h4", { text: "Runtimes" }),
+    ...(s.runtimes.length === 0
+      ? [el("p", { class: "muted note", text: "No runtime is configured. Add a [runtimes.NAME] section with kind and server_bin (the path of llama-server.exe)." })]
+      : s.runtimes.flatMap((r) => [
+        el("div", { class: "item-name", text: r.name }),
+        el("div", { class: "kv" },
+          el("div", { text: "Program" }), el("div", { class: "mono" }, `${r.bin || "-"}  `, fileChip(r.state)),
+          el("div", { text: "Kind and build" }), el("div", { text: `${r.kind}${r.build ? `, ${r.build}` : ""}` }),
+          el("div", { text: "Used by" }), el("div", { text: r.used_by.length ? r.used_by.join(", ") : "no model slot" }))]))));
+  parts.push(el("div", { class: "card" }, el("h4", { text: "Plugins" }),
+    el("p", { class: "muted note", text: s.plugin_manifests === 0
+      ? "No plugin is configured. A plugin is a manifest file that declares tools; list its absolute path under [plugins] manifests in the machine configuration file."
+      : `${s.plugin_manifests} manifest(s) configured; ${s.plugins.length} tool(s) offered.` }),
+    ...s.plugins.flatMap((p) => [el("div", { class: "item-name mono", text: p.tool }), el("div", { class: "muted note", text: `${p.class}: ${p.description}` })]),
+    ...(s.plugin_reports.length ? [el("div", { class: "kv" }, s.plugin_reports.flatMap((r) => [el("div", { text: "not loaded" }), el("div", { text: r })]))] : [])));
   parts.push(el("div", { class: "card" }, el("h4", { text: "Folder" }), el("div", { class: "kv" },
-    el("div", { text: "Workspace" }), el("div", { class: "mono", text: s.workspace || "-" }),
-    el("div", { text: "Machine config" }), el("div", { class: "mono", text: s.machine_config ? `${s.machine_config.path} (${s.machine_config.exists ? "found" : "missing"})` : "-" }))));
+    el("div", { text: "Workspace" }), el("div", { class: "mono", text: s.workspace || "-" }))));
   if (s.config_files.length) {
     parts.push(el("div", { class: "card" }, el("h4", { text: "Loaded configuration" }),
       el("div", { class: "kv" }, s.config_files.flatMap((f) => [el("div", { text: f.origin }), el("div", { class: "mono", text: f.path })]))));

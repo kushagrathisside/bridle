@@ -23,6 +23,14 @@ pub fn snapshot(snap: &Snapshot) -> Value {
             "error": i.error, "rule": i.rule, "path": i.path, "message": i.message,
         })).collect::<Vec<_>>(),
         "slots": snap.slots.iter().map(slot).collect::<Vec<_>>(),
+        "runtimes": snap.runtimes.iter().map(|r| json!({
+            "name": r.name, "kind": r.kind, "build": r.build, "bin": r.bin, "state": file_state(&r.state), "used_by": r.used_by,
+        })).collect::<Vec<_>>(),
+        "models_dir": snap.models_dir,
+        "runtimes_dir": snap.runtimes_dir,
+        "plugins": snap.plugins.iter().map(|p| json!({"tool": p.tool, "class": p.class, "description": p.description})).collect::<Vec<_>>(),
+        "plugin_reports": snap.plugin_reports,
+        "plugin_manifests": snap.plugin_manifests,
         "default_slot": snap.default_slot,
         "policy": snap.policy.as_ref().map(|p| json!({
             "rows": p.rows.iter().map(|(k, v)| json!({"key": k, "value": v})).collect::<Vec<_>>(),

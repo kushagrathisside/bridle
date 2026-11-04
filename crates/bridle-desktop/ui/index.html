@@ -74,9 +74,10 @@
         </section>
 
         <section id="view-models" class="view">
-          <div class="side-head"><span>Models</span><button id="run-doctor" class="icon" title="Test runtimes, files and endpoints">Run checks</button></div>
+          <div class="side-head"><span>Models</span><span class="head-actions"><button id="models-refresh" class="icon" title="Read the configuration again now (it is also read every few seconds)">↻</button><button id="run-doctor" class="icon" title="Test runtimes, files and endpoints">Run checks</button></span></div>
           <div class="view-scroll">
             <div id="slots"></div>
+            <p class="muted note" id="models-help">Models and runtimes are listed in your machine configuration file. To add one, choose Info, then “Show in Explorer”, add a <code>[models.NAME]</code> or <code>[runtimes.NAME]</code> section, and save: the list updates by itself.</p>
             <h3>Checks</h3>
             <div id="doctor" class="muted">Press “Run checks” to test the runtimes, the model files and the endpoints.</div>
           </div>

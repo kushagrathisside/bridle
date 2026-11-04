@@ -207,8 +207,18 @@ pub fn render(marker: &str, taken: &Taken) -> String {
     out
 }
 
-/// Looks for files that changed on disk since the file tools read them and queues a notice for each. Called after every tool call.
+/// Looks for files that changed on disk since the file tools read them, and for paths the model was refused because someone held them
+/// that are free now, and queues a notice for each. Called after every tool call.
 pub fn watch_files(workspace: &Path) {
+    for path in crate::leases::freed_since_refused(workspace) {
+        post(
+            workspace,
+            "lease_free",
+            &format!(
+                "{path} was held by another run when you tried to write it; it is free now, so you can write it."
+            ),
+        );
+    }
     for change in crate::leases::changed_since_read(workspace) {
         let shown = change
             .path
@@ -337,6 +347,33 @@ mod tests {
         assert_eq!(taken.shown[0].kind, "file_changed");
         assert!(
             taken.shown[0].text.starts_with("a.txt was changed on disk"),
+            "{:?}",
+            taken.shown[0]
+        );
+    }
+
+    #[test]
+    fn a_path_that_was_refused_and_is_free_now_becomes_a_notice() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        let leases = crate::leases::Leases::open(ws);
+        leases
+            .claim("notes.txt", "B-9", "run-9", crate::leases::DEFAULT_TTL)
+            .unwrap()
+            .unwrap();
+        // The file tools do this when a write is refused (they go through `guard_write`, which needs an active run).
+        crate::leases::note_refused_for_tests(ws, "notes.txt");
+        watch_files(ws);
+        assert!(take(ws).is_empty(), "still held");
+        leases.release_holder("B-9");
+        watch_files(ws);
+        let taken = take(ws);
+        assert_eq!(taken.shown.len(), 1, "{taken:?}");
+        assert_eq!(taken.shown[0].kind, "lease_free");
+        assert!(
+            taken.shown[0]
+                .text
+                .starts_with("notes.txt was held by another run"),
             "{:?}",
             taken.shown[0]
         );

@@ -256,6 +256,65 @@ fn relative_to(workspace: &Path, resolved: &Path) -> String {
         )
 }
 
+/// A path a write was refused for: `(comparison key, path as shown)`. Its freeing is worth a notice.
+type Refused = (String, String);
+
+/// The refused paths of each workspace.
+static REFUSED: Mutex<Option<HashMap<PathBuf, Vec<Refused>>>> = Mutex::new(None);
+const MAX_REFUSED: usize = 32;
+
+/// Remembers that a write to `path` in `workspace` was refused because someone else holds it.
+fn note_refused(workspace: &Path, path: &str) {
+    let mut slot = REFUSED.lock().unwrap_or_else(PoisonError::into_inner);
+    let list = slot
+        .get_or_insert_with(HashMap::new)
+        .entry(workspace.to_path_buf())
+        .or_default();
+    let key = lease_key(path);
+    if !list.iter().any(|(k, _)| *k == key) {
+        if list.len() >= MAX_REFUSED {
+            list.remove(0);
+        }
+        list.push((key, path.to_owned()));
+    }
+}
+
+/// For the tests of other modules: records a refusal without needing an active run.
+#[cfg(test)]
+pub(crate) fn note_refused_for_tests(workspace: &Path, path: &str) {
+    note_refused(workspace, path);
+}
+
+/// The paths a write was refused for that nobody holds any more (the holder finished, or its claim ended). Each is reported once; the
+/// leases file is read only when a refusal is waiting.
+pub fn freed_since_refused(workspace: &Path) -> Vec<String> {
+    let waiting: Vec<Refused> = REFUSED
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_ref()
+        .and_then(|m| m.get(workspace).cloned())
+        .unwrap_or_default();
+    if waiting.is_empty() {
+        return Vec::new();
+    }
+    let held: Vec<String> = Leases::open(workspace)
+        .list()
+        .into_iter()
+        .map(|l| l.key)
+        .collect();
+    let freed: Vec<Refused> = waiting
+        .into_iter()
+        .filter(|(key, _)| !held.contains(key))
+        .collect();
+    if !freed.is_empty() {
+        let mut slot = REFUSED.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(list) = slot.as_mut().and_then(|m| m.get_mut(workspace)) {
+            list.retain(|(key, _)| !freed.iter().any(|(k, _)| k == key));
+        }
+    }
+    freed.into_iter().map(|(_, path)| path).collect()
+}
+
 /// Called by the file tools before they write `resolved`: claims the lease for the active holder, or refuses with the conflict.
 pub fn guard_write(workspace: &Path, resolved: &Path) -> Result<(), String> {
     let active = ACTIVE
@@ -268,7 +327,10 @@ pub fn guard_write(workspace: &Path, resolved: &Path) -> Result<(), String> {
     let relative = relative_to(workspace, resolved);
     match Leases::open(workspace).claim(&relative, &active.holder, &active.run, DEFAULT_TTL) {
         Ok(Ok(_)) => Ok(()),
-        Ok(Err(conflict)) => Err(conflict.to_string()),
+        Ok(Err(conflict)) => {
+            note_refused(workspace, &relative);
+            Err(conflict.to_string())
+        }
         // Not being able to record a lease must not stop the person's work; the file tools already write atomically.
         Err(_) => Ok(()),
     }
@@ -691,5 +753,36 @@ mod tests {
                 deleted: true
             }]
         );
+    }
+
+    #[test]
+    fn a_path_a_write_was_refused_for_is_reported_once_when_it_is_free() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        let leases = Leases::open(ws);
+        assert!(
+            leases
+                .claim("Src/Lib.rs", "B-2", "run-2", DEFAULT_TTL)
+                .unwrap()
+                .is_ok()
+        );
+        // Nothing was refused yet: nothing to report, and the leases file is not even needed.
+        assert!(freed_since_refused(ws).is_empty());
+        note_refused(ws, "src/lib.rs");
+        note_refused(ws, "SRC/lib.rs"); // the same path, spelled differently
+        assert!(freed_since_refused(ws).is_empty(), "still held");
+        leases.release_holder("B-2");
+        assert_eq!(freed_since_refused(ws), ["src/lib.rs"]);
+        assert!(freed_since_refused(ws).is_empty(), "reported once");
+        // A lease that ended on its own counts too.
+        assert!(
+            leases
+                .claim("a.txt", "B-3", "run-3", Duration::from_millis(1))
+                .unwrap()
+                .is_ok()
+        );
+        note_refused(ws, "a.txt");
+        std::thread::sleep(Duration::from_millis(20));
+        assert_eq!(freed_since_refused(ws), ["a.txt"]);
     }
 }

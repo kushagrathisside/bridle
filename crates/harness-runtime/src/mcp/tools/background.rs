@@ -12,8 +12,11 @@
 //!
 //! Limits: three commands at once per workspace, a time limit of at most ten minutes (default five), 64 KiB of output kept (the
 //! tail), sixteen finished commands remembered. The commands belong to the tool server of the workspace: when it ends, they are
-//! stopped. If Bridle itself is killed without a chance to clean up, a command that is running keeps running until it ends; its own
-//! time limit is enforced by Bridle, which is gone then. The tools are offered only when `[workflow] background_commands = true`.
+//! stopped. If Bridle itself is killed without a chance to clean up, a command that is running keeps running until it ends (its own
+//! time limit is enforced by Bridle, which is gone then). Each running command therefore has a small record in `.bridle/background/`
+//! (the program's name, never its arguments, and the process ids); `bridle doctor --repair` finds the records whose Bridle is gone and
+//! stops the commands, after checking that the process id still belongs to that program. The tools are offered only when
+//! `[workflow] background_commands = true`.
 
 use std::collections::HashMap;
 use std::io::Read;
@@ -24,6 +27,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use harness_core::identity;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::run::{authorize, plain_word};
@@ -91,6 +96,101 @@ impl Job {
     fn output(&self) -> String {
         lossy(&self.tail.lock().unwrap_or_else(PoisonError::into_inner))
     }
+}
+
+/// What is written to `.bridle/background/` while a command runs, so a command left behind by a Bridle that was killed can be found.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct Record {
+    id: String,
+    /// The command's process id.
+    pid: u32,
+    /// The process id of the Bridle that started it.
+    owner_pid: u32,
+    /// The program's name only: arguments can hold secrets and are not kept.
+    program: String,
+    started_unix_s: u64,
+}
+
+fn records_dir(workspace: &Path) -> PathBuf {
+    identity::state_dir(workspace).join("background")
+}
+
+fn record_path(workspace: &Path, id: &str, owner_pid: u32) -> PathBuf {
+    records_dir(workspace).join(format!("{id}-{owner_pid}.json"))
+}
+
+fn write_record(workspace: &Path, record: &Record) {
+    let _ = std::fs::create_dir_all(records_dir(workspace));
+    if let Ok(text) = serde_json::to_string(record) {
+        let _ = std::fs::write(record_path(workspace, &record.id, record.owner_pid), text);
+    }
+}
+
+fn remove_record(workspace: &Path, id: &str) {
+    let _ = std::fs::remove_file(record_path(workspace, id, std::process::id()));
+}
+
+/// Whether process image `image` (such as `ping.exe`) is the program `program` (such as `ping`).
+fn same_program(image: &str, program: &str) -> bool {
+    let stem = |name: &str| {
+        let lower = name.to_ascii_lowercase();
+        lower
+            .strip_suffix(".exe")
+            .map_or(lower.clone(), str::to_owned)
+    };
+    stem(image) == stem(program)
+}
+
+/// Finds the commands left behind by a Bridle that is gone and stops them. A record whose owner is a running Bridle is left alone; a
+/// process id that now belongs to another program is not signalled. Returns one line for each record dealt with.
+pub fn sweep_orphans(workspace: &Path) -> Vec<String> {
+    sweep_with(workspace, &crate::sysprobe::process_image, &|pid| {
+        let _ = kill_tree(pid);
+    })
+}
+
+fn sweep_with(
+    workspace: &Path,
+    image_of: &dyn Fn(u32) -> Option<String>,
+    kill: &dyn Fn(u32),
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    let Ok(entries) = std::fs::read_dir(records_dir(workspace)) else {
+        return lines;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(record) = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|t| serde_json::from_str::<Record>(&t).ok())
+        else {
+            continue;
+        };
+        if record.owner_pid == std::process::id() {
+            continue;
+        }
+        if image_of(record.owner_pid)
+            .is_some_and(|image| image.to_ascii_lowercase().contains("bridle"))
+        {
+            continue;
+        }
+        match image_of(record.pid) {
+            Some(image) if same_program(&image, &record.program) => {
+                kill(record.pid);
+                lines.push(format!(
+                    "stopped background command {} (`{}`, pid {}): the Bridle that started it is gone",
+                    record.id, record.program, record.pid
+                ));
+            }
+            Some(image) => lines.push(format!(
+                "background command {}: pid {} now belongs to `{image}`; removed the record without signalling it",
+                record.id, record.pid
+            )),
+            None => lines.push(format!("background command {} (`{}`) was already gone; removed the record", record.id, record.program)),
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+    lines
 }
 
 static JOBS: Mutex<Option<HashMap<PathBuf, Vec<Arc<Job>>>>> = Mutex::new(None);
@@ -307,6 +407,18 @@ impl McpTool for CommandStartTool {
             let job = Arc::clone(&job);
             thread::spawn(move || pump(pipe, &job));
         }
+        write_record(
+            &ctx.workspace,
+            &Record {
+                id: id.clone(),
+                pid: job.pid,
+                owner_pid: std::process::id(),
+                program: program.to_owned(),
+                started_unix_s: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_secs()),
+            },
+        );
         let watcher = Arc::clone(&job);
         let workspace = ctx.workspace.clone();
         let timeout = Duration::from_millis(timeout_ms);
@@ -343,6 +455,7 @@ impl McpTool for CommandStartTool {
             thread::sleep(Duration::from_millis(150));
             let duration_ms =
                 u64::try_from(watcher.started.elapsed().as_millis()).unwrap_or(u64::MAX);
+            remove_record(&workspace, &watcher.id);
             *watcher.state.lock().unwrap_or_else(PoisonError::into_inner) = State::Finished {
                 status,
                 exit_code,
@@ -411,6 +524,9 @@ fn describe(ctx: &ToolContext, job: &Job) -> ToolOutput {
         }
     };
     let mut text = summary;
+    if job.running() {
+        text.push_str("\nStill running. Do not poll: call command_status again with wait_ms (up to 10000) to wait for it, or carry on with other work; a notice follows a later result when it ends.");
+    }
     for out_line in tail.trim_end().lines() {
         text.push_str(&format!("\n    {out_line}"));
     }
@@ -426,7 +542,8 @@ impl McpTool for CommandStatusTool {
         "command_status"
     }
     fn description(&self) -> &'static str {
-        "State, exit code and the last output of a background command (by id), or the list of them. wait_ms waits up to that long for it to end."
+        "State, exit code and the last output of a background command (by id), or the list of them. Do not call it in a loop: pass \
+         wait_ms (up to 10000) to wait for it to end, or carry on with other work, because a notice follows a later result when it ends."
     }
     fn input_schema(&self) -> Value {
         json!({
@@ -699,5 +816,87 @@ mod tests {
             .unwrap();
         assert_eq!(structured(&again)["status"], "running");
         stop_all(dir.path());
+    }
+
+    #[test]
+    fn a_running_command_has_a_record_that_is_gone_when_it_ends() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(dir.path());
+        let started = CommandStartTool.call(&long(30), &c).unwrap();
+        let id = structured(&started)["id"].as_str().unwrap().to_owned();
+        let file = record_path(dir.path(), &id, std::process::id());
+        assert!(file.is_file(), "a record while it runs");
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(
+            text.contains("\"program\":\"") && !text.contains("127.0.0.1"),
+            "the program only, never the arguments: {text}"
+        );
+        CommandStopTool.call(&json!({"id": id}), &c).unwrap();
+        assert!(!file.exists(), "no record once it has ended");
+    }
+
+    #[test]
+    fn commands_left_by_a_dead_bridle_are_stopped_after_checking_the_process_id_still_belongs_to_them()
+     {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        let me = std::process::id();
+        let record = |id: &str, pid: u32, owner: u32, program: &str| {
+            write_record(
+                ws,
+                &Record {
+                    id: id.to_owned(),
+                    pid,
+                    owner_pid: owner,
+                    program: program.to_owned(),
+                    started_unix_s: 0,
+                },
+            );
+        };
+        record("bg-1", 400, 100, "ping"); // owner is a running Bridle
+        record("bg-2", 401, 101, "ping"); // owner gone, the process is still that program
+        record("bg-3", 402, 102, "ping"); // owner gone, the pid now belongs to another program
+        record("bg-4", 403, 103, "ping"); // owner gone, the process is gone too
+        record("bg-5", 404, me, "ping"); // ours: never touched
+        let image = |pid: u32| -> Option<String> {
+            match pid {
+                100 => Some("bridle-cli.exe".to_owned()),
+                401 => Some("PING.EXE".to_owned()),
+                402 => Some("chrome.exe".to_owned()),
+                404 => Some("ping.exe".to_owned()),
+                _ => None,
+            }
+        };
+        let killed = std::cell::RefCell::new(Vec::new());
+        let lines = sweep_with(ws, &image, &|pid| killed.borrow_mut().push(pid));
+        assert_eq!(*killed.borrow(), vec![401], "{lines:?}");
+        assert_eq!(lines.len(), 3, "{lines:?}");
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("bg-2") && l.contains("stopped")),
+            "{lines:?}"
+        );
+        assert!(
+            lines.iter().any(|l| l.contains("bg-3")
+                && l.contains("chrome.exe")
+                && l.contains("without signalling")),
+            "{lines:?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("bg-4") && l.contains("already gone")),
+            "{lines:?}"
+        );
+        // The live owner's record and our own stay; the others are removed.
+        assert!(record_path(ws, "bg-1", 100).exists() && record_path(ws, "bg-5", me).exists());
+        for (id, owner) in [("bg-2", 101), ("bg-3", 102), ("bg-4", 103)] {
+            assert!(!record_path(ws, id, owner).exists(), "{id}");
+        }
+        assert!(
+            sweep_with(ws, &image, &|_| ()).is_empty(),
+            "nothing more to do"
+        );
     }
 }

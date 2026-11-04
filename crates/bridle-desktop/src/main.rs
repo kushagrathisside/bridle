@@ -165,6 +165,7 @@ fn run_window(raw: &[OsString]) -> ExitCode {
             bridge::setup_repository,
             bridge::setup_machine,
             bridge::suggest_machine_paths,
+            bridge::reveal_machine_config,
             bridge::git_changes,
             bridge::write_workspace_file,
             bridge::git_show_head,
