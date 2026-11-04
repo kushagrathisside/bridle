@@ -18,6 +18,12 @@ makeSplitter($("split-chat"), { variable: "--chat-w", axis: "x", min: 300, max: 
 makeSplitter($("split-bottom"), { variable: "--bottom-h", axis: "y", min: 90, max: 620, invert: true });
 
 // chat
+// A button to get back to the newest message after scrolling up.
+$("transcript").addEventListener("scroll", () => {
+  const box = $("transcript");
+  $("jump").hidden = box.scrollHeight - box.scrollTop - box.clientHeight < 220;
+});
+$("jump").addEventListener("click", () => { const box = $("transcript"); box.scrollTo({ top: box.scrollHeight, behavior: "smooth" }); });
 $("composer").addEventListener("submit", (e) => { e.preventDefault(); send(); });
 $("input").addEventListener("keydown", (e) => {
   if (palette.open) {

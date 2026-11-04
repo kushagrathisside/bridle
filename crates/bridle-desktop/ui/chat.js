@@ -1,60 +1,6 @@
 "use strict";
 
-// ---------- markdown (small, safe) ----------
-
-function inline(text) {
-  const out = document.createDocumentFragment();
-  const parts = text.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/);
-  for (const part of parts) {
-    if (part.length > 2 && part.startsWith("`") && part.endsWith("`")) {
-      out.append(el("code", { text: part.slice(1, -1) }));
-    } else if (part.length > 4 && part.startsWith("**") && part.endsWith("**")) {
-      out.append(el("strong", { text: part.slice(2, -2) }));
-    } else if (part) {
-      out.append(document.createTextNode(part));
-    }
-  }
-  return out;
-}
-
-function renderMarkdown(text) {
-  const root = document.createDocumentFragment();
-  const segments = text.split(/```/);
-  segments.forEach((segment, index) => {
-    if (index % 2 === 1) {
-      const body = segment.replace(/^[^\n]*\n/, "");
-      root.append(el("pre", { class: "code", text: body.replace(/\n$/, "") }));
-      return;
-    }
-    let list = null;
-    let paragraph = [];
-    const flush = () => {
-      if (paragraph.length) {
-        root.append(el("p", {}, inline(paragraph.join("\n"))));
-        paragraph = [];
-      }
-    };
-    for (const line of segment.split("\n")) {
-      const item = line.match(/^\s*[-*]\s+(.*)$/);
-      if (item) {
-        flush();
-        if (!list) {
-          list = el("ul");
-          root.append(list);
-        }
-        list.append(el("li", {}, inline(item[1])));
-      } else if (line.trim() === "") {
-        flush();
-        list = null;
-      } else {
-        list = null;
-        paragraph.push(line);
-      }
-    }
-    flush();
-  });
-  return root;
-}
+// The markdown renderer is in markdown.js.
 
 // ---------- transcript ----------
 
@@ -120,6 +66,11 @@ function endAssistant() {
   if (state.assistant) {
     state.assistant.replaceChildren(renderMarkdown(state.assistantText));
     if (!state.assistantText.trim()) state.assistant.remove();
+    else {
+      // A small toolbar that shows when the pointer is over the answer: copy it as Markdown.
+      const raw = state.assistantText;
+      state.assistant.append(el("div", { class: "msg-tools" }, button("Copy", () => copyText(raw, "Answer"), "msg-tool")));
+    }
   }
   state.assistant = null;
   state.assistantText = "";
