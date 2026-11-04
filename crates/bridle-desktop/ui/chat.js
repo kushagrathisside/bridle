@@ -97,6 +97,7 @@ function assistantTarget() {
   if (!state.assistant) {
     clearEmpty();
     state.assistant = el("div", { class: "msg assistant" });
+    if (state.member) state.assistant.dataset.who = nameOf(state.member);
     state.assistantText = "";
     $("transcript").append(state.assistant);
   }
@@ -180,6 +181,7 @@ function chatEvent(event) {
         tool.body.replaceChildren(el("pre", { class: "block", text: event.preview }), fileButtons(event.name, tool.summary, event.ok));
         if (event.ok && FILE_WRITERS.has(event.name)) agentWrote((tool.summary || "").trim());
       }
+      if (event.name && event.name.startsWith("board_")) { refreshBoard(); refreshCrew(); }
       break;
     }
     case "notice":
@@ -192,6 +194,10 @@ function chatEvent(event) {
     case "usage":
       showUsage(event.used, event.window);
       break;
+    case "member_start":
+      state.member = event.member;
+      memberHead(event);
+      break;
     case "turn_end":
       endAssistant();
       state.busy = false;
@@ -201,7 +207,9 @@ function chatEvent(event) {
       setStatus("");
       syncControls();
       afterTurn();
-      ideasAfterRun(event.end);
+      state.member = null;
+      // Ready issues come first; a saved idea is sent when the board has nothing to start.
+      teamAfterTurn(event).then((started) => { if (!started) ideasAfterRun(event.end); });
       break;
     default:
       break;
@@ -297,6 +305,14 @@ async function send(override) {
   const slotNow = slotInfo(currentSlot());
   if (state.starting.has(currentSlot()) || (slotNow && slotNow.server === "warming")) {
     return addNote("notice", "The model is still loading. Send again when it is ready.");
+  }
+  if (!attachment && typed.includes("@")) {
+    // A message that tags a member, a role or a team becomes an issue for each, and the board runner works them.
+    const tags = await invoke("resolve_tags", { text: typed });
+    if (tags.ok && tags.tags.length) {
+      if (!fromIdea) { input.value = ""; autosize(); closePalette(); }
+      return sendToTeam(typed);
+    }
   }
   if (!attachment && !fromIdea) {
     const idea = typed.match(/^\/idea\s+([\s\S]+)$/);

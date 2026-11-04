@@ -1,10 +1,10 @@
 "use strict";
 
-// The ideas queue. A saved idea is a note on the side: it is not in the conversation and the model never sees it.
-// When a run ends successfully the oldest idea is sent as a normal message. The queue itself (its file, its limits and
-// its lock) is in crates/harness-cli/src/ideas.rs; this file only shows it and decides when to deliver.
+// The ideas queue, shown as the first column of the board. A saved idea is a note on the side: it is not in the conversation and
+// the model never sees it. When a run ends successfully the oldest idea is sent as a normal message; an idea can also become an
+// issue on the board. The queue itself (its file, limits and lock) is in crates/harness-cli/src/ideas.rs.
 
-const ideas = { list: [], hold: false, max: 50, open: false, workspace: null, editing: null, delivering: false };
+const ideas = { list: [], hold: false, max: 50, workspace: null, editing: null, delivering: false, draft: "" };
 
 function applyIdeas(answer) {
   if (!answer || !answer.ok) {
@@ -22,11 +22,13 @@ async function refreshIdeas() {
   try { applyIdeas(await invoke("list_ideas")); } catch (error) { /* the queue is optional for everything else */ }
 }
 
-// Called with each new snapshot: the queue belongs to the folder, so it is read again when the folder changes.
+// Called with each new snapshot: the queue, the team and the board belong to the folder, so they are read again when it changes.
 function ideasOnSnapshot(snapshot) {
   if (snapshot.workspace !== ideas.workspace) {
     ideas.workspace = snapshot.workspace;
     refreshIdeas();
+    refreshCrew();
+    refreshBoard();
   }
 }
 
@@ -34,7 +36,7 @@ async function saveIdea(text) {
   const value = (text || "").trim();
   if (!value) return false;
   const saved = applyIdeas(await invoke("add_idea", { text: value }));
-  if (saved) toast(state.busy ? "Saved as an idea. It is sent when this run finishes." : "Saved as an idea.", "ok");
+  if (saved) toast(state.busy ? "Saved as an idea. It is sent when this run finishes." : "Saved as an idea. Open the board to see it.", "ok");
   return saved;
 }
 
@@ -56,10 +58,10 @@ async function deliverNextIdea() {
 function ideasAfterRun(end) {
   if (!ideas.list.length) return;
   if (end === "done") {
-    if (ideas.hold) addNote("notice", `${ideas.list.length} idea(s) are waiting. Delivery is on hold.`);
+    if (ideas.hold) addNote("notice", `${ideas.list.length} idea(s) are waiting on the board. Delivery is on hold.`);
     else deliverNextIdea();
   } else {
-    addNote("notice", `${ideas.list.length} idea(s) are waiting. The run did not finish, so none was sent. Open Ideas to send one.`);
+    addNote("notice", `${ideas.list.length} idea(s) are waiting on the board. The run did not finish, so none was sent.`);
   }
 }
 
@@ -70,28 +72,40 @@ async function sendIdeaNow(id) {
     return;
   }
   const answer = await invoke("take_idea", { id });
-  if (applyIdeas(answer) && answer.idea) { toggleIdeas(false); await send(answer.idea.text); }
+  if (applyIdeas(answer) && answer.idea) { toggleBoard(false); await send(answer.idea.text); }
 }
 
-function toggleIdeas(open) {
-  ideas.open = typeof open === "boolean" ? open : !ideas.open;
-  $("ideas-panel").hidden = !ideas.open;
-  $("ideas-btn").classList.toggle("active", ideas.open);
-  if (ideas.open) { renderIdeas(); $("idea-new").focus(); }
+// An idea becomes a backlog issue, and leaves the queue.
+async function ideaToIssue(id) {
+  const idea = ideas.list.find((i) => i.id === id);
+  if (!idea) return;
+  const title = idea.text.split("\n")[0].slice(0, 120);
+  const made = await invoke("board_new_issue", { title, body: idea.text, assignee: null, parent: null, acceptance: [] });
+  if (!made.ok) return toast(made.error, "bad");
+  applyIdeas(await invoke("delete_idea", { id }));
+  await refreshBoard();
+  toast("Made an issue from the idea.", "ok");
 }
 
 function renderIdeas() {
+  if (typeof updateBoardBadge === "function") updateBoardBadge();
+  if (typeof board !== "undefined" && board.open) renderBoard();
+}
+
+// The Ideas column of the board.
+function ideasColumn() {
   const count = ideas.list.length;
-  const badge = $("ideas-count");
-  badge.textContent = count ? String(count) : "";
-  badge.hidden = !count;
-  $("ideas-btn").title = count ? `Ideas: ${count} waiting` : "Ideas: notes sent when a run finishes";
-  $("idea-hold").checked = ideas.hold;
-  $("ideas-summary").textContent = count
-    ? `${count} of ${ideas.max} saved${ideas.hold ? ", delivery on hold" : ""}`
-    : "Nothing saved. Notes you save here are sent, one per run, when a run finishes.";
-  const list = $("ideas-list");
-  list.replaceChildren(...ideas.list.map((idea, index) => ideaRow(idea, index)));
+  const hold = el("input", { type: "checkbox", checked: ideas.hold, onchange: async (e) => applyIdeas(await invoke("set_ideas_hold", { hold: e.target.checked })) });
+  const box = el("textarea", { rows: 3, maxlength: "8000", placeholder: "Write an idea. It is not sent to the model until a run finishes.", "aria-label": "New idea" });
+  box.value = ideas.draft;
+  box.addEventListener("input", () => { ideas.draft = box.value; });
+  const save = async () => { if (await saveIdea(box.value)) { ideas.draft = ""; box.value = ""; } };
+  box.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); save(); } });
+  const head = el("h4", {}, "Ideas", el("span", { class: "col-count", text: String(count) }),
+    el("label", { class: "ideas-hold", title: "While on hold, no idea is sent when a run finishes" }, hold, " Hold"));
+  const note = el("p", { class: "note muted", text: count ? `${count} of ${ideas.max} saved${ideas.hold ? ", delivery on hold" : ". One is sent after each run that finishes"}.` : "Notes you save are sent to the chat, one per finished run, or turned into issues." });
+  return el("section", { class: "col col-ideas" }, head, note, el("ol", { class: "ideas-list" }, ...ideas.list.map((idea, index) => ideaRow(idea, index))), box,
+    el("div", { class: "idea-actions" }, button("Save idea", save, "small primary")));
 }
 
 function ideaRow(idea, index) {
@@ -99,33 +113,20 @@ function ideaRow(idea, index) {
     const box = el("textarea", { rows: 3, class: "idea-edit" });
     box.value = idea.text;
     const save = async () => {
-      const done = applyIdeas(await invoke("update_idea", { id: idea.id, text: box.value }));
-      if (done) { ideas.editing = null; renderIdeas(); }
+      if (applyIdeas(await invoke("update_idea", { id: idea.id, text: box.value }))) { ideas.editing = null; renderIdeas(); }
     };
-    return el("li", { class: "idea editing" }, box, el("div", { class: "idea-actions" },
-      button("Save", save, "small primary"),
-      button("Cancel", () => { ideas.editing = null; renderIdeas(); }, "small")));
+    return el("li", { class: "idea editing" }, box, el("div", { class: "idea-actions" }, button("Save", save, "small primary"), button("Cancel", () => { ideas.editing = null; renderIdeas(); }, "small")));
   }
-  const first = index === 0;
-  const last = index === ideas.list.length - 1;
   const mini = (label, title, onclick, disabled) => el("button", { class: "icon", title, "aria-label": title, text: label, onclick, disabled });
   return el("li", { class: "idea" },
     el("div", { class: "idea-text", text: idea.text }),
     el("div", { class: "idea-actions" },
-      mini("↑", "Move up", async () => applyIdeas(await invoke("move_idea", { id: idea.id, delta: -1 })), first),
-      mini("↓", "Move down", async () => applyIdeas(await invoke("move_idea", { id: idea.id, delta: 1 })), last),
+      mini("↑", "Move up", async () => applyIdeas(await invoke("move_idea", { id: idea.id, delta: -1 })), index === 0),
+      mini("↓", "Move down", async () => applyIdeas(await invoke("move_idea", { id: idea.id, delta: 1 })), index === ideas.list.length - 1),
       mini("Edit", "Edit this idea", () => { ideas.editing = idea.id; renderIdeas(); }),
-      mini("Send now", "Send it now, or at the end of this run", () => sendIdeaNow(idea.id)),
+      mini("Make issue", "Turn it into an issue on the board", () => ideaToIssue(idea.id)),
+      mini("Send now", "Send it to the chat now, or at the end of this run", () => sendIdeaNow(idea.id)),
       mini("✕", "Delete", async () => applyIdeas(await invoke("delete_idea", { id: idea.id })))));
 }
 
-$("ideas-btn").addEventListener("click", (e) => { e.stopPropagation(); toggleIdeas(); });
-$("ideas-panel").addEventListener("click", (e) => e.stopPropagation());
-document.addEventListener("click", () => { if (ideas.open) toggleIdeas(false); });
-$("idea-hold").addEventListener("change", async () => applyIdeas(await invoke("set_ideas_hold", { hold: $("idea-hold").checked })));
-$("idea-add").addEventListener("click", async () => { if (await saveIdea($("idea-new").value)) $("idea-new").value = ""; });
-$("idea-new").addEventListener("keydown", async (e) => {
-  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); if (await saveIdea($("idea-new").value)) $("idea-new").value = ""; }
-  if (e.key === "Escape") toggleIdeas(false);
-});
 $("idea").addEventListener("click", async () => { if (await saveIdea($("input").value)) { $("input").value = ""; autosize(); } });

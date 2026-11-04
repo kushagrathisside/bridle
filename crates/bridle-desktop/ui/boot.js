@@ -76,7 +76,7 @@ document.addEventListener("keydown", (e) => {
   else if (e.ctrlKey && !e.shiftKey && key === "o") { e.preventDefault(); chooseFolder(); }
   else if (e.ctrlKey && !e.shiftKey && key === "j") { e.preventDefault(); toggleChat(); if (!$("app").classList.contains("no-chat")) $("input").focus(); }
   else if (e.ctrlKey && e.key === "`") { e.preventDefault(); toggleBottom(); }
-  else if (e.key === "Escape" && ideas.open) toggleIdeas(false);
+  else if (e.key === "Escape" && board.open && $("overlay").hidden) toggleBoard(false);
   else if (e.key === "Escape" && state.busy && !palette.open && $("overlay").hidden) invoke("stop_turn");
 });
 window.addEventListener("focus", () => { if (activeId !== null || editors.size) syncOpenFiles(); });
