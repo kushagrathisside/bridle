@@ -21,6 +21,8 @@ pub(crate) fn tools_for(app: &App) -> Vec<Box<dyn McpTool>> {
             harness_runtime::mcp::tools::subagent::SubagentTool,
         ));
     }
+    tools.extend(harness_runtime::mcp::tools::web::tools(&app.config));
+    tools.extend(harness_runtime::mcp::tools::browser::tools(&app.config));
     if app.config.workflow.task_status {
         tools.push(Box::new(harness_runtime::mcp::tools::task::TaskStatusTool));
     }

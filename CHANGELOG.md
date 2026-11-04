@@ -12,6 +12,17 @@ The project has not been published, so the version below is for the repository o
   in the machine config folder; the board is `.bridle/board/events.jsonl`; ideas are `.bridle/ideas.json`. Members work through
   harness board tools (`board_ready`, `board_list`, `board_show`, `board_create`, `board_claim`, `board_comment`, `board_update`)
   whose use is limited by role, and classed by the policy as harness tools. See [the guide](docs/guide/team-and-board.md).
+- Web research (ADR-0019), off by default and machine-config only: `[web]` settings (rule V48), the tools `web_search`, `web_open`,
+  `web_download` and `document_inspect`, policy-checked inside each tool, an address guard that refuses this machine's own network at
+  every redirect, SearXNG and Brave providers with reciprocal rank fusion, a streaming download manager (size limit, SHA-256, program
+  and lying-name refusal), a source record with checksums, `bridle web` and the egress listing. No PDF, archive or crawler yet.
+- The managed browser (ADR-0020), off by default and machine-config only: `[web.browser]` (rule V49), the tools `browser_navigate`,
+  `browser_snapshot`, `browser_action` and `browser_close`, a pinned and checked Chromium through a Playwright worker that Bridle starts
+  for each session, a closed JSON-line protocol with no scripts, selectors, paths or launch flags, Bridle's own egress proxy that judges
+  every connection the browser makes (numbers in any spelling, local names, ports, one resolution per name, a byte limit per call),
+  downloads and screenshots through the existing artifact code, source records with the Chromium and Playwright versions, event-log
+  entries, `bridle web browser status / setup / test / remove`, and a `browser` line in `bridle doctor` and `bridle egress`.
+- The web address guard also refuses `localhost.` (trailing dot) and the old spellings of IPv4 addresses (`2130706433`, `0x7f.1`, `127.1`).
 - The chat renders Markdown (tables, headings, lists, quotes, code blocks with Copy, links), with a Copy button on each answer and a
   jump-to-latest button. The Explorer has a project header with the branch, a fuzzy filter, an Open editors section, Git colours and
   letters, indent guides, remembered open folders, keyboard navigation and drag and drop to move.
@@ -66,6 +77,11 @@ The project has not been published, so the version below is for the repository o
 - A proxy setting in the app (`network.proxy_mode`, `network.proxy`, machine config only; validation rule V47) with a Test
   button, and `BRIDLE_PROXY` for an authenticated proxy.
 - Windows tooling without WSL: `scripts/dev.cmd`, the end-to-end suite in `tools/e2e`, `scripts/install-bridle.cmd`, `CLAUDE.md`.
+
+### Fixed
+
+- Remote HTTPS requests used a bundled list of root certificates instead of the system store, so they failed behind a proxy that
+  re-signs certificates and for sites with newer roots. They now use the system store, as the documentation said.
 
 ### Changed
 

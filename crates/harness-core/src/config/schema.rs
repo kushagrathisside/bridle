@@ -45,6 +45,8 @@ pub struct Config {
     pub plugins: PluginsSection,
     /// How requests to remote endpoints are routed. See [`NetworkSection`]. Machine config only.
     pub network: NetworkSection,
+    /// Web research: search providers, fetching and downloads (ADR-0019). Off by default. Machine config only.
+    pub web: WebSection,
 }
 
 impl Default for Config {
@@ -70,8 +72,122 @@ impl Default for Config {
             sandbox: SandboxSection::default(),
             plugins: PluginsSection::default(),
             network: NetworkSection::default(),
+            web: WebSection::default(),
         }
     }
+}
+
+/// The web research tools (ADR-0019): `web_search`, `web_open`, `web_download` and `document_inspect`. They are offered to the
+/// model only when `enabled` is true, and each call still passes the policy (`security.network`, `ask` by default, which the
+/// harness never allows). Machine config only: a repository must not add providers, credentials or endpoints.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct WebSection {
+    pub enabled: bool,
+    /// The provider `web_search` uses first. Empty: the first enabled provider in name order.
+    pub provider: String,
+    /// The most results one search returns.
+    pub max_results: usize,
+    /// Whole-request timeout for a provider call or a page fetch.
+    pub timeout_ms: u64,
+    /// The most bytes of one page that are read.
+    pub max_fetch_bytes: u64,
+    /// The largest file `web_download` accepts, in MiB.
+    pub max_download_mb: u64,
+    /// Search providers by name.
+    pub providers: BTreeMap<String, WebProvider>,
+    /// The managed browser (ADR-0020). Off unless `browser.enabled`.
+    pub browser: BrowserSection,
+}
+
+impl Default for WebSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            provider: String::new(),
+            max_results: 10,
+            timeout_ms: 20_000,
+            max_fetch_bytes: 2 * 1024 * 1024,
+            max_download_mb: 100,
+            providers: BTreeMap::new(),
+            browser: BrowserSection::default(),
+        }
+    }
+}
+
+/// The managed browser: Chromium driven through Playwright by a worker that Bridle starts, supervises and stops (ADR-0020). The
+/// whole section is machine config only, like the rest of `[web]`: it decides what the browser may reach and where the program
+/// that runs it lives, and a repository must not be able to change either. Off unless `enabled`; the runtime is installed on request
+/// (`bridle web browser setup`), never on first use.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct BrowserSection {
+    pub enabled: bool,
+    /// The browser engine. Only Chromium is supported.
+    pub engine: BrowserEngine,
+    /// Run without a window. A visible browser is not offered: nobody watches it, and it would only add attack surface.
+    pub headless: bool,
+    /// The most browser sessions open at once. Each is its own browser process.
+    pub max_sessions: usize,
+    /// How long a page may take to load, in milliseconds.
+    pub navigation_timeout_ms: u64,
+    /// How long one click, fill or wait may take, in milliseconds.
+    pub action_timeout_ms: u64,
+    /// A session unused for this many seconds is closed.
+    pub session_idle_secs: u64,
+    /// The most characters of page text one snapshot returns.
+    pub max_page_content_chars: usize,
+    /// Whether `browser_snapshot` may take screenshots.
+    pub screenshots_enabled: bool,
+    /// Whether a download that a page starts is kept. Off: the download is refused and nothing is written.
+    pub downloads_enabled: bool,
+}
+
+impl Default for BrowserSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            engine: BrowserEngine::Chromium,
+            headless: true,
+            max_sessions: 2,
+            navigation_timeout_ms: 30_000,
+            action_timeout_ms: 10_000,
+            session_idle_secs: 600,
+            max_page_content_chars: 20_000,
+            screenshots_enabled: false,
+            downloads_enabled: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserEngine {
+    Chromium,
+}
+
+/// One search provider.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WebProvider {
+    pub kind: WebProviderKind,
+    #[serde(default)]
+    pub enabled: bool,
+    /// Where the provider is. A self-hosted SearXNG needs it (it may be on this machine); Brave has a default.
+    #[serde(default)]
+    pub base_url: Option<String>,
+    /// The NAME of the environment variable that holds the API key. The key itself never goes in a file.
+    #[serde(default)]
+    pub api_key_env: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WebProviderKind {
+    /// A SearXNG instance with its JSON output enabled.
+    Searxng,
+    /// The Brave Search API.
+    Brave,
 }
 
 /// How the harness reaches remote endpoints (a cloud model, a gateway, a web tool, a download). The model servers on
