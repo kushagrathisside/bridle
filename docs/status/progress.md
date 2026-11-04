@@ -62,6 +62,10 @@ Branch `web-research`. Windows only. Design and the answers to the six questions
   SearXNG instance on this machine, so result parsing against the real services is unproven. The model has not been asked to use the
   tools in a chat. Not built: PDF text, archive listing, crawling, a browser, academic and news providers, the evaluation suite
   (phases 2 to 6 of the plan).
+- **Model downloads (approved by the owner for the three models; not finished).** Through the proxy the speed is about 140 KB/s for
+  Qwen3.5-4B (2.74 GB, so hours) and about 30 KB/s at the end of granite-4.0-h-1b (772 of 901 MB). `granite-4.0-h-micro-Q4_K_M.gguf` is a
+  **truncated 52 MB file** from an earlier stalled transfer that is still holding the file; it is not usable and must not be benchmarked.
+  Nothing is measured for these models yet. Each file is checked against its SHA-256 before use.
 
 ## 2026-11-04: the team, the board and the ideas queue; the plan for the rest
 
