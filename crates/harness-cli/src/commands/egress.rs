@@ -45,6 +45,32 @@ pub fn destinations(config: &Config) -> Vec<Destination> {
             },
         });
     }
+    if config.web.enabled {
+        let tools = match config.security.network {
+            harness_core::config::Verdict::Allow => "the model's web tools are allowed",
+            _ => {
+                "the model's web tools are blocked by security.network; `bridle web` works for you"
+            }
+        };
+        for (name, p) in config.web.providers.iter().filter(|(_, p)| p.enabled) {
+            let endpoint = p
+                .base_url
+                .clone()
+                .unwrap_or_else(|| "https://api.search.brave.com".to_owned());
+            out.push(Destination {
+                what: format!("web search provider `{name}`"),
+                loopback: endpoint_is_loopback(&endpoint),
+                endpoint,
+                when: format!("every web search ({tools})"),
+            });
+        }
+        out.push(Destination {
+            what: "any public web address".to_owned(),
+            endpoint: "http(s)://* (not this machine or its network)".to_owned(),
+            loopback: false,
+            when: format!("web_open and web_download ({tools}); every redirect is checked first"),
+        });
+    }
     out
 }
 

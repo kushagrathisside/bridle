@@ -51,6 +51,7 @@
 //! | V44 | Warning | `routing.auto_slot` on while `external.laya` is off: requests the rules cannot place go to `main` |
 //! | V24 | Warning | a verification step sets `targets = true` but its `kind` is not `test` |
 //! | V47 | Error | `network.proxy_mode = "custom"` without a proxy URL of the form `http://host:port`, `https://host:port` or `socks5://host:port`, or a proxy URL that carries credentials |
+//! | V48 | Error | `web.enabled` without an enabled provider, `web.provider` naming no enabled provider, a SearXNG provider without an `http(s)` `base_url`, a Brave provider without a valid `api_key_env`, or a limit outside its range |
 //! | V45 | Warning | a managed slot sets `capabilities.vision` without `launch.mmproj_file`, or sets `mmproj_file` while vision is off |
 //!
 //! Unit tests: one passing baseline config (no issues) and at least one failing case per rule.
@@ -135,6 +136,7 @@ pub fn validate_with(cfg: &Config, env: &ValidationEnv) -> Vec<ConfigIssue> {
     check_routing(cfg, &mut report);
     check_vision(cfg, &mut report);
     check_network(cfg, &mut report);
+    check_web(cfg, &mut report);
     check_context(cfg, &mut report);
     check_hard_limit_against_default_model(cfg, &mut report);
     check_verification(cfg, &mut report);
@@ -758,6 +760,81 @@ fn check_decisions(cfg: &Config, report: &mut Report) {
 
 /// V10: the escalation threshold is a confidence in `[0, 1]`. V39: deep escalation needs a deep slot. V40: the micro
 /// engine is used only when `routing.enable_micro_decisions` is on, so a `local_lfm` provider without it is a warning.
+/// The web research settings: when it is on there must be a provider that can work, and the limits must be sane.
+fn check_web(cfg: &Config, report: &mut Report) {
+    use super::schema::WebProviderKind;
+    let web = &cfg.web;
+    for (name, provider) in &web.providers {
+        if name.is_empty()
+            || !name
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+        {
+            report.error(
+                "V48",
+                format!("web.providers.{name}"),
+                "a provider name is lowercase letters, digits, - and _",
+            );
+        }
+        if !provider.enabled {
+            continue;
+        }
+        match provider.kind {
+            WebProviderKind::Searxng => match provider.base_url.as_deref() {
+                Some(url) if (url.starts_with("http://") || url.starts_with("https://")) && !url.contains('@') && !url.chars().any(char::is_whitespace) => {}
+                _ => report.error("V48", format!("web.providers.{name}.base_url"), "a SearXNG provider needs a base_url that starts with http:// or https:// and carries no credentials"),
+            },
+            WebProviderKind::Brave => {
+                let valid = provider.api_key_env.as_deref().is_some_and(|n| !n.is_empty() && n.len() <= 64 && n.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_'));
+                if !valid {
+                    report.error("V48", format!("web.providers.{name}.api_key_env"), "a Brave provider needs api_key_env, the NAME of an environment variable (capital letters, digits and _); the key itself does not go in the file");
+                }
+                if provider.base_url.as_deref().is_some_and(|u| !(u.starts_with("https://") || u.starts_with("http://")) || u.contains('@')) {
+                    report.error("V48", format!("web.providers.{name}.base_url"), "base_url must start with http:// or https:// and carry no credentials");
+                }
+            }
+        }
+    }
+    if web.enabled {
+        let enabled: Vec<&String> = web
+            .providers
+            .iter()
+            .filter(|(_, p)| p.enabled)
+            .map(|(n, _)| n)
+            .collect();
+        if enabled.is_empty() {
+            report.error(
+                "V48",
+                "web.providers",
+                "web.enabled is on but no provider is enabled",
+            );
+        }
+        if !web.provider.is_empty() && !enabled.iter().any(|n| **n == web.provider) {
+            report.error(
+                "V48",
+                "web.provider",
+                "web.provider names a provider that is not enabled",
+            );
+        }
+    }
+    if !(1..=30).contains(&web.max_results) {
+        report.error("V48", "web.max_results", "must be between 1 and 30");
+    }
+    if !(1_000..=120_000).contains(&web.timeout_ms) {
+        report.error("V48", "web.timeout_ms", "must be between 1000 and 120000");
+    }
+    if !(65_536..=16 * 1024 * 1024).contains(&web.max_fetch_bytes) {
+        report.error(
+            "V48",
+            "web.max_fetch_bytes",
+            "must be between 65536 and 16777216",
+        );
+    }
+    if !(1..=2_048).contains(&web.max_download_mb) {
+        report.error("V48", "web.max_download_mb", "must be between 1 and 2048");
+    }
+}
+
 /// The proxy setting: a custom mode needs a well-formed proxy URL, and the URL must not carry a password (the file may be
 /// read by other tools, and the value is shown in the window).
 fn check_network(cfg: &Config, report: &mut Report) {
@@ -1133,6 +1210,72 @@ mod tests {
             found.iter().all(|i| i.rule != rule),
             "expected no {rule}, got {found:#?}"
         );
+    }
+
+    #[test]
+    fn web_research_needs_a_provider_that_can_work_and_sane_limits() {
+        use super::super::schema::{WebProvider, WebProviderKind};
+        let provider = |kind, url: Option<&str>, env: Option<&str>| WebProvider {
+            kind,
+            enabled: true,
+            base_url: url.map(str::to_owned),
+            api_key_env: env.map(str::to_owned),
+        };
+        // Off by default: nothing is checked and nothing is reported.
+        assert_no_rule(&baseline(), "V48");
+        // On with no provider.
+        let mut cfg = baseline();
+        cfg.web.enabled = true;
+        assert_issue(&cfg, "V48", Severity::Error, "web.providers");
+        // A SearXNG provider needs a base URL without credentials.
+        cfg.web.providers.insert(
+            "local".into(),
+            provider(WebProviderKind::Searxng, None, None),
+        );
+        assert_issue(&cfg, "V48", Severity::Error, "web.providers.local.base_url");
+        cfg.web.providers.insert(
+            "local".into(),
+            provider(
+                WebProviderKind::Searxng,
+                Some("http://user:pw@127.0.0.1:8080"),
+                None,
+            ),
+        );
+        assert_issue(&cfg, "V48", Severity::Error, "web.providers.local.base_url");
+        cfg.web.providers.insert(
+            "local".into(),
+            provider(
+                WebProviderKind::Searxng,
+                Some("http://127.0.0.1:8080"),
+                None,
+            ),
+        );
+        assert_no_rule(&cfg, "V48");
+        // Brave needs the NAME of an environment variable, not a key.
+        cfg.web.providers.insert(
+            "brave".into(),
+            provider(WebProviderKind::Brave, None, Some("sk-abc123")),
+        );
+        assert_issue(
+            &cfg,
+            "V48",
+            Severity::Error,
+            "web.providers.brave.api_key_env",
+        );
+        cfg.web.providers.insert(
+            "brave".into(),
+            provider(WebProviderKind::Brave, None, Some("BRAVE_SEARCH_API_KEY")),
+        );
+        assert_no_rule(&cfg, "V48");
+        // The chosen provider must be enabled; the limits must be in range.
+        cfg.web.provider = "nobody".into();
+        assert_issue(&cfg, "V48", Severity::Error, "web.provider");
+        cfg.web.provider = "local".into();
+        cfg.web.max_results = 0;
+        assert_issue(&cfg, "V48", Severity::Error, "web.max_results");
+        cfg.web.max_results = 10;
+        cfg.web.max_download_mb = 100_000;
+        assert_issue(&cfg, "V48", Severity::Error, "web.max_download_mb");
     }
 
     #[test]

@@ -24,3 +24,4 @@ pub mod state;
 pub mod subagent;
 pub mod sysprobe;
 pub mod vram;
+pub mod web;

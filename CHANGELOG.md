@@ -12,6 +12,10 @@ The project has not been published, so the version below is for the repository o
   in the machine config folder; the board is `.bridle/board/events.jsonl`; ideas are `.bridle/ideas.json`. Members work through
   harness board tools (`board_ready`, `board_list`, `board_show`, `board_create`, `board_claim`, `board_comment`, `board_update`)
   whose use is limited by role, and classed by the policy as harness tools. See [the guide](docs/guide/team-and-board.md).
+- Web research (ADR-0019), off by default and machine-config only: `[web]` settings (rule V48), the tools `web_search`, `web_open`,
+  `web_download` and `document_inspect`, policy-checked inside each tool, an address guard that refuses this machine's own network at
+  every redirect, SearXNG and Brave providers with reciprocal rank fusion, a streaming download manager (size limit, SHA-256, program
+  and lying-name refusal), a source record with checksums, `bridle web` and the egress listing. No PDF, archive, crawler or browser yet.
 - The chat renders Markdown (tables, headings, lists, quotes, code blocks with Copy, links), with a Copy button on each answer and a
   jump-to-latest button. The Explorer has a project header with the branch, a fuzzy filter, an Open editors section, Git colours and
   letters, indent guides, remembered open folders, keyboard navigation and drag and drop to move.

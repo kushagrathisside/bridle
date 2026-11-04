@@ -80,7 +80,17 @@ pub fn remote_agent(timeout: Duration) -> ureq::Agent {
 /// Builds a remote agent for `route`. A proxy URL that cannot be parsed falls back to a direct connection and is reported
 /// by the configuration check (V47), not here.
 pub fn agent_for(route: &RemoteRoute, timeout: Duration) -> ureq::Agent {
-    let builder = ureq::Agent::config_builder()
+    agent_for_redirects(route, timeout, true)
+}
+
+/// Like [`agent_for`], with a choice about redirects. The web tools follow redirects themselves, one hop at a time, so that
+/// every destination is checked before it is contacted: they ask for `false`, and a redirect comes back as a response.
+pub fn agent_for_redirects(
+    route: &RemoteRoute,
+    timeout: Duration,
+    follow_redirects: bool,
+) -> ureq::Agent {
+    let mut builder = ureq::Agent::config_builder()
         .timeout_global(Some(timeout))
         .http_status_as_error(false)
         .tls_config(
@@ -88,6 +98,9 @@ pub fn agent_for(route: &RemoteRoute, timeout: Duration) -> ureq::Agent {
                 .provider(ureq::tls::TlsProvider::NativeTls)
                 .build(),
         );
+    if !follow_redirects {
+        builder = builder.max_redirects(0).max_redirects_will_error(false);
+    }
     let config = match route {
         RemoteRoute::Environment => builder.build(),
         RemoteRoute::Direct => builder.proxy(None).build(),

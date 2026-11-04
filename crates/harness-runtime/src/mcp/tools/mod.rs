@@ -1250,6 +1250,7 @@ pub mod run;
 pub mod subagent;
 pub mod task;
 pub mod verify;
+pub mod web;
 
 #[cfg(test)]
 mod test_support;
