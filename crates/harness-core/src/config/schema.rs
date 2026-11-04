@@ -45,6 +45,8 @@ pub struct Config {
     pub plugins: PluginsSection,
     /// How requests to remote endpoints are routed. See [`NetworkSection`]. Machine config only.
     pub network: NetworkSection,
+    /// Web research: search providers, fetching and downloads (ADR-0019). Off by default. Machine config only.
+    pub web: WebSection,
 }
 
 impl Default for Config {
@@ -70,8 +72,68 @@ impl Default for Config {
             sandbox: SandboxSection::default(),
             plugins: PluginsSection::default(),
             network: NetworkSection::default(),
+            web: WebSection::default(),
         }
     }
+}
+
+/// The web research tools (ADR-0019): `web_search`, `web_open`, `web_download` and `document_inspect`. They are offered to the
+/// model only when `enabled` is true, and each call still passes the policy (`security.network`, `ask` by default, which the
+/// harness never allows). Machine config only: a repository must not add providers, credentials or endpoints.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct WebSection {
+    pub enabled: bool,
+    /// The provider `web_search` uses first. Empty: the first enabled provider in name order.
+    pub provider: String,
+    /// The most results one search returns.
+    pub max_results: usize,
+    /// Whole-request timeout for a provider call or a page fetch.
+    pub timeout_ms: u64,
+    /// The most bytes of one page that are read.
+    pub max_fetch_bytes: u64,
+    /// The largest file `web_download` accepts, in MiB.
+    pub max_download_mb: u64,
+    /// Search providers by name.
+    pub providers: BTreeMap<String, WebProvider>,
+}
+
+impl Default for WebSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            provider: String::new(),
+            max_results: 10,
+            timeout_ms: 20_000,
+            max_fetch_bytes: 2 * 1024 * 1024,
+            max_download_mb: 100,
+            providers: BTreeMap::new(),
+        }
+    }
+}
+
+/// One search provider.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WebProvider {
+    pub kind: WebProviderKind,
+    #[serde(default)]
+    pub enabled: bool,
+    /// Where the provider is. A self-hosted SearXNG needs it (it may be on this machine); Brave has a default.
+    #[serde(default)]
+    pub base_url: Option<String>,
+    /// The NAME of the environment variable that holds the API key. The key itself never goes in a file.
+    #[serde(default)]
+    pub api_key_env: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WebProviderKind {
+    /// A SearXNG instance with its JSON output enabled.
+    Searxng,
+    /// The Brave Search API.
+    Brave,
 }
 
 /// How the harness reaches remote endpoints (a cloud model, a gateway, a web tool, a download). The model servers on

@@ -13,3 +13,4 @@ pub mod models;
 pub mod plugins;
 pub mod subagent;
 pub mod task;
+pub mod web;

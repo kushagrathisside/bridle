@@ -102,7 +102,12 @@ const READ_ONLY_HARNESS_TOOLS: &[&str] = &[
     "board_ready",
     "board_list",
     "board_show",
+    // Local files and recorded sources, read.
+    "document_inspect",
 ];
+/// Harness MCP tools that reach the network (ADR-0019). They are offered only when `web.enabled`, and each is checked again inside
+/// the tool, so a client that calls the server directly cannot skip it. The verdict is `security.network`, `ask` by default.
+const WEB_NETWORK_TOOLS: &[&str] = &["web_search", "web_open", "web_download"];
 /// Harness MCP tools that change the team board. The board is a store the harness owns, outside the repository's files,
 /// and what each member may do with these tools is decided inside them from the member's role.
 const BOARD_WRITE_TOOLS: &[&str] = &[
@@ -455,6 +460,14 @@ impl ToolPolicy {
                     ToolClass::ReadOnly,
                     "harness_tool",
                     "read-only harness tool",
+                )
+            }
+            ToolKind::Harness(name) if WEB_NETWORK_TOOLS.contains(&name.as_str()) => {
+                PolicyDecision::new(
+                    self.class_verdict(ToolClass::Network),
+                    ToolClass::Network,
+                    "web_tool",
+                    "reaches the network; allowed only when security.network is allow",
                 )
             }
             ToolKind::Harness(name) if BOARD_WRITE_TOOLS.contains(&name.as_str()) => {
@@ -970,6 +983,54 @@ mod tests {
             "a look-alike tool is never allowed"
         );
         assert_eq!(d.rule, "unknown_tool");
+    }
+
+    #[test]
+    fn the_web_tools_follow_the_network_setting_and_document_inspect_only_reads() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = policy(dir.path());
+        for tool in ["web_search", "web_open", "web_download"] {
+            let d = p.evaluate(&ToolRequest::new(ToolKind::Harness(tool.to_owned())));
+            assert_eq!(
+                (d.class, d.verdict, d.rule.as_str()),
+                (ToolClass::Network, Verdict::Ask, "web_tool"),
+                "{tool}: ask by default, which is never allowed"
+            );
+        }
+        let d = p.evaluate(&ToolRequest::new(ToolKind::Harness(
+            "document_inspect".to_owned(),
+        )));
+        assert_eq!((d.class, d.verdict), (ToolClass::ReadOnly, Verdict::Allow));
+        let allowed = ToolPolicy::new(
+            dir.path(),
+            &SecuritySection {
+                network: Verdict::Allow,
+                ..SecuritySection::default()
+            },
+        )
+        .expect("policy");
+        assert_eq!(
+            allowed
+                .evaluate(&ToolRequest::new(ToolKind::Harness(
+                    "web_search".to_owned()
+                )))
+                .verdict,
+            Verdict::Allow
+        );
+        let denied = ToolPolicy::new(
+            dir.path(),
+            &SecuritySection {
+                network: Verdict::Deny,
+                ..SecuritySection::default()
+            },
+        )
+        .expect("policy");
+        assert_eq!(
+            denied
+                .evaluate(&ToolRequest::new(ToolKind::Harness("web_open".to_owned())))
+                .verdict,
+            Verdict::Deny
+        );
     }
 
     #[test]

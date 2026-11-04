@@ -28,6 +28,41 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-11-04 (later): web research v0.1
+
+Branch `web-research`. Windows only. Design and the answers to the six questions of the owner's plan:
+[ADR-0019](../decisions/0019-web-research-is-policy-gated-native-tools.md). Use: [web-research.md](../guide/web-research.md).
+
+- **Built (the plan's first milestone).** Four tools in the harness's MCP server and in the chat: `web_search`, `web_open`,
+  `web_download`, `document_inspect`; the `bridle web` command (`search`, `open`, `download`, `inspect`, `sources`); a `[web]` section
+  in the machine configuration (validation V48; a repository may not set it); providers Brave and SearXNG; `bridle egress` lists the
+  web destinations.
+- **Policy.** `web_search`, `web_open` and `web_download` are NETWORK, so the verdict is `security.network` (default `ask`, never
+  `allow` by the harness). Each tool checks the policy itself, because a direct MCP client does not pass the host's hook. A name that
+  looks like a web tool but is not in the table is `unknown_tool`.
+- **Address guard.** http and https only, no credentials in the address, and no loopback, private, link-local (including
+  169.254.169.254), shared (CGNAT), multicast or reserved addresses, IPv6 or IPv4-mapped forms of those, and no local names. Each
+  redirect is checked again; https to http is refused; at most 5 hops. Known gap, written in the ADR: a name that changes its answer
+  between our check and the connection (DNS rebinding) is not closed; with a proxy configured the proxy resolves names.
+- **Results.** Results from several providers are merged by reciprocal rank fusion (k = 60), de-duplicated by canonical address, with
+  a cap per site. Every page and file that is opened gets a source record in `.bridle/web/sources.jsonl` (`S-0001`, SHA-256, time,
+  provider, status). Downloads are streamed into `.bridle/web/downloads/`, capped in size, type-checked by their first bytes
+  (executables and files whose name lies about their type are refused), and checked against a given SHA-256 when there is one.
+- **Tests.** 36 new in the runtime (guard 5, fetch 6, fusion 5, html 4, providers 5, download 4, store 1, tools 6) and in core (V48,
+  trust, policy); fetch and download tests run against local servers. **Gate: fmt, clippy with `-D warnings`, 1,026 tests passed, 0
+  failed** (`D:\e2e\gate2.out`).
+- **Checked live through the proxy** (`bridle web`, outputs `D:\e2e\web1.out` and `web2.out`): `https://example.com` opened and recorded
+  as `S-0001`; the LICENSE file from GitHub downloaded (9,723 bytes, SHA-256 recorded as `S-0002`) and read back with `inspect`;
+  a second download of the same file reported "already there"; the metadata address and `localhost` refused with the reason;
+  a search with a provider that is down failed with a clear message; `status` shows the model-facing tools blocked while
+  `security.network` is `ask`. Refusals of a `file://` address, a wrong checksum and a too-large file are covered by unit tests only.
+  One live download failed and is **not explained**: `www.rfc-editor.org` through the proxy gave "native-tls: unable to find any
+  user-specified roots in the final cert chain" (a certificate chain the Windows store does not complete; GitHub and example.com work).
+- **Not verified.** The Brave and SearXNG providers are checked only against **local fake servers**: there is no Brave key and no
+  SearXNG instance on this machine, so result parsing against the real services is unproven. The model has not been asked to use the
+  tools in a chat. Not built: PDF text, archive listing, crawling, a browser, academic and news providers, the evaluation suite
+  (phases 2 to 6 of the plan).
+
 ## 2026-11-04: the team, the board and the ideas queue; the plan for the rest
 
 Branch `team-board`. Windows only; checked on the tested machine (Windows 11, RTX 4060 Laptop 8 GB, 16 GB RAM).

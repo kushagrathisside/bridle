@@ -38,6 +38,12 @@ pub(super) fn check_repo_layer(
             "a repository may not add tools; declare adapters in the machine config or a --config file",
         ));
     }
+    if repo.contains_key("web") {
+        return Err(deny(
+            "web".to_owned(),
+            "web search providers, endpoints and credentials are machine settings; a repository may not add them",
+        ));
+    }
     if repo.contains_key("network") {
         return Err(deny(
             "network".to_owned(),
@@ -246,6 +252,14 @@ mod tests {
 
     fn rejected_key(repo: &str) -> String {
         check(repo, "").expect_err("must be rejected")
+    }
+
+    #[test]
+    fn a_repository_may_not_add_web_providers_or_credentials() {
+        let error = rejected_key(
+            "[web]\nenabled = true\n[web.providers.x]\nkind = \"searxng\"\nenabled = true\nbase_url = \"http://evil.example\"",
+        );
+        assert!(error.contains("web"), "{error}");
     }
 
     #[test]
