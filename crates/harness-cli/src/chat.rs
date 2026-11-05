@@ -103,6 +103,13 @@ pub enum Event {
     /// How full the context window is, in tokens: what the next request carries (an estimate before a call, the
     /// server's own count after one) against the slot's window.
     Usage { used: usize, window: usize },
+    /// What a file tool changed, as a unified diff, for the person to read. It belongs to the call `id` and follows its `ToolDone`.
+    /// It is shown, not sent to the model.
+    Diff {
+        id: String,
+        path: String,
+        patch: String,
+    },
 }
 
 /// How a turn ended.
@@ -830,12 +837,16 @@ impl Agent {
                 message: sanitize(&text),
             });
         } else {
+            let failed = output.is_error;
             emit(Event::ToolDone {
-                id,
+                id: id.clone(),
                 name,
-                ok: !output.is_error,
+                ok: !failed,
                 preview: preview(&text),
             });
+            if let Some((path, patch)) = output.diff.filter(|_| !failed) {
+                emit(Event::Diff { id, path, patch });
+            }
         }
         text
     }
@@ -879,6 +890,11 @@ impl Agent {
                 .and_then(|s| s.get("rule"))
                 .and_then(Value::as_str)
                 .map(str::to_owned),
+            diff: structured.and_then(|s| {
+                let patch = s.get("diff")?.as_str()?.to_owned();
+                let path = s.get("path")?.as_str()?.to_owned();
+                Some((path, patch))
+            }),
         }
     }
 
@@ -919,6 +935,8 @@ struct ToolReply {
     /// The tool itself refused the call under the policy (for example `run_command`).
     blocked: bool,
     rule: Option<String>,
+    /// The unified diff a file tool reported, and the path it concerns.
+    diff: Option<(String, String)>,
 }
 
 impl ToolReply {
@@ -928,6 +946,7 @@ impl ToolReply {
             is_error: true,
             blocked: false,
             rule: None,
+            diff: None,
         }
     }
 }
@@ -1467,6 +1486,65 @@ hard_limit = 8000
 
     fn roles(agent: &Agent) -> Vec<Role> {
         agent.messages.iter().map(|m| m.role).collect()
+    }
+
+    #[test]
+    fn an_edit_shows_its_diff_to_the_person_and_not_to_the_model() {
+        let fx = Fixture::new("");
+        let mut agent = fx.agent();
+        let (end, events, provider) = turn(
+            &fx,
+            &mut agent,
+            vec![
+                tool_call("c1", "read_file", json!({"path": "notes.txt"})),
+                tool_call(
+                    "c2",
+                    "edit_file",
+                    json!({"path": "notes.txt", "old_string": "hello", "new_string": "goodbye"}),
+                ),
+                answer("Changed."),
+            ],
+            "say goodbye in notes.txt",
+        );
+        assert_eq!(end, TurnEnd::Done);
+        let diff = events.iter().find_map(|e| match e {
+            Event::Diff { id, path, patch } => Some((id.clone(), path.clone(), patch.clone())),
+            _ => None,
+        });
+        let (id, path, patch) = diff.expect("a diff event");
+        assert_eq!((id.as_str(), path.as_str()), ("c2", "notes.txt"));
+        assert!(
+            patch.contains("-hello from the notes") && patch.contains("+goodbye from the notes"),
+            "{patch}"
+        );
+        // It follows the call's own ToolDone, and read_file (which changes nothing) produced none.
+        let done = events
+            .iter()
+            .position(|e| matches!(e, Event::ToolDone { id, .. } if id == "c2"))
+            .unwrap();
+        let shown = events
+            .iter()
+            .position(|e| matches!(e, Event::Diff { .. }))
+            .unwrap();
+        assert!(shown > done);
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, Event::Diff { .. }))
+                .count(),
+            1
+        );
+        // The model's tool result stays short.
+        let sent = provider.requests();
+        let result = sent
+            .last()
+            .unwrap()
+            .messages
+            .iter()
+            .rev()
+            .find(|m| m.role == Role::Tool)
+            .unwrap();
+        assert!(!result.content.as_deref().unwrap_or("").contains("@@"));
     }
 
     #[test]

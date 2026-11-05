@@ -211,29 +211,38 @@ impl Leases {
 
 #[derive(Debug, Clone)]
 struct Active {
-    workspace: PathBuf,
     holder: String,
     run: String,
 }
 
-static ACTIVE: Mutex<Option<Active>> = Mutex::new(None);
+/// The run that is writing in each workspace. One per workspace, so runs in different folders (a project and its lanes) do not meet.
+static ACTIVE: Mutex<Option<HashMap<PathBuf, Active>>> = Mutex::new(None);
 
 /// Declares that `holder` (a run: the issue being worked on) is writing in `workspace`. The file tools then claim a lease on every file
 /// they write. With nobody declared (the plain chat) they claim nothing.
 pub fn set_active(workspace: &Path, holder: &str, run: &str) {
-    *ACTIVE.lock().unwrap_or_else(PoisonError::into_inner) = Some(Active {
-        workspace: workspace.to_path_buf(),
-        holder: holder.to_owned(),
-        run: run.to_owned(),
-    });
+    ACTIVE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get_or_insert_with(HashMap::new)
+        .insert(
+            workspace.to_path_buf(),
+            Active {
+                holder: holder.to_owned(),
+                run: run.to_owned(),
+            },
+        );
 }
 
 /// Ends the declaration for `workspace` and releases the holder's leases.
 pub fn clear_active(workspace: &Path) {
-    let mut slot = ACTIVE.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some(active) = slot.as_ref().filter(|a| a.workspace == workspace) {
+    let removed = ACTIVE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_mut()
+        .and_then(|map| map.remove(workspace));
+    if let Some(active) = removed {
         Leases::open(workspace).release_holder(&active.holder);
-        *slot = None;
     }
 }
 
@@ -320,8 +329,9 @@ pub fn guard_write(workspace: &Path, resolved: &Path) -> Result<(), String> {
     let active = ACTIVE
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .clone();
-    let Some(active) = active.filter(|a| a.workspace == workspace) else {
+        .as_ref()
+        .and_then(|map| map.get(workspace).cloned());
+    let Some(active) = active else {
         return Ok(());
     };
     let relative = relative_to(workspace, resolved);

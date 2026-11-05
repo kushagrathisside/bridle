@@ -128,6 +128,7 @@ function setView(name) {
   document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
   if (name === "explorer") refreshTree();
   if (name === "changes") loadChanges();
+  if (name === "settings") loadLanes();
   if (name === "search") $("search-input").focus();
 }
 

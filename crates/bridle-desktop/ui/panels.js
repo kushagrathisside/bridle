@@ -142,6 +142,92 @@ function renderSettings() {
   $("settings").replaceChildren(...parts);
 }
 
+
+// ---------- lanes ----------
+// A lane is a separate working copy where a member's work waits for the person to review and merge it (ADR-0023).
+
+function fileList(files) {
+  return el("div", { class: "kv" }, files.flatMap((f) => [el("div", { text: f.status === "A" ? "added" : (f.status === "D" ? "deleted" : "changed") }), el("div", { class: "mono", text: f.path })]));
+}
+
+async function loadLanes() {
+  const card = $("lanes-card");
+  const r = await invoke("lane_list").catch((error) => ({ ok: false, error: String(error) }));
+  const head = el("h4", { text: "Lanes" });
+  if (!r.ok) {
+    card.replaceChildren(head, el("p", { class: "muted note", text: r.error }));
+    return;
+  }
+  const note = el("p", { class: "muted note", text: "A lane is a separate copy of the project where a member's work waits for you. Review it, then merge it into the project. Turn on “Work in lanes” in the board to give each issue its own lane." });
+  const rows = r.lanes.length === 0
+    ? [el("p", { class: "muted note", text: "No lanes yet. A project needs its own Git repository to have lanes." })]
+    : r.lanes.flatMap((lane) => {
+      const detail = el("div", { class: "lane-detail", hidden: true });
+      const review = button("Review", async () => {
+        if (!detail.hidden) { detail.hidden = true; return; }
+        const d = await invoke("lane_diff", { name: lane.name }).catch((error) => ({ ok: false, error: String(error) }));
+        if (!d.ok) { toast(d.error, "bad"); return; }
+        detail.replaceChildren(d.files.length === 0 ? el("p", { class: "muted note", text: "This lane has changed nothing yet." }) : el("div", {}, fileList(d.files), diffView(d.patch)));
+        detail.hidden = false;
+      }, "small");
+      return [
+        el("div", { class: "item-name", text: lane.name + (lane.parent ? `  (from ${lane.parent})` : "") + (lane.busy ? "  - a turn is working here" : "") }),
+        el("div", { class: "row" }, review, button("Merge", () => mergeLanes([lane.name]), "small primary"), button("Remove", () => removeLane(lane.name), "small")),
+        detail,
+      ];
+    });
+  const names = r.lanes.map((l) => l.name);
+  card.replaceChildren(head, note, ...rows,
+    el("div", { class: "row mt" },
+      names.length > 1 ? button("Merge all", () => mergeLanes(names), "small primary") : null,
+      button("Undo last merge", undoLaneMerge, "small"),
+      button("Reload", loadLanes, "small")));
+}
+
+// Shows what a merge would do, asks, and then does it. A lane that conflicts is named, and the others can be merged without it.
+async function mergeLanes(names) {
+  if (state.busy) return toast("A turn is running. Wait for it, or stop it.", "warn");
+  const preview = await invoke("lane_integrate", { names, dryRun: true, skipConflicts: false }).catch((error) => ({ ok: false, error: String(error) }));
+  if (!preview.ok) return toast(preview.error, "bad");
+  let skip = false;
+  if (preview.conflicted.length) {
+    const text = preview.conflicted.map((c) => `${c.lane}: ${c.files.join(", ")}`).join("\n");
+    if (preview.conflicted.length === names.length) {
+      return confirmDialog("These lanes conflict", `Nothing can be merged, because they change the same lines:\n${text}\n\nChange them in their lanes first.`, "Close", false);
+    }
+    if (!(await confirmDialog("Some lanes conflict", `These lanes change the same lines and will be left out:\n${text}\n\nMerge the others?`, "Merge the others", false))) return;
+    skip = true;
+  }
+  const again = skip ? await invoke("lane_integrate", { names, dryRun: true, skipConflicts: true }) : preview;
+  if (!again.ok || again.files.length === 0) return toast(again.note || again.error || "The lanes changed nothing.", "warn");
+  const list = again.files.slice(0, 12).map((f) => `${f.status === "A" ? "add" : (f.status === "D" ? "delete" : "change")} ${f.path}`).join("\n");
+  const more = again.files.length > 12 ? `\n... and ${again.files.length - 12} more` : "";
+  if (!(await confirmDialog("Merge into the project?", `${again.merged.join(", ")} will change ${again.files.length} file(s):\n${list}${more}\n\nThe project is saved first, so Undo last merge puts it back. A file you changed in the meantime is left alone.`, "Merge", false))) return;
+  const done = await invoke("lane_integrate", { names, dryRun: false, skipConflicts: skip }).catch((error) => ({ ok: false, error: String(error) }));
+  if (!done.ok) return toast(done.error, "bad");
+  const left = done.applied.skipped.length ? ` ${done.applied.skipped.length} left alone: ${done.applied.skipped.map((s) => s.path).join(", ")}.` : "";
+  toast(`Merged ${done.merged.join(", ")}.${left}`, done.applied.skipped.length ? "warn" : "ok");
+  agentWrote("");
+  loadLanes();
+}
+
+async function undoLaneMerge() {
+  if (state.busy) return toast("A turn is running. Wait for it, or stop it.", "warn");
+  if (!(await confirmDialog("Undo the last merge?", "The project is put back as it was just before the last merge. Files you changed since are left alone.", "Undo", true))) return;
+  const r = await invoke("lane_undo").catch((error) => ({ ok: false, error: String(error) }));
+  if (!r.ok) return toast(r.error, "bad");
+  const left = r.applied.skipped.length ? ` ${r.applied.skipped.length} left alone.` : "";
+  toast(`Put back ${r.applied.restored.length} file(s), removed ${r.applied.removed.length}.${left}`, r.applied.skipped.length ? "warn" : "ok");
+  agentWrote("");
+}
+
+async function removeLane(name) {
+  if (!(await confirmDialog("Remove this lane?", `The lane ${name} and what it holds are deleted. Anything not merged is lost.`, "Remove", true))) return;
+  const r = await invoke("lane_remove", { name }).catch((error) => ({ ok: false, error: String(error) }));
+  if (!r.ok) return toast(r.error, "bad");
+  loadLanes();
+}
+
 // ---------- projects ----------
 
 function closeProjectMenu() {

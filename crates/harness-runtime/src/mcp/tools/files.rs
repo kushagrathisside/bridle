@@ -582,6 +582,15 @@ impl McpTool for WriteFileTool {
             fs::create_dir_all(parent)
                 .map_err(|e| format!("cannot create the folder for {path}: {e}"))?;
         }
+        // What the file held, for the diff the person sees (not for the model): a file that is too large, binary or not text has none.
+        let before = if existed {
+            read_capped(&resolved, MAX_FILE_BYTES)
+                .ok()
+                .filter(|(bytes, cut)| !cut && !looks_binary(bytes))
+                .and_then(|(bytes, _)| String::from_utf8(bytes).ok())
+        } else {
+            Some(String::new())
+        };
         replace_file(&resolved, content.as_bytes())
             .map_err(|e| format!("cannot write {path}: {e}"))?;
         leases::note_content(&resolved, &leases::sha256_hex(content.as_bytes()));
@@ -591,10 +600,11 @@ impl McpTool for WriteFileTool {
             content.len(),
             content.lines().count()
         );
+        let diff = before.and_then(|old| crate::diffview::unified(path, &old, content));
         Ok(redacted_output(
             ctx,
             &text,
-            Some(json!({"path": path, "bytes": content.len(), "created": !existed})),
+            Some(json!({"path": path, "bytes": content.len(), "created": !existed, "diff": diff})),
         ))
     }
 }
@@ -664,10 +674,48 @@ impl McpTool for EditFileTool {
         )?;
         let text = String::from_utf8(bytes)
             .map_err(|_| format!("{path} is not valid UTF-8; edit_file will not rewrite it"))?;
-        let count = text.matches(old).count();
+        // Models often copy read_file's line-number column into the text to replace. If the text as given is not in the file but is once
+        // the numbers are taken out, use it that way, and say so.
+        let mut old = old.to_owned();
+        let mut new = new.to_owned();
+        let mut ignored_numbers = false;
+        let mut count = text.matches(old.as_str()).count();
+        if count == 0
+            && let Some(plain) = strip_line_numbers(&old)
+                .filter(|plain| !plain.is_empty() && text.contains(plain.as_str()))
+        {
+            new = strip_line_numbers(&new).unwrap_or(new);
+            old = plain;
+            count = text.matches(old.as_str()).count();
+            ignored_numbers = true;
+        }
+        if old == new {
+            return Err("`old_string` and `new_string` are the same once the line numbers are taken out; nothing to change".to_owned());
+        }
+        // A model that gets the indentation wrong is not asking for something else. When the text is not there exactly, but the same lines
+        // are there once the white space at the start and end of each line is ignored, and only in one place, change that place.
+        if count == 0
+            && !replace_all
+            && let Some((start, end, replacement)) = loose_match(&text, &old, &new)
+        {
+            let first_line = text[..start].matches('\n').count() + 1;
+            let updated = format!("{}{}{}", &text[..start], replacement, &text[end..]);
+            replace_file(&resolved, updated.as_bytes())
+                .map_err(|e| format!("cannot write {path}: {e}"))?;
+            leases::note_content(&resolved, &leases::sha256_hex(updated.as_bytes()));
+            let out = format!(
+                "edited {path}: replaced 1 occurrence(s), first at line {first_line} (the text matched except for the white space at the start and end of its lines, so it was changed where it stands; check the diff)"
+            );
+            let diff = crate::diffview::unified(path, &text, &updated);
+            return Ok(redacted_output(
+                ctx,
+                &out,
+                Some(json!({"path": path, "replaced": 1, "first_line": first_line, "diff": diff})),
+            ));
+        }
         if count == 0 {
             return Err(format!(
-                "old_string was not found in {path}; read the file again and copy the text exactly"
+                "old_string was not found in {path}; read the file again and copy the text exactly, with its indentation"
             ));
         }
         if count > 1 && !replace_all {
@@ -677,25 +725,133 @@ impl McpTool for EditFileTool {
             ));
         }
         let first_line = text
-            .find(old)
+            .find(old.as_str())
             .map_or(1, |at| text[..at].matches('\n').count() + 1);
         let updated = if replace_all {
-            text.replace(old, new)
+            text.replace(old.as_str(), &new)
         } else {
-            text.replacen(old, new, 1)
+            text.replacen(old.as_str(), &new, 1)
         };
         replace_file(&resolved, updated.as_bytes())
             .map_err(|e| format!("cannot write {path}: {e}"))?;
         leases::note_content(&resolved, &leases::sha256_hex(updated.as_bytes()));
         let replaced = if replace_all { count } else { 1 };
-        let out =
-            format!("edited {path}: replaced {replaced} occurrence(s), first at line {first_line}");
+        let out = format!(
+            "edited {path}: replaced {replaced} occurrence(s), first at line {first_line}{}",
+            if ignored_numbers {
+                " (the line numbers copied from read_file were ignored; give the text without them next time)"
+            } else {
+                ""
+            }
+        );
+        let diff = crate::diffview::unified(path, &text, &updated);
         Ok(redacted_output(
             ctx,
             &out,
-            Some(json!({"path": path, "replaced": replaced, "first_line": first_line})),
+            Some(
+                json!({"path": path, "replaced": replaced, "first_line": first_line, "diff": diff}),
+            ),
         ))
     }
+}
+
+/// Where `old` is in `text` when only the white space at the start and end of its lines differs, and nowhere else matches: the byte range
+/// of the lines in `text`, and `new` indented to suit the file. `None` when there is no such place or more than one.
+fn loose_match(text: &str, old: &str, new: &str) -> Option<(usize, usize, String)> {
+    let wanted: Vec<&str> = old.trim_matches('\n').split('\n').map(str::trim).collect();
+    if wanted.iter().all(|l| l.is_empty()) {
+        return None;
+    }
+    // The lines of the file with their byte ranges (without the line break).
+    let mut lines: Vec<(usize, usize, &str)> = Vec::new();
+    let mut at = 0;
+    for piece in text.split('\n') {
+        lines.push((at, at + piece.len(), piece.trim_end_matches('\r')));
+        at += piece.len() + 1;
+    }
+    let mut found: Option<usize> = None;
+    for start in 0..lines.len().saturating_sub(wanted.len() - 1) {
+        if wanted
+            .iter()
+            .enumerate()
+            .all(|(i, w)| lines[start + i].2.trim() == *w)
+        {
+            if found.is_some() {
+                return None;
+            }
+            found = Some(start);
+        }
+    }
+    let start = found?;
+    let (from, last) = (lines[start].0, lines[start + wanted.len() - 1]);
+    let indent_of = |line: &str| line.chars().take_while(|c| *c == ' ' || *c == '\t').count();
+    let given_old: Vec<usize> = old.trim_matches('\n').split('\n').map(indent_of).collect();
+    // Each new line takes the indentation the file has at the matching old line, moved by as much as the model's own indentation moved.
+    let replacement: Vec<String> = new
+        .trim_matches('\n')
+        .split('\n')
+        .enumerate()
+        .map(|(i, line)| {
+            if line.trim().is_empty() {
+                return String::new();
+            }
+            let o = i.min(wanted.len() - 1);
+            let file_line = lines[start + o].2;
+            let file_indent: String = file_line
+                .chars()
+                .take_while(|c| *c == ' ' || *c == '\t')
+                .collect();
+            let delta = indent_of(line) as isize - given_old[o] as isize;
+            let indent = if delta >= 0 {
+                let unit = file_indent.chars().next().unwrap_or(' ');
+                format!(
+                    "{file_indent}{}",
+                    unit.to_string().repeat(delta.unsigned_abs())
+                )
+            } else {
+                let keep = file_indent
+                    .chars()
+                    .count()
+                    .saturating_sub(delta.unsigned_abs());
+                file_indent.chars().take(keep).collect()
+            };
+            format!("{indent}{}", line.trim_start_matches([' ', '\t']))
+        })
+        .collect();
+    let end = last.1 - usize::from(text[last.0..last.1].ends_with('\r'));
+    Some((from, end, replacement.join("\n")))
+}
+
+/// Text copied from `read_file` carries its line-number column (`{:>5}  text`). Returns the text without that column when every
+/// non-empty line has one and the numbers count up by one; `None` when it does not look like that.
+fn strip_line_numbers(text: &str) -> Option<String> {
+    let mut expected: Option<usize> = None;
+    let mut lines = Vec::new();
+    let mut numbered = 0;
+    for piece in text.split('\n') {
+        if piece.trim().is_empty() {
+            lines.push(String::new());
+            continue;
+        }
+        let rest = piece.trim_start_matches(' ');
+        let digits = rest.chars().take_while(char::is_ascii_digit).count();
+        if digits == 0 {
+            return None;
+        }
+        let number: usize = rest[..digits].parse().ok()?;
+        if expected.is_some_and(|want| want != number) {
+            return None;
+        }
+        expected = Some(number + 1);
+        let after = &rest[digits..];
+        let content = after
+            .strip_prefix("  ")
+            .or_else(|| after.strip_prefix('\t'))
+            .or_else(|| after.strip_prefix('\u{2192}'))?;
+        lines.push(content.to_owned());
+        numbered += 1;
+    }
+    (numbered > 0).then(|| lines.join("\n"))
 }
 
 #[cfg(test)]
@@ -1223,5 +1379,119 @@ mod tests {
             json!({"path": "README.md", "content": "chat"}),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn a_change_comes_with_a_diff_and_line_numbers_copied_from_read_file_are_ignored() {
+        let dir = workspace();
+        let ctx = test_context(dir.path());
+        // The model copies the number column of read_file into old_string and new_string.
+        let out = EditFileTool
+            .call(
+                &json!({"path": "src/main.rs", "old_string": "    1  fn main() {\n    2      println!(\"hi\");", "new_string": "    1  fn main() {\n    2      println!(\"hello\");"}),
+                &ctx,
+            )
+            .unwrap();
+        assert!(
+            out.text
+                .contains("line numbers copied from read_file were ignored"),
+            "{}",
+            out.text
+        );
+        let now = fs::read_to_string(dir.path().join("src/main.rs")).unwrap();
+        assert_eq!(now, "fn main() {\n    println!(\"hello\");\n}\n");
+        let diff = out.structured.as_ref().unwrap()["diff"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(
+            diff.contains("-    println!(\"hi\");") && diff.contains("+    println!(\"hello\");"),
+            "{diff}"
+        );
+        // Text that is in the file as given is used as given, even if it looks numbered.
+        assert!(strip_line_numbers("plain text\nmore").is_none());
+        assert_eq!(
+            strip_line_numbers("    7  a\n    8  b\n").as_deref(),
+            Some("a\nb\n")
+        );
+        assert!(
+            strip_line_numbers("    7  a\n    9  b").is_none(),
+            "numbers must count up by one"
+        );
+    }
+
+    #[test]
+    fn write_file_shows_what_it_replaced_and_a_new_file_as_all_added() {
+        let dir = workspace();
+        let ctx = test_context(dir.path());
+        let created = WriteFileTool
+            .call(&json!({"path": "new.txt", "content": "a\nb\n"}), &ctx)
+            .unwrap();
+        let diff = created.structured.as_ref().unwrap()["diff"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(diff.contains("+a\n+b\n"), "{diff}");
+        let replaced = WriteFileTool
+            .call(&json!({"path": "new.txt", "content": "a\nc\n"}), &ctx)
+            .unwrap();
+        let diff = replaced.structured.as_ref().unwrap()["diff"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(diff.contains("-b\n") && diff.contains("+c\n"), "{diff}");
+        // The model's own answer stays short: the diff is for the person.
+        assert!(!replaced.text.contains("@@"), "{}", replaced.text);
+    }
+
+    #[test]
+    fn an_edit_with_the_wrong_indentation_is_applied_where_the_text_stands_when_there_is_only_one_place()
+     {
+        let dir = workspace();
+        let ctx = test_context(dir.path());
+        // The second line is given with two spaces where the file has four.
+        let out = EditFileTool
+            .call(&json!({"path": "src/main.rs", "old_string": "fn main() {\n  println!(\"hi\");", "new_string": "fn main() {\n  println!(\"hello\");"}), &ctx)
+            .unwrap();
+        assert!(out.text.contains("white space"), "{}", out.text);
+        assert_eq!(
+            fs::read_to_string(dir.path().join("src/main.rs")).unwrap(),
+            "fn main() {\n    println!(\"hello\");\n}\n"
+        );
+        let diff = out.structured.as_ref().unwrap()["diff"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(
+            diff.contains("-    println!(\"hi\");") && diff.contains("+    println!(\"hello\");"),
+            "{diff}"
+        );
+        // Two lines, given with two spaces where the file has four: the file's indentation is kept for each.
+        fs::write(
+            dir.path().join("a.py"),
+            "def f():\n    x = 1\n    if x:\n        y = 2\n",
+        )
+        .unwrap();
+        EditFileTool
+            .call(&json!({"path": "a.py", "old_string": "  x = 1\n  if x:", "new_string": "  x = 5\n  if x > 1:"}), &ctx)
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.path().join("a.py")).unwrap(),
+            "def f():\n    x = 5\n    if x > 1:\n        y = 2\n"
+        );
+        // The same lines in two places are not guessed at: nothing is changed.
+        fs::write(dir.path().join("c.txt"), "  a\n  b\n    a\n  b\n").unwrap();
+        let error = EditFileTool.call(
+            &json!({"path": "c.txt", "old_string": "a\nb", "new_string": "c"}),
+            &ctx,
+        );
+        assert!(
+            error.is_err(),
+            "two places match once white space is ignored"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("c.txt")).unwrap(),
+            "  a\n  b\n    a\n  b\n"
+        );
     }
 }

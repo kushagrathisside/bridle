@@ -235,12 +235,18 @@ pub fn get_board(bridge: State<'_, Bridge>) -> Value {
 /// Tells the member whose turn is running on `issue` that the person changed it: a notice follows their next tool result (ADR-0023).
 /// Only one turn runs at a time, so the next tool call in the project's workspace is that member's.
 fn tell_active_member(bridge: &Bridge, issue: &str, what: &str) {
-    let active_issue = locked(&bridge.inner)
-        .active
-        .as_ref()
-        .map(|a| a.issue.clone());
-    if let Ok(workspace) = workspace_of(&bridge.args()) {
-        board_tools::notify_active(&workspace, active_issue.as_deref(), issue, what);
+    let active = locked(&bridge.inner).active.clone();
+    if let Ok(mut workspace) = workspace_of(&bridge.args()) {
+        // The member's tool server works in its lane's folder, and notices are kept per folder.
+        if let Some(lane) = active.as_ref().and_then(|a| a.lane.as_deref()) {
+            workspace = harness_cli::lanes::lane_dir(&workspace, lane);
+        }
+        board_tools::notify_active(
+            &workspace,
+            active.as_ref().map(|a| a.issue.as_str()),
+            issue,
+            what,
+        );
     }
 }
 
@@ -371,10 +377,46 @@ pub fn board_export(bridge: State<'_, Bridge>) -> Value {
     }
 }
 
+/// The lane name for an issue: lowercase letters, digits and `-` (an issue id such as `B-a3f8.1` becomes `b-a3f8-1`).
+fn lane_name_for(issue: &str) -> String {
+    let name: String = issue
+        .to_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .take(32)
+        .collect();
+    if name.is_empty() {
+        "issue".to_owned()
+    } else {
+        name
+    }
+}
+
+/// The folder of lane `name` in `main`, made when it does not exist yet.
+fn lane_workspace(main: &std::path::Path, name: &str) -> Result<std::path::PathBuf, String> {
+    if harness_cli::lanes::load(main, name).is_err() {
+        harness_cli::lanes::new_lane(main, name, None)
+            .map_err(|e| format!("cannot make a lane for this issue: {e:#}"))?;
+    }
+    Ok(harness_cli::lanes::lane_dir(main, name))
+}
+
 /// Starts a member's turn on a ready issue: the issue is taken for them, and the turn runs under their prompt with the board
 /// tools, through the same agent loop and policy as any other turn.
 #[tauri::command(async)]
-pub fn run_issue(app: AppHandle, bridge: State<'_, Bridge>, id: String, slot: String) -> Value {
+pub fn run_issue(
+    app: AppHandle,
+    bridge: State<'_, Bridge>,
+    id: String,
+    slot: String,
+    lane: Option<bool>,
+) -> Value {
     let store = match board(&bridge) {
         Ok(store) => store,
         Err(error) => return fail(error),
@@ -400,11 +442,34 @@ pub fn run_issue(app: AppHandle, bridge: State<'_, Bridge>, id: String, slot: St
     if locked(&bridge.inner).running {
         return fail("a turn is already running; stop it or wait for it to finish");
     }
-    // The project's lock and a checkpoint of the files, before anything changes. Refuses in the middle of a merge or rebase.
-    let guard = match workspace_of(&args)
-        .map_err(|e| format!("{e:#}"))
-        .and_then(|ws| RunGuard::begin(&ws, &id))
-    {
+    // In a lane the member works in a separate working copy (ADR-0023) and the person merges the result; otherwise in the project's own
+    // folder. The lane is made now, or reused if this issue has run before.
+    let lane_name = lane.unwrap_or(false).then(|| lane_name_for(&id));
+    let (work_dir, work_args) = match &lane_name {
+        Some(name) => match workspace_of(&args)
+            .map_err(|e| format!("{e:#}"))
+            .and_then(|main| lane_workspace(&main, name))
+        {
+            Ok(dir) => {
+                let mut lane_args = args.clone();
+                lane_args.workspace = Some(dir.clone());
+                (dir, lane_args)
+            }
+            Err(error) => return fail(error),
+        },
+        None => match workspace_of(&args) {
+            Ok(dir) => (dir, args.clone()),
+            Err(error) => return fail(format!("{error:#}")),
+        },
+    };
+    // The folder's lock and a checkpoint of the files, before anything changes. Refuses in the middle of a merge or rebase. A lane run is
+    // checkpointed under its own name, so the board's Undo (which restores the project) never applies to it.
+    let scope = if lane_name.is_some() {
+        format!("lane-{id}")
+    } else {
+        id.clone()
+    };
+    let guard = match RunGuard::begin(&work_dir, &scope) {
         Ok(guard) => guard,
         Err(error) => return fail(error),
     };
@@ -413,11 +478,15 @@ pub fn run_issue(app: AppHandle, bridge: State<'_, Bridge>, id: String, slot: St
         if inner.running {
             return fail("a turn is already running; stop it or wait for it to finish");
         }
-        let existing = inner.members.remove(&member);
+        let existing = if lane_name.is_some() {
+            None
+        } else {
+            inner.members.remove(&member)
+        };
         let agent = match existing {
             Some(agent) => agent,
             None => {
-                let built = args
+                let built = work_args
                     .load_app()
                     .map_err(|e| format!("{e:#}"))
                     .and_then(|app| {
@@ -443,6 +512,7 @@ pub fn run_issue(app: AppHandle, bridge: State<'_, Bridge>, id: String, slot: St
         inner.active = Some(Active {
             member: member.clone(),
             issue: id.clone(),
+            lane: lane_name.clone(),
         });
         inner.guard = Some(guard);
         (agent, Arc::clone(&inner.cancel))
@@ -455,7 +525,9 @@ pub fn run_issue(app: AppHandle, bridge: State<'_, Bridge>, id: String, slot: St
             inner.running = false;
             inner.active = None;
             inner.guard = None;
-            inner.members.insert(member, agent);
+            if lane_name.is_none() {
+                inner.members.insert(member, agent);
+            }
             return fail(error);
         }
     };
@@ -512,11 +584,18 @@ pub fn finish_member_turn(
         let _ = store.comment(
             "bridle",
             &active.issue,
-            &format!(
-                "The run changed {} file(s): {}{more}. Undo changes on the board puts them back.",
-                files.len(),
-                shown.join(", ")
-            ),
+            &match &active.lane {
+                Some(lane) => format!(
+                    "The run worked in lane {lane} and changed {} file(s): {}{more}. Nothing is in the project yet: review the lane under Info, then merge it.",
+                    files.len(),
+                    shown.join(", ")
+                ),
+                None => format!(
+                    "The run changed {} file(s): {}{more}. Undo changes on the board puts them back.",
+                    files.len(),
+                    shown.join(", ")
+                ),
+            },
         );
     }
 }
