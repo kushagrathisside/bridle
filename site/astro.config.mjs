@@ -78,6 +78,7 @@ export default defineConfig({
             'project/contributing',
             'project/releasing',
             'project/lessons-from-infinity-and-harness2',
+            'project/graph-engineering-plan',
             'project/changelog',
             'project/security-policy',
             { label: 'Decisions', items: [{ autogenerate: { directory: 'project/decisions' } }] },

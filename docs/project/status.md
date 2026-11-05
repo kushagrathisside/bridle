@@ -31,7 +31,7 @@ These were run on the tested machine; each has tests, and most have also been ru
 | The managed browser | Off, optional install | Run for real against Chromium on one machine and one company proxy; the DNS-rebinding defence is shown against a scripted resolver, not a hostile DNS server. |
 | Window screenshots | Off | Tried on one program on one display. |
 | The small-model fleet and its scheduler | Off | Run on the real models: eight tasks about 3.7 times faster than one at a time, the swap and its crash recovery shown. The small models' answers were not graded. |
-| Lanes | Always available | Tested on real Git repositories and run through the built program, including two real model turns in two lanes. The board runner does not give members lanes yet. |
+| Lanes | Always available | Tested on real Git repositories and run through the built program, including two real model turns in two lanes. The board can work each issue in a lane, and the window reviews and merges it (checked end to end with a real model); the runner still runs one turn at a time. |
 | Notices and background commands | Notices always on; background commands off | Tested and run through the built program. With a real 9B model, five runs per scenario: it saw and acted on a notice in 4 to 5 runs of 5, and it polled `command_status` more than it should (the tool now tells it to wait). |
 | Task workflow and loop refusals | Off in the default configuration | Works. |
 | Micro model for stalled loops | Off | Built and tested. |

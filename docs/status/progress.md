@@ -28,7 +28,31 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
-## 2026-11-05 (latest): real-model measurements, more notices, orphan cleanup, the site and the release guide
+## 2026-11-05 (later): the diff in the chat, edit_file that copes, lanes in the window
+
+Branch `main`, after `2215c96`. Windows only.
+
+- **The diff in the chat.** `edit_file` and `write_file` return a unified diff (`harness_runtime::diffview`: common start and end set aside,
+  line comparison by a longest-common-subsequence table up to four million cells, three lines of context, cut at 240 lines with a note);
+  the chat emits it as a new `Diff` event after the call's `ToolDone`, and the window draws it under the tool card. The model's own result stays
+  short. Seen in the real window with the real model: red and green lines under the card.
+- **`edit_file` that copes.** The control in the notices measurement showed the model's edits failing because it copied `read_file`'s
+  line-number column. The tool now ignores that column when the text is only found without it, and, when the text is not there exactly but is in exactly one
+  place ignoring the white space at the start and end of its lines, changes that place (and says so). Two places that match are never guessed
+  at. In a real run the first `edit_file` still failed and the second succeeded through this path.
+- **Lanes in the window.** The board's **Work in lanes** option works each issue in its own lane; **Info**, then **Lanes**, reviews, merges (with a
+  preview and the conflicting lanes named), removes and undoes. Run end to end in the real window with the real model: a member fixed a bug
+  in a lane, the project stayed unchanged, the lane's diff showed the fix, and the merge put it into the project (`D:\e2e\lane_e2e.py`, three
+  clean runs; two other runs lost the window's debug connection, probably because a new run reached the previous run's window while it was
+  still closing, which was not confirmed).
+- **Found on the way.** The record of the active run was one slot for the whole process, so a test (and, later, parallel lanes) could overwrite
+  another's; it is now kept per folder.
+- **Gate:** fmt, clippy `-D warnings`, **1,185 tests passed, 0 failed, 5 ignored** (`D:\\e2e\\gate10.out`); the window's end-to-end suite without the model passes (`e2e10.out`).
+- **Research.** A survey of graph engineering for code understanding and a phased plan for Bridle: `docs/spec/graph-engineering-plan.md`. Nothing in it is built. **Not done:** fleet notices (the fleet commands run in another process
+  from the tool server, so a notice would need a channel between processes); a model that plans the work; slot save and restore (an
+  optimisation that was to be measured first); parallel turns in the runner (it still runs one turn at a time).
+
+## 2026-11-05 (earlier): real-model measurements, more notices, orphan cleanup, the site and the release guide
 
 Branch `main`, after `e21efc4`. Windows only. **Gate:** fmt, clippy `-D warnings`, **1,176 tests passed, 0 failed, 5 ignored** (`D:\e2e\gate8.out`).
 

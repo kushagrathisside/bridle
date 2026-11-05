@@ -49,8 +49,11 @@ The model cannot run any of these commands. Integration is a step that only the 
   members are working.
 - Line endings follow your Git settings: on Windows with `core.autocrlf`, merged files are written with CRLF line endings.
 - Git ignores `.bridle\`, which `bridle init` arranges. In a repository where it is not ignored, the lane folders appear as untracked.
-- The board runner does not yet give members lanes, and the window has no button for integration. At present the facility is available
-  through these commands.
+- **In the window.** Turn on **Work in lanes** in the board: each issue that runs is then worked in its own lane (named after the issue),
+  and the issue's comment says which lane holds the result. Choose **Info**, then the **Lanes** card, to **Review** a lane (its files and
+  a coloured diff), **Merge** it (the window first shows what would change, and names any lane that conflicts), **Remove** it, or **Undo last
+  merge**. A lane run is checkpointed under its own name, so the board's **Undo changes** never applies to it. The runner still works one
+  issue at a time.
 
 ## Evidence
 

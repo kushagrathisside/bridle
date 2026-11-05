@@ -88,6 +88,16 @@ The project has not been published, so the version below is for the repository o
   file limit and a 200 MB stop; **`bridle doctor --repair`**; and `document_inspect` now reads a **PDF's** pages, title, author and text and
   **lists** zip, tar and tar.gz archives (names that would unpack outside their folder are flagged; nothing is extracted), with a DEFLATE
   decoder written for it.
+- A research note and phased plan for graph engineering (code graphs, SCIP, Glean, CodeCompass, LocAgent and others, and how Bridle could
+  index a repository): [graph-engineering-plan.md](docs/spec/graph-engineering-plan.md). Nothing in it is built.
+- `edit_file` and `write_file` show what they changed in the chat, as a coloured unified diff under the tool's card (new event `Diff`;
+  the model is not sent it). `edit_file` also copes with the two usual slips of a small model: it ignores a line-number column copied from
+  `read_file`, and when the text is not there exactly but is in exactly one place once the white space at the start and end of its lines is
+  ignored, it changes that place (the answer says so, and the diff shows what changed).
+- Lanes in the window: the board's **Work in lanes** option works each issue in its own lane, and **Info**, then **Lanes**, lists the lanes
+  with **Review** (files and a coloured diff), **Merge** (a preview first, and a conflicting lane is named), **Remove** and **Undo last
+  merge**. A lane run is checkpointed under its own name. The active-run record in `leases` is now kept per folder, so runs in a project
+  and its lanes do not meet.
 - The window's **Info** pane has a **Machine settings** card (the configuration file, the models and runtimes folders, **Show in Explorer** and
   **Reload**), a **Runtimes** card and a **Plugins** card; the **Models** pane has a **Reload** button and says how to add a model. A new guide,
   [Adding and updating models, runtimes and plugins](docs/guide/models-runtimes-and-plugins.md), explains each step and when a change takes effect.

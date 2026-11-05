@@ -111,8 +111,9 @@ repository cannot have worktrees, and the command says so.
   - *Two real turns in two lanes:* each touched only its own file and `integrate` merged them, no conflict.
 - **Built since this record was first written:** notices for a refused write that is free now (`lease_free`) and for the person changing the
   issue a member is working on (`board_change`); records of running background commands so `doctor --repair` stops orphans.
-  **Not built:** lanes inside the board runner (a member is not yet given a lane automatically, and the runner runs one turn at a time), a
-  button for integration in the window, fleet notices.
+  **Since built:** lanes inside the board runner (the board's **Work in lanes** option) and the window's **Lanes** card for review,
+  merge, remove and undo. **Not built:** parallel turns (the runner runs one turn at a time) and fleet notices (the fleet commands run in another process from
+  the tool server, so a notice would need a channel between processes).
 
 ## Related
 

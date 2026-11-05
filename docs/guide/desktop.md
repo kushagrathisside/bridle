@@ -31,7 +31,7 @@ started when it closes.
 | Editor | Monaco with tabs and breadcrumbs. Ctrl+S saves. A file the agent changes updates by itself unless you have unsaved edits; then the tab is marked `!` and saving asks what to do. |
 | Diff tabs | The working copy against the last commit, side by side. Read only. |
 | Terminal | Your own shell (Ctrl+`). Pick Git Bash, PowerShell, Command Prompt or WSL. What you type here is not checked by the model's policy. |
-| Chat | Streams the answer, shows each tool call as a card with its verdict, and has Open file and View diff buttons for file tools. Answers are shown as Markdown: tables (with alignment), headings, nested, numbered and task lists, quotes, rules, and code blocks with a **Copy** button; a **Copy** button appears over each answer; **Latest** jumps to the newest message after you scroll up. Links are shown but not followed (a click copies the address). |
+| Chat | Streams the answer, shows each tool call as a card with its verdict, and has Open file and View diff buttons for file tools. When `edit_file` or `write_file` changes a file, the change appears in the chat itself, under the tool's card, as a coloured diff (added lines green, removed lines red, three lines of context); the model is not sent it. Answers are shown as Markdown: tables (with alignment), headings, nested, numbered and task lists, quotes, rules, and code blocks with a **Copy** button; a **Copy** button appears over each answer; **Latest** jumps to the newest message after you scroll up. Links are shown but not followed (a click copies the address). |
 
 Shortcuts: Ctrl+P go to file, Ctrl+Shift+F search, Ctrl+Shift+E explorer, Ctrl+Shift+G changes, Ctrl+S save, Ctrl+W close tab,
 Ctrl+J chat, Ctrl+` terminal, Ctrl+L new chat, Ctrl+O change project, Esc stops a running turn. While the terminal has focus its
@@ -40,7 +40,7 @@ keys belong to the shell.
 ## The team, the board and ideas
 
 The crew rail on the right edge shows the team; the board button at the top right opens the board as a popup, with the saved ideas as
-its first column. Tag a member in the chat with `@name`. See [the team, the board and the ideas queue](team-and-board.md).
+its first column. Tag a member in the chat with `@name`. The board's **Work in lanes** option gives each issue its own copy of the project, to be reviewed and merged from **Info**, then **Lanes** (see [lanes](lanes.md)). See [the team, the board and the ideas queue](team-and-board.md).
 
 ## The `/` menu and images
 

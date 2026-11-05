@@ -54,6 +54,7 @@ const PAGES = [
   { source: 'docs/concepts/security.md', route: 'project/security-model', description: 'What Bridle protects, the rules it applies to each tool call, and the risks that remain.' },
   { source: 'docs/project/status.md', route: 'project/status', description: 'What is stable, what is optional or experimental, what is not live yet, and the known limits.' },
   { source: 'docs/project/releasing.md', route: 'project/releasing', description: 'The whole release process, step by step, so that it can be done by hand.' },
+  { source: 'docs/spec/graph-engineering-plan.md', route: 'project/graph-engineering-plan', description: 'Research on graph engineering for code understanding, the tools that exist, and a phased plan for Bridle.' },
   { source: 'docs/spec/lessons-from-infinity-and-harness2.md', route: 'project/lessons-from-infinity-and-harness2', description: 'What Bridle learned from AWS\'s Infinity and Google\'s Harness2, and what it built and did not build.' },
   { source: 'CONTRIBUTING.md', route: 'project/contributing', description: 'How to build, test and change Bridle, and what a change must pass before it is merged.' },
   { source: 'CHANGELOG.md', route: 'project/changelog', description: 'What changed in each version of Bridle.' },

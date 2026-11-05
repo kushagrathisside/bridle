@@ -565,8 +565,8 @@ setting were verified in the real window on 2026-11-03.
 - **The team works in Solo mode.** One model answers every member, one member at a time, in the project's working copy. Members are
   prompts and tools, not separate models, and how well a 9B model plays each role is not measured. The small-model fleet and its scheduler
   are built (see [the fleet](docs/guide/fleet.md)) and so are lanes, separate working copies for parallel members that you merge
-  (see [lanes](docs/guide/lanes.md)); neither is used by the board runner yet, and a model-based pick for a tagged team is planned,
-  not built. Checkpoints and undo for a member's turn are built.
+  (see [lanes](docs/guide/lanes.md)), which the board can use for each issue and the window can review and merge; the fleet is not used by the
+  board runner yet, and a model-based pick for a tagged team is planned, not built. Checkpoints and undo for a member's turn are built.
 - **No installer program and no automatic update.** `install.cmd` copies the executable and edits your user `PATH`.
 - **`bridle > file.txt` or `bridle | more`** keeps the pipe or file open until the window closes, because the detached window inherits the handle.
 - **Syntactic code index.** `find_references` matches identifiers by spelling and does not resolve imports, types or overloads. There is
@@ -594,7 +594,7 @@ planned in [docs/spec/team-subagents-ideas-plan.md](docs/spec/team-subagents-ide
 1. **The rest of the Git layer.** Checkpoints, per-issue undo, a project lock, recovery of a cut-short run, file leases, a stale-write
    check, a shadow repository for folders without Git, and `bridle doctor --repair` are built (see
    [Runs, checkpoints and recovery](docs/reference/run-recovery.md)). Lanes, separate working copies for parallel members and the
-   person's merge of them, are built (see [lanes](docs/guide/lanes.md)); still planned: giving members lanes from the board runner.
+   person's merge of them, are built (see [lanes](docs/guide/lanes.md)); the board can work each issue in a lane, and the window reviews and merges them. Still planned: parallel turns.
 2. **Sub-agents on small models.** The fleet, the scheduler and a parallel worker are built (see [the fleet](docs/guide/fleet.md)): a
    manager and a worker (Granite-4.0-H-Micro and H-1B) are loaded with the 9B model unloaded, and eight tasks ran 3.7 times faster than
    one at a time. Still planned: a manager that plans work (Qwen3.5-4B is the candidate), use inside the board runner, and a measurement
