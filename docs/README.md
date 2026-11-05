@@ -44,6 +44,7 @@ see [releasing](project/releasing.md#9-publish-the-documentation-site)). The who
 | Read the design principles | [project/principles.md](project/principles.md) |
 | Read why a decision was made | [decisions/](decisions/) |
 | See what Bridle learned from other projects | [spec/lessons-from-infinity-and-harness2.md](spec/lessons-from-infinity-and-harness2.md) |
+| Read the research and plan for graph-based code understanding | [spec/graph-engineering-plan.md](spec/graph-engineering-plan.md) |
 
 ## Looking things up
 
