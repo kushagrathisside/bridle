@@ -49,6 +49,8 @@ pub(crate) struct Inner {
 pub(crate) struct Active {
     pub(crate) member: String,
     pub(crate) issue: String,
+    /// The lane the turn works in (ADR-0023), when it does not work in the project's own folder.
+    pub(crate) lane: Option<String>,
 }
 
 #[derive(Debug)]
@@ -137,10 +139,11 @@ pub fn pump(rx: Receiver<JobMsg>, handle: &AppHandle) {
                     let active = inner.active.take();
                     let guard = inner.guard.take();
                     match (&active, agent) {
-                        (Some(a), Some(agent)) => {
+                        // A conversation that worked in a lane belongs to that folder, so it is not kept for the next issue.
+                        (Some(a), Some(agent)) if a.lane.is_none() => {
                             inner.members.insert(a.member.clone(), agent);
                         }
-                        (Some(_), None) => {}
+                        (Some(_), _) => {}
                         (None, agent) => inner.agent = agent,
                     }
                     inner.running = false;

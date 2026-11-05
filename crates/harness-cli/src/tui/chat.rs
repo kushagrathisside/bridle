@@ -244,7 +244,7 @@ impl ChatState {
                 preview,
             } => self.settle(id, name, String::new(), ToolState::Done { ok, preview }),
             Event::Notice(text) => self.push(Item::Notice(Sev::Info, text)),
-            Event::Usage { .. } => {}
+            Event::Usage { .. } | Event::Diff { .. } => {}
         }
     }
 

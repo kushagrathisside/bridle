@@ -170,6 +170,9 @@ pub fn chat_event(event: &Event) -> Value {
             ok,
             preview,
         } => json!({"type": "tool_done", "id": id, "name": name, "ok": ok, "preview": preview}),
+        Event::Diff { id, path, patch } => {
+            json!({"type": "diff", "id": id, "path": path, "patch": patch})
+        }
         Event::Notice(text) => json!({"type": "notice", "text": text}),
         Event::Working(text) => json!({"type": "working", "text": text}),
         Event::Usage { used, window } => json!({"type": "usage", "used": used, "window": window}),

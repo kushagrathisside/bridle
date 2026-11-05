@@ -4,7 +4,7 @@
 // The rules (states, dependencies, claims) are in crates/harness-cli/src/board.rs; this file shows them and sends the
 // person's changes. A tag in the chat makes an issue for the person or team tagged, and the runner works it.
 
-const board = { issues: [], load: {}, ready: [], undoable: [], open: false, filter: "", byTeam: false, auto: true, paused: false, detail: null, skipped: 0 };
+const board = { issues: [], load: {}, ready: [], undoable: [], open: false, filter: "", byTeam: false, auto: true, paused: false, lanes: false, detail: null, skipped: 0 };
 
 const COLUMNS = [["backlog", "Backlog"], ["ready", "Ready"], ["in_progress", "In progress"], ["in_review", "In review"], ["blocked", "Blocked"], ["done", "Done"]];
 // What the person may move an issue to by hand. Starting work is the runner's job (it takes the issue for its owner).
@@ -76,6 +76,7 @@ function renderBoard() {
     filter,
     toggle("By team", "Group the cards in each column by team", board.byTeam, (v) => { board.byTeam = v; renderBoard(); }),
     toggle("Auto-run", "Give ready issues to their owners one after another", board.auto, (v) => { board.auto = v; if (v) { board.paused = false; runNextIssue(false); } }),
+    toggle("Work in lanes", "Each issue is worked in its own copy of the project. Nothing reaches the project until you review the lane and merge it (Info, then Lanes).", board.lanes, (v) => { board.lanes = v; }),
     el("span", { class: "spacer" }),
     button("Run ready work", () => { board.paused = false; runNextIssue(true).then((started) => { if (!started) toast("Nothing is ready for an enabled member, or a turn is running.", "warn"); }); }, "small"),
     button("Team…", openRosterEditor, "small"),
@@ -211,7 +212,7 @@ async function runNextIssue(force) {
     for (const id of board.ready) {
       const issue = issueById(id);
       if (!issue || !issue.assignee) continue;
-      const r = await invoke("run_issue", { id, slot: currentSlot() });
+      const r = await invoke("run_issue", { id, slot: currentSlot(), lane: board.lanes });
       if (r.ok) {
         state.busy = true;
         syncControls();
@@ -237,7 +238,7 @@ async function undoIssue(issue) {
 
 async function runIssueNow(id) {
   if (state.busy) return toast("A turn is running. Wait for it, or stop it.", "warn");
-  const r = await invoke("run_issue", { id, slot: currentSlot() });
+  const r = await invoke("run_issue", { id, slot: currentSlot(), lane: board.lanes });
   if (!r.ok) return toast(r.error, "bad");
   state.busy = true;
   syncControls();

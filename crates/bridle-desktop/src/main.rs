@@ -12,6 +12,7 @@
 mod bridge;
 mod crew_cmd;
 mod ideas_cmd;
+mod lane_cmd;
 mod view;
 
 use std::ffi::OsString;
@@ -216,6 +217,11 @@ fn run_window(raw: &[OsString]) -> ExitCode {
             crew_cmd::board_comment,
             crew_cmd::board_export,
             crew_cmd::run_issue,
+            lane_cmd::lane_list,
+            lane_cmd::lane_diff,
+            lane_cmd::lane_integrate,
+            lane_cmd::lane_undo,
+            lane_cmd::lane_remove,
             crew_cmd::undo_issue,
         ])
         .build(tauri::generate_context!());

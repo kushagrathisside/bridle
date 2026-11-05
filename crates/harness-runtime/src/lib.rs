@@ -8,6 +8,7 @@ pub mod artifacts;
 pub mod code;
 pub mod decision;
 pub mod desktop;
+pub mod diffview;
 pub mod event_log;
 pub mod health;
 pub mod http;

@@ -216,6 +216,14 @@ pre.block:empty { display: none; }
 .view .kv div:nth-child(even) { margin-top: 1px; }
 .view .kv .mono { font-size: 12px; overflow-wrap: anywhere; }
 .view .card .note { line-height: 1.45; }
+/* The diff a file tool made, shown in the chat under its tool card. */
+.diff { margin: 6px 0 0; padding: 6px 0; max-height: 360px; overflow: auto; font-family: var(--mono); font-size: 12px; line-height: 1.45; background: var(--code-bg, #0b0e14); border: 1px solid var(--border); border-radius: 6px; white-space: pre; }
+.diff-line { display: block; padding: 0 10px; }
+.diff-line.add { background: rgba(46, 160, 67, .18); color: #7ee787; }
+.diff-line.del { background: rgba(248, 81, 73, .16); color: #ffa198; }
+.diff-line.hunk { color: var(--accent); background: rgba(99, 137, 255, .08); }
+.diff-line.file { color: var(--muted); }
+.lane-detail { margin: 6px 0 10px; }
 .item-name { font-weight: 600; margin-top: 12px; overflow-wrap: anywhere; }
 .item-name:first-of-type { margin-top: 4px; }
 h3 { margin: 18px 0 8px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }

@@ -102,6 +102,22 @@ function toolCard(id, name, summary) {
   return state.tools.get(id);
 }
 
+// ---------- the change a file tool made ----------
+
+// A unified diff drawn line by line: added lines green, removed lines red, hunk headers in the accent colour. Text only, never HTML.
+function diffView(patch) {
+  const lines = String(patch).split("\n");
+  if (lines.length && lines[lines.length - 1] === "") lines.pop();
+  return el("pre", { class: "diff" }, ...lines.map((line) => {
+    let kind = "ctx";
+    if (line.startsWith("@@")) kind = "hunk";
+    else if (line.startsWith("+++") || line.startsWith("---")) kind = "file";
+    else if (line.startsWith("+")) kind = "add";
+    else if (line.startsWith("-")) kind = "del";
+    return el("span", { class: `diff-line ${kind}`, text: `${line}\n` });
+  }));
+}
+
 // ---------- events of a turn ----------
 
 function chatEvent(event) {
@@ -133,6 +149,15 @@ function chatEvent(event) {
         if (event.ok && FILE_WRITERS.has(event.name)) agentWrote((tool.summary || "").trim());
       }
       if (event.name && event.name.startsWith("board_")) { refreshBoard(); refreshCrew(); }
+      break;
+    }
+    case "diff": {
+      const tool = state.tools.get(event.id);
+      if (tool) {
+        tool.body.append(diffView(event.patch));
+        tool.card.open = true;
+        scrollDown();
+      }
       break;
     }
     case "notice":
