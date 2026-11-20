@@ -6,6 +6,10 @@ on:
   push:
   pull_request:
 
+# The jobs only read the repository, so the token gets no write access.
+permissions:
+  contents: read
+
 jobs:
   rust:
     strategy:
