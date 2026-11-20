@@ -3,7 +3,7 @@
 M7 adds Jev as an optional `DecisionEngine` backend (R-9.1) and the endpoint policy and TLS that an external service
 needs. Jev decides stalled loops only, as the micro model does (ADR-0005, ADR-0007).
 
-> **Status:** Built and tested (2026-10-27), committed as `6ad8861`, with this page committed after it. **Not live:**
+> **Status:** Built and tested (2026-10-27), committed as `9ceb8af`, with this page committed after it. **Not live:**
 > no Jev service or key was available, so the decision path is tested against a local mock of the contract.
 
 ## What was built

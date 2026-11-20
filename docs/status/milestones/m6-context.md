@@ -4,7 +4,7 @@ M6 decides, for each completed tool result, whether the model sees it whole, com
 current task state into the system prompt. Both happen per request. The stored OpenCode session is not edited, and no
 model decides anything: the rules are deterministic (R-24.2).
 
-> **Status:** Done and committed as `977a56f` (2026-10-26). Gate green (642 tests). The live run is recorded below.
+> **Status:** Done and committed as `2e9438f` (2026-10-26). Gate green (642 tests). The live run is recorded below.
 
 ## What the host lets a plugin change
 

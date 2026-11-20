@@ -13,7 +13,7 @@ one rule above the others: **the browser must be a capability controlled by Brid
 
 ## What the repository already has (inspected, not assumed)
 
-The reported state was checked first: branch `web-research`, commits `d28b0a2` and `e49df81`, a clean tree except for old untracked
+The reported state was checked first: branch `web-research`, commits `d783dae` and `cb0c491`, a clean tree except for old untracked
 benchmark folders that were left alone.
 
 | Component | State | Used for the browser |

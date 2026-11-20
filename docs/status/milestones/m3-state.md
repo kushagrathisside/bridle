@@ -5,7 +5,7 @@ loop, and records every decision with its reason. A session can then be resumed 
 This page holds the plan. Steps will be added to it as they are built, in the same way as
 [M2](m2-tools.md).
 
-> **Status:** Done and committed as `736fea3` (2026-10-26); steps 0 to 11 complete. Gate green
+> **Status:** Done and committed as `738d8c6` (2026-10-26); steps 0 to 11 complete. Gate green
 > (`wgate`: fmt, clippy with warnings denied, 614 tests). Live runs with Qwen3.5-9B found the limits listed under
 > [Result](#result-2026-10-26). The choices are in [Decisions](#decisions).
 
@@ -285,7 +285,7 @@ recorded in [ADR-0004](../../decisions/0004-orchestrator-observes-and-steers.md)
 
 | Step | Result | Evidence |
 |---|---|---|
-| 0 Plan and ADR | Done | [ADR-0004](../../decisions/0004-orchestrator-observes-and-steers.md) accepted; commit `e6eef64` |
+| 0 Plan and ADR | Done | [ADR-0004](../../decisions/0004-orchestrator-observes-and-steers.md) accepted; commit `f45b4cf` |
 | 1 State store | Done | `crates/harness-runtime/src/state/`: atomic writes with a Windows rename retry, lock with a timeout, versioned envelopes, torn-line handling; 16 integration tests (`tests/state_store.rs`) including a Windows test that holds the target open |
 | 2 Task model | Done | `harness-core/src/task.rs`: phases, the R-17.1 transition table, shortest-path advance; every pair of phases is checked |
 | 3 Fingerprints | Done | `harness-core/src/fingerprint.rs`: fields of R-19.2 except the stack-trace signature (not in the parsed output); SHA-256, `fp_v1:` prefix |

@@ -4,7 +4,7 @@ M5 makes the deep model usable without giving it the main model's place. It load
 the main model on the GPU, its reasoning budget is raised, and it is checked and measured like the other slots.
 Its escalation routing (R-3.6, R-18.1) was added later, as M5-3 (2026-10-27); see the section below.
 
-> **Status:** Done and committed as `53724d4` (2026-10-26). Gate green (627 tests). Live results below. Escalation routing
+> **Status:** Done and committed as `a8259df` (2026-10-26). Gate green (627 tests). Live results below. Escalation routing
 > added on 2026-10-27. Its live check passed on 2026-10-28 against the served deep model (M5-3, built).
 
 ## Gate and what was checked

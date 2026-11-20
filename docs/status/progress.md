@@ -15,14 +15,14 @@ other pages must agree with it.
 | M0 | Audit and architecture | Done | [2026-10-21: baseline](#2026-10-21-baseline) |
 | M1 | Basic OpenCode integration on Windows: policy, hook, runtime | Done | [2026-10-21: Wave 0 and the POC](#2026-10-21-wave-0-and-the-poc) |
 | M2 | Deterministic tools: MCP tools, failure parsing, tree-sitter | Done | [2026-10-22 (night): M2 started, steps 0 to 3 done](#2026-10-22-night-m2-started-steps-0-to-3-done) |
-| M3 | State and loop detection; task journal; refusals; worktree tasks | Done (`736fea3`) | [2026-10-26: M3 done](#2026-10-26-m3-done-and-committed-as-736fea3-state-loop-detection-decisions-worktrees-live-runs) |
-| M4 | `micro` model decides stalled loops (LFM2.5, CPU), with rules fallback and an A/B run | Done (`49f74d9`) | [2026-10-26: M4 done](#2026-10-26-m4-done-and-committed-as-49f74d9-micro-model-decides-stalled-loops-ab-run) |
+| M3 | State and loop detection; task journal; refusals; worktree tasks | Done (`738d8c6`) | [2026-10-26: M3 done](#2026-10-26-m3-done-and-committed-as-738d8c6-state-loop-detection-decisions-worktrees-live-runs) |
+| M4 | `micro` model decides stalled loops (LFM2.5, CPU), with rules fallback and an A/B run | Done (`3804fae`) | [2026-10-26: M4 done](#2026-10-26-m4-done-and-committed-as-3804fae-micro-model-decides-stalled-loops-ab-run) |
 | M4b | Subagent tier: a small model reads a few bounded, redacted files and answers with checked citations | Built, plugged; quality measured on nine questions, three runs each (24 of 27 passed) | [2026-10-27: subagent quality](milestones/m4b-subagents.md) |
-| M5 | `deep` model on demand (Bonsai); one GPU model at a time; escalation to it | Done (`53724d4`); escalation routing built and tested, not run live (M5-3) | [2026-10-27: escalation routing](#2026-10-27-later-subagent-quality-measured-escalation-routing-m5-3-the-m10-stall-explained) |
-| M6 | Context management: per-request compaction and the task state in the system prompt | Done (`977a56f`) | [2026-10-26: M6 done](#2026-10-26-m6-done-and-committed-as-977a56f-context-policy-and-per-request-transforms) |
-| M7 | Jev decision backend behind the endpoint policy, with TLS | Built, not live (`6ad8861`) | [2026-10-27: M7 built](#2026-10-27-m7-built-and-tested-jev-backend-endpoint-policy-tls-not-live) |
-| M8 | LiteLLM gateway as a model provider, behind the policy | Built, not live (`0854f62`, `a3a6940`) | [2026-10-27: M8 built](#2026-10-27-m8-built-and-tested-with-a-mock-the-live-gateway-check-is-not-run) |
-| M9 | Security threat-model tests and egress audit | Built (`5bef0f9`) | [2026-10-27: M9 built](#2026-10-27-m9-built-security-review-fixes-adversarial-suite-egress-audit) |
+| M5 | `deep` model on demand (Bonsai); one GPU model at a time; escalation to it | Done (`a8259df`); escalation routing built and tested, not run live (M5-3) | [2026-10-27: escalation routing](#2026-10-27-later-subagent-quality-measured-escalation-routing-m5-3-the-m10-stall-explained) |
+| M6 | Context management: per-request compaction and the task state in the system prompt | Done (`2e9438f`) | [2026-10-26: M6 done](#2026-10-26-m6-done-and-committed-as-2e9438f-context-policy-and-per-request-transforms) |
+| M7 | Jev decision backend behind the endpoint policy, with TLS | Built, not live (`9ceb8af`) | [2026-10-27: M7 built](#2026-10-27-m7-built-and-tested-jev-backend-endpoint-policy-tls-not-live) |
+| M8 | LiteLLM gateway as a model provider, behind the policy | Built, not live (`e7ee899`, `df061a3`) | [2026-10-27: M8 built](#2026-10-27-m8-built-and-tested-with-a-mock-the-live-gateway-check-is-not-run) |
+| M9 | Security threat-model tests and egress audit | Built (`9526998`) | [2026-10-27: M9 built](#2026-10-27-m9-built-security-review-fixes-adversarial-suite-egress-audit) |
 | M10 | Evaluation: task corpus, two conditions, runner and report | Built; the start stall is fixed; one full run recorded (minimal 6 of 6, harness 4 of 6); repeat runs not done | [milestones/m10-evaluation.md](milestones/m10-evaluation.md) |
 | M11 | Open-source release: licence, notices, policies, CI | Prepared; CI not run; publication not done | [milestones/m11-release.md](milestones/m11-release.md) |
 
@@ -30,7 +30,7 @@ M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
 ## 2026-11-05 (later): the diff in the chat, edit_file that copes, lanes in the window
 
-Branch `main`, after `2215c96`. Windows only.
+Branch `main`, after `9a54b85`. Windows only.
 
 - **The diff in the chat.** `edit_file` and `write_file` return a unified diff (`harness_runtime::diffview`: common start and end set aside,
   line comparison by a longest-common-subsequence table up to four million cells, three lines of context, cut at 240 lines with a note);
@@ -54,7 +54,7 @@ Branch `main`, after `2215c96`. Windows only.
 
 ## 2026-11-05 (earlier): real-model measurements, more notices, orphan cleanup, the site and the release guide
 
-Branch `main`, after `e21efc4`. Windows only. **Gate:** fmt, clippy `-D warnings`, **1,176 tests passed, 0 failed, 5 ignored** (`D:\e2e\gate8.out`).
+Branch `main`, after `f193a8d`. Windows only. **Gate:** fmt, clippy `-D warnings`, **1,176 tests passed, 0 failed, 5 ignored** (`D:\e2e\gate8.out`).
 
 | Item | What was done | Evidence |
 |---|---|---|
@@ -98,7 +98,7 @@ Branch `main`, after `e21efc4`. Windows only. **Gate:** fmt, clippy `-D warnings
 
 ## 2026-11-04 (earlier): lessons from Infinity and Harness²; notices, background commands, lanes (ADR-0023)
 
-Branch `main`, after `daaccf4`. Windows only. Not committed, not pushed. The video the owner mentioned is the AWS post on Infinity; "harness2"
+Branch `main`, after `71c2066`. Windows only. Not committed, not pushed. The video the owner mentioned is the AWS post on Infinity; "harness2"
 is Google Research's `google-research/harness2` (arXiv 2610.14224). Both were read (the post, the READMEs, the paper's text through its
 limitations; **the video itself was not watched**). The reading is in
 [lessons-from-infinity-and-harness2.md](../spec/lessons-from-infinity-and-harness2.md). The three Infinity ideas worth borrowing were built.
@@ -130,7 +130,7 @@ lanes into one file, undo, a conflict that writes nothing, removal.
 
 ## 2026-11-04 (earlier): window screenshots and the small-model fleet (ADR-0021, ADR-0022)
 
-Branch `main`, after `b6a51f7`. Windows only. Not pushed. **Gate:** fmt, clippy `-D warnings`, **1,148 tests passed, 0 failed, 5 ignored** (`D:\e2e\gate6.out`).
+Branch `main`, after `b025c10`. Windows only. Not pushed. **Gate:** fmt, clippy `-D warnings`, **1,148 tests passed, 0 failed, 5 ignored** (`D:\e2e\gate6.out`).
 
 | Item | What was built | Evidence |
 |---|---|---|
@@ -163,7 +163,7 @@ Branch `main`, after `b6a51f7`. Windows only. Not pushed. **Gate:** fmt, clippy 
 
 ## 2026-11-04 (leftover sections: leases, shadow repository, repair, PDF and archives)
 
-Branch `main`, after `2e89ace`. Windows only. These are the unbuilt parts of the plan (section 13) that can be built and checked on this machine
+Branch `main`, after `b02fb16`. Windows only. These are the unbuilt parts of the plan (section 13) that can be built and checked on this machine
 without new model downloads. The small-model fleet and scheduler, and worktrees for parallel engineers, are **not** built (the fleet needs the
 three model downloads, which are not finished; parallel worktrees need the fleet).
 
@@ -187,7 +187,7 @@ three model downloads, which are not finished; parallel worktrees need the fleet
 
 ## 2026-11-04 (closing the browser's open items)
 
-Branch `main` after the merge `36c58f6`. This entry **supersedes the "Not verified, plainly" bullet** of the browser entry below. The five
+Branch `main` after the merge `5419577`. This entry **supersedes the "Not verified, plainly" bullet** of the browser entry below. The five
 items that were left open were taken one by one:
 
 | Open item | What was done | Evidence |
@@ -208,7 +208,7 @@ items that were left open were taken one by one:
 
 ## 2026-11-04 (earlier): the managed browser (ADR-0020)
 
-Branch `web-research`, on top of `d28b0a2` and `e49df81`. Windows only; the tested machine (Windows 11, x64). Design, alternatives and
+Branch `web-research`, on top of `d783dae` and `cb0c491`. Windows only; the tested machine (Windows 11, x64). Design, alternatives and
 residual risks: [ADR-0020](../decisions/0020-managed-browser-is-a-policy-gated-playwright-worker.md). Use: [web-browser.md](../guide/web-browser.md).
 
 - **Built.** Tools `browser_navigate`, `browser_snapshot`, `browser_action`, `browser_close`; `[web.browser]` (rule V49, machine-only);
@@ -773,7 +773,7 @@ The Linux machine overrides for the Windows runtime binaries are in `configs/exa
 with that file as `--config`, the effective `server_bin` values change to the Linux names, and validation reports only the
 known warning about verification steps.
 
-Linux gate on commit `9dae6af` (the tree on `control-center` and `control-center-next`), dependencies from the vendored
+Linux gate on commit `18ba077` (the tree on `control-center` and `control-center-next`), dependencies from the vendored
 set with no network: `cargo fmt --all -- --check` passed; `cargo clippy --workspace --all-targets --locked -- -D warnings`
 passed; `cargo test --workspace --locked --no-fail-fast` passed with 855 tests, 0 failed, 5 ignored, with the proxy
 variables cleared. With them set, the three Jev tests fail because the loopback mock goes through the proxy (403), which
@@ -960,7 +960,7 @@ terms should be read before any use beyond personal experiments.
 
 ## 2026-10-28: CI fix: secret names are denied on every platform
 
-- CI run `40647169565` on `c7bbb3c` failed on `ubuntu-latest` only. Three adversarial cases were allowed on Linux:
+- CI run `40647169565` on `be3196d` failed on `ubuntu-latest` only. Three adversarial cases were allowed on Linux:
   `.env ` (trailing space), `git show HEAD:.env` and `git -C . show :.env`. Windows passed.
 - Cause: the secret-name check ran on the whole word, so `HEAD:.env` was not seen as `.env`, and Linux keeps a trailing
   space in a name. On Windows the path guard's alternate-stream rule caught the colon, and the guard's Windows rules
@@ -1007,7 +1007,7 @@ terms should be read before any use beyond personal experiments.
 - Built: 70 hostile tool calls through the real hook, now `evals/security/cases.json` and a test (72 cases with the two
   network tools). Five gaps fixed: shell escapes, Windows short names, glob patterns, environment dumps, and the order of the
   secret check and the path guard. One usability defect fixed: validation messages hidden by the redactor. `bridle egress`
-  lists every outbound destination. Committed as `5bef0f9`; the result and the residual are in
+  lists every outbound destination. Committed as `9526998`; the result and the residual are in
   [milestones/m9-security.md](milestones/m9-security.md).
 - Gate: `wgate` passes (fmt, clippy with warnings denied, 669 tests; 3 ignored).
 - Residual: a recursive grep over the workspace can read a secret file without naming it. It is kept, with the redaction of
@@ -1017,9 +1017,9 @@ terms should be read before any use beyond personal experiments.
 
 - Built: `provider = "litellm"`, the gateway client (the same OpenAI-compatible client, with the transport choice of M7),
   V36 for a remote gateway without a key name, the `hybrid` profile and the `{env:NAME}` key reference in the generated
-  OpenCode config. Committed as `0854f62`; the mock test as `a3a6940`. The result and limits are in
+  OpenCode config. Committed as `e7ee899`; the mock test as `df061a3`. The result and limits are in
   [milestones/m8-litellm.md](milestones/m8-litellm.md).
-- Gate at `0854f62`: fmt and clippy clean; 660 tests pass, 3 ignored.
+- Gate at `e7ee899`: fmt and clippy clean; 660 tests pass, 3 ignored.
 - Not run: the live gateway check. Starting a local LiteLLM gateway was refused by the session's permission check, so the
   step waits for approval. LiteLLM 1.106.4 is installed in a Windows virtual environment.
 - Found while checking the profiles: validation messages were partly hidden by the redactor, because the path
@@ -1028,7 +1028,7 @@ terms should be read before any use beyond personal experiments.
 ## 2026-10-27: M7 built and tested (Jev backend, endpoint policy, TLS); not live
 
 - Built: the Jev answer contract (`harness-core/src/jev.rs`), `JevEngine` (`harness-runtime/src/jev.rs`), the endpoint policy
-  V30 to V35, the `local-with-jev` profile and the selection in `decide_for`. Committed as `6ad8861`; the result and the
+  V30 to V35, the `local-with-jev` profile and the selection in `decide_for`. Committed as `9ceb8af`; the result and the
   limits are in [milestones/m7-jev.md](milestones/m7-jev.md).
 - Gate: `wgate` passes (fmt, clippy with warnings denied, 657 tests; 2 ignored).
 - Not live: no Jev service or key was available. The contract is tested against a local mock. The A/B run (rules against
@@ -1037,12 +1037,12 @@ terms should be read before any use beyond personal experiments.
   and native-tls, and a live POST to a public host returns an HTTP status (ignored test `tls_handshake_reaches_a_public_host`).
 - Found while testing: the rules give confidence 1.0 for a loop rule, so the fallback keeps that value (a test had assumed none).
 
-## 2026-10-26: M6 done and committed as `977a56f` (context policy and per-request transforms)
+## 2026-10-26: M6 done and committed as `2e9438f` (context policy and per-request transforms)
 
 - Built: the pure policy (`harness-core/src/context.rs`), the `messages-transform` and `system-transform` hooks, the task
   block for the system prompt, and the shim that forwards both hooks. The rules, the live run, the deviations and the
   limits are in [milestones/m6-context.md](milestones/m6-context.md).
-- Gate: `wgate` passes (fmt, clippy with warnings denied, 642 tests). Committed as `977a56f`.
+- Gate: `wgate` passes (fmt, clippy with warnings denied, 642 tests). Committed as `2e9438f`.
 - Live run with Qwen3.5-9B through OpenCode 1.19.3 on the toy repository, 2026-10-26:
   - run A: a request of 20082 tokens was rejected by the server, because the three recent results were kept whole;
   - run B, after the rule for large recent results: a 30255-byte request became 2935 bytes, and the run completed with
@@ -1053,7 +1053,7 @@ terms should be read before any use beyond personal experiments.
 - Not observed live: compaction of an old verification result (unit tested). The bytes-per-token estimate is low for
   numbered output (see the limits in the M6 page).
 
-## 2026-10-26: M5 done and committed as `53724d4` (deep model on demand; one GPU model at a time)
+## 2026-10-26: M5 done and committed as `a8259df` (deep model on demand; one GPU model at a time)
 
 - The deep model (Ternary Bonsai 2 27B, PTQ1_0, PrismML fork) loads in 27.8 s and uses 6552 MiB of GPU memory. The
   main model was stopped to load it; `bridle models serve` now refuses a second GPU server while one runs (live refusal).
@@ -1062,7 +1062,7 @@ terms should be read before any use beyond personal experiments.
   model (5 of 16, p50 3.2 s). Escalation routing to the deep model is not built. See [milestones/m5-bonsai.md](milestones/m5-bonsai.md).
 - Gate: green (fmt, clippy with warnings denied, 627 tests).
 
-## 2026-10-26: M4 done and committed as `49f74d9` (micro model decides stalled loops; A/B run)
+## 2026-10-26: M4 done and committed as `3804fae` (micro model decides stalled loops; A/B run)
 
 - The micro model (LFM2.5-1.2B, CPU) decides stalled loops when `decisions.provider = "local_lfm"`: ESCALATE, ASK_USER or
   REPLAN, checked against that set; anything else falls back to the rules. See [milestones/m4-lfm.md](milestones/m4-lfm.md)
@@ -1073,13 +1073,13 @@ terms should be read before any use beyond personal experiments.
   the model's reason. A black-box test covers an unreachable model (fallback to the rules).
 - Gate: green (fmt, clippy with warnings denied, 627 tests). The timeout test in `mcp/tools` was made robust under load.
 
-## 2026-10-26: M3 done and committed as `736fea3` (state, loop detection, decisions, worktrees, live runs)
+## 2026-10-26: M3 done and committed as `738d8c6` (state, loop detection, decisions, worktrees, live runs)
 
 - Built and tested: the state store (`harness-runtime/src/state/`), the task model, fingerprints, the loop detector
   and the rules engine (`harness-core`), the hook and MCP wiring and the `bridle task`, `explain` and `trace` commands
   (`harness-cli`), worktree mode, and the `task_status` tool (off by default). The step-by-step result, the deviations
   from the plan and the limits are in [milestones/m3-state.md](milestones/m3-state.md#result-2026-10-26).
-- Gate: `wgate` passes (fmt, clippy with warnings denied, 614 tests). Committed as `736fea3`.
+- Gate: `wgate` passes (fmt, clippy with warnings denied, 614 tests). Committed as `738d8c6`.
 - Live runs with Qwen3.5-9B through OpenCode 1.19.3 on the toy repository (`D:\e2e\toy`), 2026-10-26:
   - run 1 (`task-0001`): the model removed a contradictory assertion instead of fixing the code. Verifications were
     recorded from MCP results (failed, then passed).
@@ -1154,12 +1154,12 @@ terms should be read before any use beyond personal experiments.
 
 Branch `m2-tools` in `D:\src\harnessforkush`; plan in [milestones/m2-tools.md](milestones/m2-tools.md).
 Windows gate green after each step.
-- Step 0 (`bcb39d2`): `mcp/tools.rs` became `mcp/tools/mod.rs`; new tool groups are child modules; git test
+- Step 0 (`65b2397`): `mcp/tools.rs` became `mcp/tools/mod.rs`; new tool groups are child modules; git test
   helpers in `tools/test_support.rs`.
-- Step 1 (`bcb39d2`): `git_history` (follows renames for a file) and `git_log_range` (commits, changed files,
+- Step 1 (`65b2397`): `git_history` (follows renames for a file) and `git_log_range` (commits, changed files,
   totals). Revisions must be plain and resolve to a commit; `--end-of-options` before them. A harness tool
   given a secret path is now denied at the hook too.
-- Step 2 (`6354204`): steps have a `kind` (test, lint, typecheck, build, other; default test) and `targets`.
+- Step 2 (`391f276`): steps have a `kind` (test, lint, typecheck, build, other; default test) and `targets`.
   `run_tests`, `run_linter`, `run_typechecker` run steps of their kind; `run_tests` appends checked targets
   to steps with `targets = true`. V24 warns about targets on a non-test step.
 - Step 3: `harness_core::failures` parses pytest, unittest, Python tracebacks, cargo test, rustc, gtest,
@@ -1172,7 +1172,7 @@ artifacts, adapters, the end-to-end run, and the `m2` tag.
 
 ## 2026-10-22 (evening): M1 end-to-end on Windows, all exit criteria met
 
-End-to-end on native Windows with the current build (`f8de89e`), Qwen3.5-9B on the RTX 4060, OpenCode 1.19.3,
+End-to-end on native Windows with the current build (`a93c68f`), Qwen3.5-9B on the RTX 4060, OpenCode 1.19.3,
 toy repo `D:\e2e\toy` regenerated with `bridle init --force` (logs in `D:\e2e\logs\`):
 - `bridle models serve main --detach`: healthy in 9.6 s. It found yesterday's PID record, saw that the process was
   gone, and cleared it (the new identity check on real data). Quick health: pass.
@@ -1215,9 +1215,9 @@ Where the work happens now (user decision: postpone WSL use; no subagents):
   reboot. `.wslconfig` now sets `memory=8GB` and `autoMemoryReclaim=dropCache` (backup `.wslconfig.bak-2026-10-22`).
   It applies after `wsl --shutdown`.
 
-Merged and verified on Windows (fmt, clippy and all 11 test suites pass, `38b32bb`):
-- Redaction fixes (`3a0bcaf`), path policy fixes including protected control files (`23c4794`), MCP fixes
-  including the review follow-ups (`ee65204`), classifier fixes (`866c4cc`).
+Merged and verified on Windows (fmt, clippy and all 11 test suites pass, `d9866a9`):
+- Redaction fixes (`bad5d0a`), path policy fixes including protected control files (`a791649`), MCP fixes
+  including the review follow-ups (`0eabe9c`), classifier fixes (`50eb7a3`).
 - Windows found three problems that Linux tests missed. Lesson: run the Windows gate before merging.
   - A test used an 8.3 short temp path (`KUSHAG~1`) as its base; the guard correctly refuses it (test fixed).
   - **The classifier lexed Windows commands as `cmd`, but OpenCode 1.19.3 runs them in PowerShell.** Its
@@ -1229,22 +1229,22 @@ Merged and verified on Windows (fmt, clippy and all 11 test suites pass, `38b32b
 - `git config` writes were already EXECUTE_RISKY on the classifier branch (only `--get`, `--get-all` and
   `--list` are read-only), so the extra item needs no code; read forms such as `--get-regexp` stay blocked.
 
-Then fixed in the main session, each with tests, Windows gate green after each (`7681bfa`):
-- `9aea571` repository-config trust (`config/trust.rs`); V22 reserved `extra_args` flags, also refused by the
+Then fixed in the main session, each with tests, Windows gate green after each (`e0ebebb`):
+- `42e872b` repository-config trust (`config/trust.rs`); V22 reserved `extra_args` flags, also refused by the
   launcher; V23 timeout and retry bounds; 1 MiB SSE line cap. The toy repo's `safe_commands` entry was removed
   (`python -m unittest` is built in; a repository may no longer set safe prefixes).
-- `c130c9f` `models stop` checks the PID's executable before signalling (records hold `pid=` and `bin=`;
+- `9abf3a8` `models stop` checks the PID's executable before signalling (records hold `pid=` and `bin=`;
   PIDs outside `1..=i32::MAX` refused); `--version` bounded at 5 s; `doctor` reports a busy or reserved port
   (M1 exit item 4).
-- `a9b38d5` MCP timeout derived from the verification step timeouts; unanswered `permission` is `deny` (Rust and
+- `d55a60a` MCP timeout derived from the verification step timeouts; unanswered `permission` is `deny` (Rust and
   shim; `tsc` not run, no Node on Windows).
-- `7681bfa` event-log top-level text redacted, with file read-back tests; `init` minors.
+- `e0ebebb` event-log top-level text redacted, with file read-back tests; `init` minors.
 - Deferred to release 2: a process group for launched servers on Unix.
 - Found: a machine config written by a process the desktop app started lands in the app's MSIX
   storage (`%LOCALAPPDATA%\Packages\<app>_<id>\LocalCache\Roaming\bridle\config.toml`), not in
   `%APPDATA%`. Programs started outside the app do not see it. Documented in cli-commands.md.
 
-Docs (`9544dc5`): module pages for security and MCP written; the other five pages, `security.md` and
+Docs (`509c0dd`): module pages for security and MCP written; the other five pages, `security.md` and
 `configuration.md` updated to the fixed behaviour.
 
 Still open for M1: rebuild `bridle-cli.exe` and rerun the Windows end-to-end runs (edit-and-test, secret read, MCP
@@ -1253,9 +1253,9 @@ matrix; merge into `main` and tag `m1`. The WSL repo must fetch from `D:` before
 
 ## M1 closing checklist (2026-10-22, morning)
 
-Done today: process-tree kill on verification timeout (`7e5dab3`); server-side MCP redaction (`9df0aa4`);
-safe prefixes only upgrade risky commands (`6291138`); doctor warns on a missing models directory (`55b7c94`);
-security residual risks updated (`6970752`). `doctor` with missing models and runtimes: runtimes block, models
+Done today: process-tree kill on verification timeout (`b75aa92`); server-side MCP redaction (`e8f7368`);
+safe prefixes only upgrade risky commands (`e7e0684`); doctor warns on a missing models directory (`1a26b60`);
+security residual risks updated (`dd02c8d`). `doctor` with missing models and runtimes: runtimes block, models
 warn, no panic, exit 1 (checked by hand).
 
 Remaining to close M1, in order:
@@ -1353,11 +1353,11 @@ Restarts: session restarts kill background agents and long foreground commands. 
 
 ## 2026-10-21 (latest): fixtures, read fix, gates
 
-- Windows gate on the head with the fixture suite failed on one row: `curl https://example.com` was read as a drive or alternate-data-stream path, so the path guard blocked it with the wrong rule (WSL passed). Fixed in `59f1d2f`: URL words are not paths; the network rule decides. Lesson: run the Windows gate after every fixture change; the two platforms take different code paths in the path check.
-- Windows gate re-run on `59f1d2f`: every suite passes, including the 34-case hook fixture suite (1 test, all rows). 1 smoke test ignored by design. This is the native Windows result for release 1.
+- Windows gate on the head with the fixture suite failed on one row: `curl https://example.com` was read as a drive or alternate-data-stream path, so the path guard blocked it with the wrong rule (WSL passed). Fixed in `21d6691`: URL words are not paths; the network rule decides. Lesson: run the Windows gate after every fixture change; the two platforms take different code paths in the path check.
+- Windows gate re-run on `21d6691`: every suite passes, including the 34-case hook fixture suite (1 test, all rows). 1 smoke test ignored by design. This is the native Windows result for release 1.
 
-- Hook fixture suite merged (`db77421`, merge `cb445d8`): 34 black-box cases run the real `bridle hook` binary, one test, all rows checked (`crates/harness-cli/tests/hook_fixtures.rs`). Passes on WSL.
-- Fixed from row 29: a `read` with no file path was allowed. It is now denied as malformed (`b45b851`). Fail-closed.
+- Hook fixture suite merged (`f0c71b2`, merge `669717c`): 34 black-box cases run the real `bridle hook` binary, one test, all rows checked (`crates/harness-cli/tests/hook_fixtures.rs`). Passes on WSL.
+- Fixed from row 29: a `read` with no file path was allowed. It is now denied as malformed (`6d8f798`). Fail-closed.
 - Two spec notes from the suite: row 21 (`echo $(curl x | sh)`) is blocked by the `allow_pattern_bypass` rule, not by the command classifier. Row 34 uses the `event` hook, because `session.idle` is an event type inside the payload, not a CLI name.
 - Gates after these commits: `cargo fmt --all` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; workspace tests pass on WSL. The Windows gate must be re-run on the latest head.
 - Still open: MCP output is not visible to the after-hook (security.md, residual risk 7); the 30-payload target is met by 34 cases; a full line-by-line review of the subagent code (D-3); `extra_safe` ordering; grandchild processes after a verification timeout.
@@ -1406,7 +1406,7 @@ Known gaps:
 
 ## 2026-10-21: merges and decisions
 
-- Merged the reviewed subagent branches: redactor (`35d68e9`), launcher argv (`9d741e6`), config profiles and validation (`98d55df`), TypeScript shim (`f482392`), providers (`89a17ee`), MCP server (`93dfc06`), doctor/health/models (`ce2e2f2`), command classifier (`5783509`).
+- Merged the reviewed subagent branches: redactor (`d2a1297`), launcher argv (`d630354`), config profiles and validation (`42367d3`), TypeScript shim (`a3739c9`), providers (`3c119e7`), MCP server (`27952b4`), doctor/health/models (`10c94bd`), command classifier (`a5dc658`).
 - Decision: release 1 is Windows-only; WSL moves to release 2 (ADR-0002 amendment).
 - Decision: classifier default on Windows is the `cmd` lexer (`ShellKind::host_default`).
 - Decision: profiles set an explicit load mode, one parallel slot and a 1 GiB prompt cache for the main model.

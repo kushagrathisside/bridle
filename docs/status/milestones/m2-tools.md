@@ -4,7 +4,7 @@ M2 gives the harness a set of deterministic MCP tools, so the `main` model can l
 their failures without guessing. Every tool passes the path guard and returns bounded, redacted, structured
 output. This page holds the plan, the tool list, the steps in the order they were built, and the end-to-end result.
 
-> **Status:** Done (branch `m2-tools`, 2026-10-22; merged as `8d74d07`, tag `m2`). Steps 0 to 9 complete, verified
+> **Status:** Done (branch `m2-tools`, 2026-10-22; merged as `eaa90df`, tag `m2`). Steps 0 to 9 complete, verified
 > end to end on Windows with Qwen3.5-9B through OpenCode 1.19.3. Release 1 targets Windows, so every step was built
 > and tested on Windows (`D:\cargo-target\wgate.bat`).
 
@@ -66,16 +66,16 @@ Each step is a reviewable commit, with the Windows gate green after it. Details 
 
 | Step | Work | Commit |
 |---|---|---|
-| 0 | Split `mcp/tools.rs` into modules; shared path and process helpers. | `bcb39d2` (with step 1) |
-| 1 | `git_history`, `git_log_range`. | `bcb39d2` |
-| 2 | Verification kinds; `run_tests`, `run_linter`, `run_typechecker`. | `6354204` |
-| 3 | `parse_test_failure`; failed steps return parsed failures. | `c18021e` |
-| 4 | `run_command`, `inspect_config`. | `7803916` |
-| 5 | Tree-sitter ([ADR-0003](../../decisions/0003-tree-sitter-for-code-intelligence.md)): `file_summary`, `symbol_search`, `find_references`, `repo_map`. | `e4cbbdf` |
-| 6 | `dependency_search`. | `7a9dadc` |
-| 7 | `inspect_artifact`, `summarize_experiment`, `compare_experiments`. | `8377451` |
-| 8 | Adapters; per-tool enable and disable (each tool's schema costs prompt tokens on a 16K-context model). | `0730ff7` |
-| 9 | Hook and policy updates, docs, traceability, end-to-end with Qwen, tag `m2`. | `bd905f6`, merge `8d74d07` |
+| 0 | Split `mcp/tools.rs` into modules; shared path and process helpers. | `65b2397` (with step 1) |
+| 1 | `git_history`, `git_log_range`. | `65b2397` |
+| 2 | Verification kinds; `run_tests`, `run_linter`, `run_typechecker`. | `391f276` |
+| 3 | `parse_test_failure`; failed steps return parsed failures. | `90c6a84` |
+| 4 | `run_command`, `inspect_config`. | `c0dac25` |
+| 5 | Tree-sitter ([ADR-0003](../../decisions/0003-tree-sitter-for-code-intelligence.md)): `file_summary`, `symbol_search`, `find_references`, `repo_map`. | `f0887da` |
+| 6 | `dependency_search`. | `2b67a0b` |
+| 7 | `inspect_artifact`, `summarize_experiment`, `compare_experiments`. | `b1cbda4` |
+| 8 | Adapters; per-tool enable and disable (each tool's schema costs prompt tokens on a 16K-context model). | `3b88dfa` |
+| 9 | Hook and policy updates, docs, traceability, end-to-end with Qwen, tag `m2`. | `dbd741a`, merge `eaa90df` |
 
 ## Result (2026-10-22)
 

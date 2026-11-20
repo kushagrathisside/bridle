@@ -3,7 +3,7 @@
 M9 checks the policy against hostile tool calls, fixes what the check finds, and lists every place a request can leave the
 machine. The rules themselves are in [security.md](../../concepts/security.md).
 
-> **Status:** Built and tested (2026-10-27), committed as `5bef0f9`, with this page committed after it. Gate green: 669 tests
+> **Status:** Built and tested (2026-10-27), committed as `9526998`, with this page committed after it. Gate green: 669 tests
 > pass, 3 are ignored. One residual limit is known and kept (below).
 
 ## What was done

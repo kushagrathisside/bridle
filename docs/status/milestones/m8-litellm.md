@@ -30,8 +30,8 @@ decision providers through it, and the agent's endpoint policy covers the gatewa
 - Runtime (mock server, always run): a LiteLLM slot sends its route name and the gateway key from its variable.
 - Runtime (ignored, live): `a_gateway_slot_completes_a_request`, which needs a running gateway on `BRIDLE_GATEWAY_URL` (default
   `http://127.0.0.1:4000/v1`) and its key in `BRIDLE_GATEWAY_KEY`.
-- Gate at the M8 code commit (`0854f62`): fmt and clippy clean; 660 tests pass, 3 ignored. The mock test was added after
-  that, in `a3a6940`, and passes on its own.
+- Gate at the M8 code commit (`e7ee899`): fmt and clippy clean; 660 tests pass, 3 ignored. The mock test was added after
+  that, in `df061a3`, and passes on its own.
 
 ## Live check
 
