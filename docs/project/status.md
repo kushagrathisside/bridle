@@ -5,8 +5,8 @@ changes. The detailed record, with dates and evidence, is [progress.md](../statu
 
 ## Release
 
-Bridle is version `0.1.0`, a candidate for a first release. A release zip can be built and checked (see [releasing](releasing.md)); none has
-been published yet. This release runs on **native Windows only**. It has been checked on **one machine**: Windows 11, an NVIDIA RTX 4060
+Bridle is version `0.1.0`, published as the Git tag `v0.1.0` and a GitHub release with a Windows zip and its checksum (built and checked as
+described in [releasing](releasing.md)). This release runs on **native Windows only**. It has been checked on **one machine**: Windows 11, an NVIDIA RTX 4060
 Laptop GPU with 8 GB of VRAM, and 16 GB of RAM. Other systems are not tested. The program is not code-signed.
 
 ## What works

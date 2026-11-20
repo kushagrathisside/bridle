@@ -234,7 +234,7 @@ then `astro build`. The script **fails the build on a broken link**, which is th
 with `npm run preview` and look at the home page, one guide, one reference page and the search before you publish.
 
 Publishing: the repository's workflow `.github/workflows/site.yml` builds the site and deploys it to GitHub Pages on every push to `main`
-that changes `site/`, `docs/` or the root Markdown files. Check the run in the Actions tab. (The workflow was written with this release process and has not yet run on GitHub; the first run is the test of it.) Pages must be set to "GitHub Actions" as its
+that changes `site/`, `docs/` or the root Markdown files. Check the run in the Actions tab. (The build job has run on GitHub and passes; the deploy job fails with a 404 until Pages is switched on.) Pages must be set to "GitHub Actions" as its
 source (Settings, Pages). By hand, upload `site\dist` as the Pages artifact. The address is set in `site/site.config.mjs`
 (`SITE_URL` and `BASE`): change both if the site moves to a custom domain.
 

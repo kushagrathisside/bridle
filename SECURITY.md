@@ -16,4 +16,4 @@ they are not treated as new findings.
 
 ## Supported versions
 
-Only the current `main` branch is maintained until a first release is published.
+Only the latest release (`0.1.x`) and the current `main` branch are maintained.

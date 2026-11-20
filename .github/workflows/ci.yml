@@ -12,10 +12,16 @@ permissions:
 
 jobs:
   rust:
+    # The desktop window (bridle-desktop) is Windows-only in this release; on Linux it would need the GTK and WebKit
+    # development packages, which the runner does not have. Everything else is checked on both systems.
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+            scope: --workspace
+          - os: ubuntu-latest
+            scope: --workspace --exclude bridle-desktop
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -25,9 +31,9 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: cargo clippy ${{ matrix.scope }} --all-targets --locked -- -D warnings
       - name: Tests
-        run: cargo test --workspace --locked
+        run: cargo test ${{ matrix.scope }} --locked
 
   shim:
     runs-on: ubuntu-latest

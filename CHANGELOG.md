@@ -1,9 +1,11 @@
 # Changelog
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-The project has not been published, so the version below is for the repository only.
+Each version is published as a Git tag and a GitHub release with a Windows zip and its checksum.
 
-## [Unreleased] - 0.1.0 candidate
+## [Unreleased]
+
+## [0.1.0] - 2026-11-20
 
 ### Added
 
