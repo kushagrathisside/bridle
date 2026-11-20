@@ -84,7 +84,11 @@ exit /b %ERRORLEVEL%
 
 :bundle
 call "%~f0" release || exit /b 1
-py -3 scripts\make_bundle.py --exe "%CARGO_TARGET_DIR%\release\bridle.exe" %2 %3
+if "%~2"=="" (
+  py -3 scripts\make_bundle.py --exe "%CARGO_TARGET_DIR%\release\bridle.exe"
+) else (
+  py -3 scripts\make_bundle.py --exe "%CARGO_TARGET_DIR%\release\bridle.exe" --out "%~2"
+)
 exit /b %ERRORLEVEL%
 
 :usage
