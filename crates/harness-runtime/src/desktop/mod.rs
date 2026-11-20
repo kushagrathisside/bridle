@@ -8,6 +8,7 @@
 //! program, judging whether it may be started, and stopping it afterwards are the tool's job (`mcp::tools::window`).
 
 use std::path::PathBuf;
+#[cfg(windows)]
 use std::process::Command;
 use std::time::Duration;
 
