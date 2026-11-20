@@ -75,11 +75,26 @@ for (const file of decisionEntries) {
 
 const ROUTE_OF = new Map(PAGES.map((page) => [page.source, page.route]));
 const EXTERNAL = /^[a-z][a-z0-9+.-]*:/i;
-const FENCE = /^\s*(```|~~~)/;
+const FENCE = /^\s*(`{3,}|~{3,})(.*)$/;
 const HEADING = /^#\s+(.+?)\s*#*\s*$/;
 const DEFINITION = /^(\s{0,3}\[[^\]]+\]:\s*)(\S+)(.*)$/;
 const LINK = /(!?)\[((?:[^\[\]]|\[[^\[\]]*\])*)\]\(([^)\s]+)((?:\s+"[^"]*")?)\)/g;
 const stats = { pages: 0, toPages: 0, toGitHub: 0, broken: 0 };
+
+// Follows Markdown code fences. A fence opens with three or more backticks or tildes and closes with the same character, at
+// least as many of them and nothing else; anything else inside it (a row of ~~~~ under a traceback, say) is text. Returns the
+// new state, or undefined when the line is not a fence line and the state is unchanged.
+function nextFence(line, fence) {
+  const match = line.match(FENCE);
+  if (!match) return undefined;
+  const marker = match[1];
+  if (fence === null) {
+    if (marker[0] === '`' && match[2].includes('`')) return undefined;
+    return { char: marker[0], length: marker.length };
+  }
+  if (marker[0] === fence.char && marker.length >= fence.length && match[2].trim() === '') return null;
+  return undefined;
+}
 
 function routeHref(route) {
   return route === '' ? `${BASE}/` : `${BASE}/${route}/`;
@@ -125,29 +140,29 @@ function retarget(url, fromDir, page) {
   return `${REPO}/${kind}/main/${rel ?? decoded}${hash}`;
 }
 
+// One pass over a line: a code span is kept as written, and a link is retargeted. A link is found before the code spans inside
+// its own text, so [`name`](path) is rewritten, while a link written inside a code span is left alone.
+const INLINE = new RegExp(`(\`[^\`]*\`)|${LINK.source}`, 'g');
+
 function rewriteInline(line, fromDir, page) {
-  return line
-    .split(/(`[^`]*`)/)
-    .map((part, index) =>
-      index % 2 === 1
-        ? part
-        : part.replace(LINK, (match, bang, text, url, title) => `${bang}[${text}](${retarget(url, fromDir, page)}${title})`),
-    )
-    .join('');
+  return line.replace(INLINE, (match, code, bang, text, url, title) =>
+    code !== undefined ? code : `${bang}[${text}](${retarget(url, fromDir, page)}${title})`,
+  );
 }
 
 // Splits a page into its first top-level heading (the title) and the rest, rewriting links on the way.
 function transform(source, fromDir, page) {
-  let inFence = false;
+  let fence = null;
   let title;
   const body = [];
   for (const line of source.split('\n')) {
-    if (FENCE.test(line)) {
-      inFence = !inFence;
+    const next = nextFence(line, fence);
+    if (next !== undefined) {
+      fence = next;
       body.push(line);
       continue;
     }
-    if (inFence) {
+    if (fence !== null) {
       body.push(line);
       continue;
     }
@@ -170,14 +185,15 @@ function transform(source, fromDir, page) {
 
 // The first paragraph of a page as plain text, shortened for a description.
 function summary(body) {
-  let inFence = false;
+  let fence = null;
   for (const raw of body.split('\n')) {
     const line = raw.trim();
-    if (FENCE.test(raw)) {
-      inFence = !inFence;
+    const next = nextFence(raw, fence);
+    if (next !== undefined) {
+      fence = next;
       continue;
     }
-    if (inFence || !line || line.startsWith('#') || line.startsWith('|') || line.startsWith('>') || line.startsWith('-')) continue;
+    if (fence !== null || !line || line.startsWith('#') || line.startsWith('|') || line.startsWith('>') || line.startsWith('-')) continue;
     const text = line.replace(/`([^`]*)`/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\*\*/g, '').trim();
     return text.length > 155 ? `${text.slice(0, 152).trimEnd()}...` : text;
   }

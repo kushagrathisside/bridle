@@ -1,7 +1,7 @@
 # ADR-0002: Runtime OS support, repository location, git client, and a deviation from the original design
 
 - **Status:** Accepted on 2026-10-21, with the decisions answered by the project lead. Amended on 2026-10-21: release 1
-  is Windows-only (see [Amendment](#amendment-2026-10-21-release-1-is-windows-only)). Amended on 2026-10-31 by
+  is Windows-only (see [Amendment](#amendment-2026-10-21-this-release-is-windows-only)). Amended on 2026-10-31 by
   [ADR-0014](0014-linux-native-first-then-windows.md): the first working release is native Ubuntu, and the Windows release
   follows. The runtime decision in this record stands.
 - **Date:** 2026-10-21

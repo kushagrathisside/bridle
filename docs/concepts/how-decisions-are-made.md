@@ -14,7 +14,7 @@ page explains the steps, so you can predict what Bridle will do and read why it 
 
 A call that asks for permission is never allowed in an unattended run. Bridle treats "ask" as a denial, because a run
 with no one to answer would otherwise approve it. This is the main difference from running the agent on its own. See
-[introduction](../overview/introduction.md#compared-with-the-alternatives).
+[introduction](../overview/introduction.md#the-problem-it-solves).
 
 ## What Bridle looks at
 

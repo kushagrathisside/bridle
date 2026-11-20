@@ -21,7 +21,8 @@ Bridle is verified on native Windows only. The steps below were run on Windows 1
 
 ## Install from the release zip
 
-1. Unpack `bridle-<version>-windows-x64.zip` anywhere.
+1. Download `bridle-<version>-windows-x64.zip` from the [latest release](https://github.com/kushagrathisside/bridle/releases/latest) and unpack it
+   anywhere. The release page also has the zip's own checksum in a `.sha256` file.
 2. Check the download and compare with `SHA256SUMS.txt`:
 
    ```bat

@@ -113,4 +113,4 @@ loop decisions, with their reasons, are shown by `bridle explain` once the task 
 - The model's changes differ from run to run. This page records the test output, not a model run. The model used on
   the tested machine is listed in [models](../guide/models.md).
 - If the agent blocks a command you expected it to run, read the message. It names the rule. Safe commands are listed
-  in [the configuration reference](../guide/configuration.md#run-your-tests).
+  in [the run-your-tests guide](../guide/run-verification.md#built-in-safe-commands).
