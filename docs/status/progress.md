@@ -4,7 +4,7 @@ This page is the running record of what has been verified in Bridle, with commit
 dated and ordered newest first. Every "verified" line names the evidence. It is the source for milestone status;
 other pages must agree with it.
 
-> **Status:** M2 (deterministic tools) is done and tagged `m2` on 2026-10-22; M1 is tagged `m1`. On 2026-10-23 the
+> **Status:** version 0.1.0 was published on 2026-11-20 (tag `v0.1.0`, a GitHub release with the Windows zip). M2 (deterministic tools) is done and tagged `m2` on 2026-10-22; M1 is tagged `m1`. On 2026-10-23 the
 > history was rewritten and every hash in this log was updated. M0 to M6 are done and committed; M7 (Jev) and M8 (LiteLLM) are built and tested, not live; M9 is built and tested. Release 1 is native Windows,
 > verified on one machine.
 
@@ -24,9 +24,33 @@ other pages must agree with it.
 | M8 | LiteLLM gateway as a model provider, behind the policy | Built, not live (`e7ee899`, `df061a3`) | [2026-10-27: M8 built](#2026-10-27-m8-built-and-tested-with-a-mock-the-live-gateway-check-is-not-run) |
 | M9 | Security threat-model tests and egress audit | Built (`9526998`) | [2026-10-27: M9 built](#2026-10-27-m9-built-security-review-fixes-adversarial-suite-egress-audit) |
 | M10 | Evaluation: task corpus, two conditions, runner and report | Built; the start stall is fixed; one full run recorded (minimal 6 of 6, harness 4 of 6); repeat runs not done | [milestones/m10-evaluation.md](milestones/m10-evaluation.md) |
-| M11 | Open-source release: licence, notices, policies, CI | Prepared; CI not run; publication not done | [milestones/m11-release.md](milestones/m11-release.md) |
+| M11 | Open-source release: licence, notices, policies, CI | Published as `v0.1.0` on 2026-11-20; CI green on Windows and Linux | [2026-11-20: release 0.1.0](#2026-11-20-release-010-tag-v010) |
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
+
+## 2026-11-20: release 0.1.0 (tag `v0.1.0`)
+
+Branch `main`, tagged at `1a30be7`. Windows only. The Rust sources are those of the 2026-11-05 entry below, plus two changes that only matter on Linux.
+
+- **Release.** Version 0.1.0 is the tag `v0.1.0` and a GitHub release with `bridle-0.1.0-windows-x64.zip` (10,608,280 bytes) and its `.sha256` file. SHA-256 of the zip:
+  `d98267bbfbff02a57e3c1cd0c35768949c17c896c982a65c41e95b762bf0933d`; GitHub's stored digest for the uploaded file is the same. Built with
+  `scripts\dev.cmd bundle D:\release-out`; a copy is kept in `D:\release-out`.
+- **Gate:** fmt, clippy `-D warnings`, **1,185 tests passed, 0 failed, 5 ignored**, on the tagged commit. CI on the tagged commit is green on all four jobs:
+  Windows, Linux (without the Windows-only desktop crate), the shim type check and the repository checks.
+- **Bundle tested as a new user.** Unpacked into an empty folder; `bridle.exe` matches `SHA256SUMS.txt`; the text files hold no personal paths;
+  `install.cmd` copied it to `%LOCALAPPDATA%\Bridle\bin` and added that folder to the user `PATH`; `bridle --version` prints `bridle 0.1.0`; the installed file is
+  byte-identical to the release build. `bridle doctor` in an empty folder reports what it should (no model slots configured).
+- **Found and fixed on the way.** `dev.cmd bundle FOLDER` passed the folder without `--out`, so the form in the release guide failed. Ten checklist rows pointed at
+  `main.rs` for commands that now live in `cli.rs`; `scripts\check_checklist.py` passes. The Linux CI job had been red since the desktop crate joined the workspace
+  (no GTK packages on the runner); it now leaves that crate out, which exposed an import used only on Windows and a lease test that assumes a case-insensitive file
+  system; both are fixed and the Windows build is unchanged.
+- **Security.** The eight npm advisories (astro, toml, zod, effect) are fixed in the lock files, with `overrides` in the OpenCode shim; the workflow token is read-only.
+  One alert stays open: `glib` 0.18 through Tauri's GTK crates, which are compiled on Linux only.
+- **History.** On 2026-11-20 the history was rewritten once more (development-tool wording removed from messages and files, every hash changed); the hashes quoted in
+  this log and the milestone pages were updated in the same stretch.
+- **Not verified for this release.** The window's end-to-end suite and the model checks of the release guide (step 4) were not re-run on the release build, because another
+  session's model server was holding 5.5 GB of the GPU; the sources they last ran on are unchanged. The documentation site's deploy job fails with a 404 until GitHub Pages
+  is switched on (its build job passes). The executable is not code-signed and embeds the build machine's paths.
 
 ## 2026-11-05 (later): the diff in the chat, edit_file that copes, lanes in the window
 
