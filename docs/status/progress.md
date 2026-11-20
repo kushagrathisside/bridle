@@ -49,8 +49,12 @@ Branch `main`, tagged at `1a30be7`. Windows only. The Rust sources are those of 
 - **History.** On 2026-11-20 the history was rewritten once more (development-tool wording removed from messages and files, every hash changed); the hashes quoted in
   this log and the milestone pages were updated in the same stretch.
 - **Not verified for this release.** The window's end-to-end suite and the model checks of the release guide (step 4) were not re-run on the release build, because another
-  session's model server was holding 5.5 GB of the GPU; the sources they last ran on are unchanged. The documentation site's deploy job fails with a 404 until GitHub Pages
-  is switched on (its build job passes). The executable is not code-signed and embeds the build machine's paths.
+  session's model server was holding 5.5 GB of the GPU; the sources they last ran on are unchanged. The executable is not code-signed and embeds the build machine's paths.
+- **The documentation site** is published at https://kushagrathisside.github.io/bridle/ (GitHub Pages was switched on the same day). Tested on the build and live: 73 pages
+  built; 5,501 internal links, 563 assets and every anchor resolve under `/bridle/`; 107 external links answer; search works in a browser; a phone-width view has no
+  sideways scrolling; all 72 sitemap URLs return 200 and are byte-identical to the local build. Found and fixed: the page generator took a row of `~~~~` under a traceback
+  for a code fence and skipped the links after it, and did not rewrite links whose text is code; three links pointed at headings that had moved. The home page and the install
+  guide now link to the latest release.
 
 ## 2026-11-05 (later): the diff in the chat, edit_file that copes, lanes in the window
 

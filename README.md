@@ -537,7 +537,7 @@ The full index is [docs/README.md](docs/README.md). The main pages:
 | [Web research](docs/guide/web-research.md), [the browser](docs/guide/web-browser.md), [window screenshots](docs/guide/window-screenshots.md), [background commands](docs/guide/background-commands.md) | The optional capabilities, each off by default |
 | [Instruction manual](docs/MANUAL.txt) | The plain-text manual that ships in the release zip: install, every command, troubleshooting |
 | [Releasing](docs/project/releasing.md) | The whole release process, step by step, by hand |
-| [The documentation site](site) | Astro Starlight, built from these files (`cd site && npm ci && npm run build`) |
+| [The documentation site](https://kushagrathisside.github.io/bridle/) | Astro Starlight, built from these files (`cd site && npm ci && npm run build`); its source is in [site](site) |
 | [Troubleshooting](docs/guide/troubleshooting.md) | Problems seen on the tested machine and their fixes |
 | [Architecture](docs/concepts/architecture.md) | Layers, request flow, where state lives |
 | [Security](docs/concepts/security.md) | Policy decisions, command classes, secret handling, residual risks |
