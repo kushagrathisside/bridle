@@ -1347,16 +1347,19 @@ mod tests {
             error.contains("B-2") && error.contains("being written"),
             "{error}"
         );
-        let error = run(
-            &EditFileTool,
-            root,
-            json!({"path": "readme.MD", "old_string": "demo", "new_string": "x"}),
-        )
-        .unwrap_err();
-        assert!(
-            error.contains("B-2"),
-            "a different spelling of the path is the same lease: {error}"
-        );
+        // Only where the file system ignores case (Windows) is another spelling of the path the same file.
+        if cfg!(windows) {
+            let error = run(
+                &EditFileTool,
+                root,
+                json!({"path": "readme.MD", "old_string": "demo", "new_string": "x"}),
+            )
+            .unwrap_err();
+            assert!(
+                error.contains("B-2"),
+                "a different spelling of the path is the same lease: {error}"
+            );
+        }
         run(
             &WriteFileTool,
             root,
