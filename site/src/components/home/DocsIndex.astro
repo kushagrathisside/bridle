@@ -1,0 +1,42 @@
+---
+import Icon from './Icon.astro';
+import { doc, links } from '../../data/site';
+
+// Entry points into the documentation. The home page does not repeat the documentation; it points at it.
+const items = [
+  { title: 'Getting started', text: 'From a download to a first policy decision and a first run.', href: doc('getting-started') },
+  { title: 'Guides', text: 'Install, set up a repository, run your tests, serve models, run a task.', href: doc('guides/install') },
+  { title: 'How decisions are made', text: 'The three answers, the seven classes and what the policy looks at.', href: doc('concepts/how-decisions-are-made') },
+  { title: 'Architecture', text: 'Layers, the path of one tool call, and where state lives.', href: doc('project/architecture') },
+  { title: 'Security model', text: 'What is protected, the rules for each call, and the risks that remain.', href: doc('project/security-model') },
+  { title: 'Command line', text: 'Every command and its options.', href: doc('reference/cli') },
+  { title: 'Configuration', text: 'Every setting, its default, and which file may set it.', href: doc('reference/configuration') },
+  { title: 'Status and limits', text: 'What is stable, what is optional or experimental, and what is not built.', href: doc('project/status') },
+  { title: 'Decisions', text: 'Why Bridle is built this way: every architecture decision record.', href: doc('project/decisions/adr-0001-rust-core-thin-host-adapter') },
+  { title: 'Contributing', text: 'How to build, test and change Bridle, and what a change must pass.', href: doc('project/contributing') },
+  { title: 'Releases', text: 'The Windows zip and its checksum, with the notes for each version.', href: links.releases },
+  { title: 'Source on GitHub', text: 'The repository, issues and the Apache-2.0 licence.', href: links.repo },
+];
+---
+
+<section class="section" id="docs" aria-labelledby="docs-title">
+  <div class="wrap">
+    <div class="head head--wide">
+      <p class="kicker"><b>08</b> Documentation</p>
+      <h2 id="docs-title">Where to go next</h2>
+      <p>The documentation is a site of its own, with search. These are the places most visitors need.</p>
+    </div>
+    <ul class="docs">
+      {
+        items.map((item) => (
+          <li>
+            <a href={item.href} rel={item.href.startsWith('http') ? 'noopener' : undefined}>
+              <strong>{item.title}<Icon name="arrow" size={15} /></strong>
+              <span>{item.text}</span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>

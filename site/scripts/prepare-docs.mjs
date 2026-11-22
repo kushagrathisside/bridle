@@ -2,7 +2,7 @@
 //
 // Sources are the Markdown files in the repository. Nothing in them is changed on disk: for each published page the
 // script writes a copy under src/content/docs/ (git-ignored) with a frontmatter title and description, an edit link,
-// and links rewritten for the site. The home page is site/home/index.mdx and is copied as it is.
+// and links rewritten for the site. The home page is not generated: it is src/pages/index.astro.
 //
 // Links to a published page become that page's route. Links to any other file or folder in the repository become
 // GitHub URLs. A link whose target does not exist is left as written, and the build fails.
@@ -15,7 +15,6 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const SITE = path.resolve(here, '..');
 const ROOT = path.resolve(SITE, '..');
 const OUT = path.join(SITE, 'src', 'content', 'docs');
-const HOME = path.join(SITE, 'home', 'index.mdx');
 const REPO = 'https://github.com/kushagrathisside/bridle';
 
 // Published pages: repository-relative source, site route, and the description for search engines and link previews.
@@ -223,8 +222,6 @@ function main() {
     fs.writeFileSync(target, frontmatter + body);
     stats.pages += 1;
   }
-  fs.mkdirSync(OUT, { recursive: true });
-  fs.copyFileSync(HOME, path.join(OUT, 'index.mdx'));
   console.log(
     `docs: ${stats.pages} pages written; links to pages ${stats.toPages}, to GitHub ${stats.toGitHub}, broken ${stats.broken}`,
   );

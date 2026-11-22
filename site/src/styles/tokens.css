@@ -1,0 +1,114 @@
+/* Design tokens for the Bridle site: the home page and the documentation share them.
+   Colour has one job per hue. The accent marks what you can act on; green, amber and red are only ever verdicts
+   (allow, ask, deny). Text colours meet WCAG AA (4.5:1) on the surfaces they sit on; see scripts/check-contrast.mjs.
+   Fonts are system fonts: the site loads nothing from outside. */
+
+:root {
+  color-scheme: dark;
+
+  --font-sans: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --font-display: 'Segoe UI Variable Display', 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-mono: 'Cascadia Code', 'Cascadia Mono', ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Surfaces, from the page outwards */
+  --bg: #0a0d10;
+  --bg-1: #0f1418;
+  --bg-2: #141b20;
+  --bg-code: #0c1115;
+  --line: #1c262d;
+  --line-2: #2a3741;
+
+  /* Text */
+  --text: #e8edf1;
+  --text-2: #a9b5bf;
+  --text-3: #8795a0;
+
+  /* The one accent: links, focus, selection, the decision stage */
+  --accent: #62c6f2;
+  --accent-ink: #04202d;
+  --accent-soft: #0f2c3b;
+
+  /* Verdicts only */
+  --allow: #4fd3a1;
+  --allow-soft: #0d2a22;
+  --ask: #f0b955;
+  --ask-soft: #2c2310;
+  --deny: #ff8b82;
+  --deny-soft: #321819;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 24px 60px -24px rgb(0 0 0 / 0.75);
+
+  /* Layout */
+  --gutter: clamp(1rem, 4vw, 2.5rem);
+  --wrap: 75rem;
+  --section: clamp(4.5rem, 10vw, 9rem);
+  --nav-h: 3.5rem;
+
+  /* Type scale */
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.875rem;
+  --fs-md: 1rem;
+  --fs-lg: 1.1875rem;
+  --fs-h3: clamp(1.15rem, 1rem + 0.5vw, 1.4rem);
+  --fs-h2: clamp(1.85rem, 1.1rem + 2.6vw, 3.1rem);
+  --fs-h1: clamp(2.5rem, 1rem + 6vw, 5.1rem);
+
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #f7f9fa;
+  --bg-1: #ffffff;
+  --bg-2: #eef2f5;
+  --bg-code: #f1f5f8;
+  --line: #dde4e9;
+  --line-2: #c3cfd7;
+
+  --text: #0e1519;
+  --text-2: #3a4953;
+  --text-3: #55646f;
+
+  --accent: #0a6296;
+  --accent-ink: #ffffff;
+  --accent-soft: #e0eff8;
+
+  --allow: #0b6b4d;
+  --allow-soft: #dcf2ea;
+  --ask: #8a5a00;
+  --ask-soft: #f8ecd2;
+  --deny: #b3261e;
+  --deny-soft: #fbe3e1;
+
+  --shadow: 0 1px 0 rgb(255 255 255 / 0.9) inset, 0 24px 50px -28px rgb(20 40 60 / 0.35);
+}
+
+/* Without JavaScript the theme script has not run: follow the system setting. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+
+    --bg: #f7f9fa;
+    --bg-1: #ffffff;
+    --bg-2: #eef2f5;
+    --bg-code: #f1f5f8;
+    --line: #dde4e9;
+    --line-2: #c3cfd7;
+    --text: #0e1519;
+    --text-2: #3a4953;
+    --text-3: #55646f;
+    --accent: #0a6296;
+    --accent-ink: #ffffff;
+    --accent-soft: #e0eff8;
+    --allow: #0b6b4d;
+    --allow-soft: #dcf2ea;
+    --ask: #8a5a00;
+    --ask-soft: #f8ecd2;
+    --deny: #b3261e;
+    --deny-soft: #fbe3e1;
+  }
+}

@@ -1,0 +1,25 @@
+---
+import Icon from './Icon.astro';
+import { doc, links, version } from '../../data/site';
+---
+
+<section class="section closing" aria-labelledby="closing-title">
+  <div class="wrap">
+    <h2 id="closing-title">Let the model propose.<br /><span>Keep the decision.</span></h2>
+    <p>
+      Bridle is a local-first coding agent for Windows, open source under Apache-2.0. Install it, point it at a project, and read why every call
+      was allowed or refused.
+    </p>
+    <div class="closing__actions">
+      <a class="btn btn--primary" href={links.releases} rel="noopener"><Icon name="download" size={16} /> Download for Windows</a>
+      <a class="btn" href={doc('introduction')}>Read the documentation</a>
+      <a class="btn btn--ghost" href={links.repo} rel="noopener"><Icon name="github" size={16} /> GitHub</a>
+    </div>
+    <ul class="closing__facts">
+      <li>Release {version}</li>
+      <li>Apache-2.0</li>
+      <li>Native Windows 11</li>
+      <li>Local models</li>
+    </ul>
+  </div>
+</section>

@@ -1,0 +1,70 @@
+---
+import { byId, loop, reasonOf, stamp, meta, type HookAnswer } from '../../data/policy';
+import { doc } from '../../data/site';
+
+interface Row {
+  call: string;
+  note: string;
+  answer: HookAnswer;
+  rule: string;
+}
+
+const fifth = loop[4].answer;
+const rows: Row[] = [
+  { call: byId('read-env').shows, note: 'The file tool names a secret file.', answer: byId('read-env').answer, rule: 'secret_file' },
+  { call: byId('cat-env').shows, note: 'The same file, asked for through the shell. Arguments are checked as well as tools.', answer: byId('cat-env').answer, rule: 'secret_file' },
+  { call: byId('curl').shows, note: 'The verdict is ask. Bridle never allows an ask, because nobody is there to approve it.', answer: byId('curl').answer, rule: 'command_risk' },
+  { call: byId('unittest').shows, note: 'A test run is a safe command, so it goes ahead.', answer: byId('unittest').answer, rule: 'command_risk' },
+  { call: 'edit src/calc.py, the fifth time in a row', note: 'Four edits ran. The fifth is refused until the tests have run.', answer: fifth, rule: 'loop_rule' },
+];
+---
+
+<section class="section" id="why" aria-labelledby="why-title">
+  <div class="wrap why">
+    <div class="why__text">
+      <p class="kicker"><b>01</b> Why a policy</p>
+      <h2 id="why-title">A prompt is a request.<br />A policy is a rule.</h2>
+      <p class="why__lead">
+        A model can ignore an instruction, forget it, or be talked out of it by whatever a repository contains. Bridle does not ask the
+        model to behave. It judges the real arguments of every call, in code, outside the model.
+      </p>
+      <ul class="why__points">
+        <li><b>Arguments, not intent.</b> <code>cat .env</code> is denied as firmly as <code>read .env</code>.</li>
+        <li><b>No one to talk to.</b> A call that would need approval is blocked, and the refusal names its rule.</li>
+        <li><b>It fails closed.</b> If the policy cannot decide, the call does not run.</li>
+      </ul>
+      <p class="why__more"><a href={doc('concepts/how-decisions-are-made')}>How decisions are made</a></p>
+    </div>
+
+    <div class="why__ledger">
+      <div class="ledger__head" aria-hidden="true">
+        <span>The model asks</span>
+        <span>Bridle decides</span>
+      </div>
+      <ol class="ledger">
+        {
+          rows.map((row) => {
+            const mark = stamp(row.answer);
+            return (
+              <li class="ledger__row">
+                <div class="ledger__ask">
+                  <code>{row.call}</code>
+                  <p>{row.note}</p>
+                </div>
+                <div class="ledger__verdict">
+                  <span class={`stamp stamp--${mark.tone}`}>{mark.text}</span>
+                  <span class="ledger__rule mono">{row.rule}</span>
+                  <p>{reasonOf(row.answer) || 'Runs, and its output is redacted before the model reads it.'}</p>
+                </div>
+              </li>
+            );
+          })
+        }
+      </ol>
+      <p class="ledger__source">
+        Answers recorded from <code>bridle hook tool-before</code>, Bridle {meta.bridle.replace('bridle ', '')} on {meta.system}, {meta.recordedAt}.
+        <a href="#policy-lab">Replay more in the policy lab</a>
+      </p>
+    </div>
+  </div>
+</section>

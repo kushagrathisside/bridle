@@ -1,0 +1,113 @@
+---
+import { crates, stages } from '../../data/architecture';
+---
+
+<section class="section" id="architecture" aria-labelledby="arch-title">
+  <div class="wrap">
+    <div class="head head--wide">
+      <p class="kicker"><b>03</b> Architecture</p>
+      <h2 id="arch-title">Where the decision happens</h2>
+      <p>
+        Bridle sits between what the model proposes and what runs. Choose an outcome, trace a call through it, and select a stage to
+        see who owns it, where it lives in the code, and how it fails.
+      </p>
+    </div>
+
+    <div class="arch" data-arch data-outcome="allow">
+      <div class="arch__controls">
+        <div class="seg" role="group" aria-label="Outcome of the call">
+          <button type="button" data-outcome="allow" aria-pressed="true">Allowed call</button>
+          <button type="button" data-outcome="deny" aria-pressed="false">Denied call</button>
+        </div>
+        <button class="btn btn--sm" type="button" data-trace>Trace a call</button>
+        <p class="arch__note" data-trace-note aria-live="polite"></p>
+      </div>
+
+      <ol class="flow" aria-label="The stages of one tool call, in order">
+        {
+          stages.map((stage, index) => (
+            <li class="stage" data-stage={stage.id} data-tone={stage.tone}>
+              <button type="button" class="stage__btn" aria-pressed={stage.id === 'policy' ? 'true' : 'false'} aria-controls="arch-detail" data-select={stage.id}>
+                <span class="stage__n mono">{String(stage.step).padStart(2, '0')}</span>
+                <span class="stage__name">{stage.name}</span>
+                <span class="stage__line">{stage.line}</span>
+                <span class="stage__owner mono">{stage.owner}</span>
+                <span class="stage__skip mono">not reached</span>
+              </button>
+              {index < stages.length - 1 && <span class="stage__arrow" aria-hidden="true" />}
+            </li>
+          ))
+        }
+        <li class="lane" aria-hidden="true">
+          <span class="lane__text lane__text--allow">The redacted output returns to the model</span>
+          <span class="lane__text lane__text--deny">The block reason returns to the model</span>
+        </li>
+      </ol>
+
+      <div class="arch__detail" id="arch-detail" aria-live="polite">
+        {
+          stages.map((stage) => (
+            <article data-detail={stage.id} hidden={stage.id !== 'policy'}>
+              <header>
+                <p class="mono arch__owner">Owned by {stage.owner}</p>
+                <h3>{stage.name}</h3>
+                <p>{stage.summary}</p>
+              </header>
+              <div class="arch__cols">
+                <div>
+                  <h4>It owns</h4>
+                  <ul>
+                    {stage.owns.map((line) => (
+                      <li set:html={line.replace(/`([^`]+)`/g, '<code>$1</code>')} />
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h4>It does not own</h4>
+                  <p>{stage.not}</p>
+                  <h4>When it fails</h4>
+                  <p>{stage.fails}</p>
+                </div>
+                <div>
+                  <h4>In the code</h4>
+                  <ul class="arch__code">
+                    {stage.code.map((file) => (
+                      <li>
+                        <a class="mono" href={file.href} rel="noopener">
+                          {file.label}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                  <a class="link arch__more" href={stage.more.href}>
+                    {stage.more.label}
+                  </a>
+                </div>
+              </div>
+            </article>
+          ))
+        }
+      </div>
+
+      <div class="crates">
+        <h3 class="crates__title mono">Four crates, one direction of dependency</h3>
+        <ul>
+          {
+            crates.map((crate) => (
+              <li>
+                <a href={crate.href} rel="noopener">
+                  <span class="mono">{crate.name}</span>
+                  <span>{crate.text}</span>
+                </a>
+              </li>
+            ))
+          }
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  import '../../scripts/arch';
+</script>

@@ -1,0 +1,25 @@
+---
+import Icon from './Icon.astro';
+import { base } from '../../data/site';
+---
+
+<dialog class="search" data-search data-base={base} aria-label="Search the documentation">
+  <form method="dialog" class="search__box">
+    <Icon name="search" size={18} />
+    <label class="sr-only" for="search-input">Search the documentation</label>
+    <input
+      id="search-input"
+      type="search"
+      autocomplete="off"
+      spellcheck="false"
+      placeholder="Search the documentation"
+      role="combobox"
+      aria-expanded="false"
+      aria-controls="search-results"
+      aria-autocomplete="list"
+    />
+    <button type="submit" class="search__esc" aria-label="Close search"><kbd>Esc</kbd></button>
+  </form>
+  <ul id="search-results" class="search__list" role="listbox" aria-label="Results" data-search-results></ul>
+  <p class="search__status" role="status" aria-live="polite" data-search-status></p>
+</dialog>

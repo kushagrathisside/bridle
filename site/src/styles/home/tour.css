@@ -1,0 +1,186 @@
+/* The product walkthrough: tabs, one screenshot, a highlight. On a phone the screenshot becomes a zoomed crop of the region. */
+
+.tour {
+  display: grid;
+  gap: 1.25rem;
+  margin-top: clamp(2rem, 5vw, 3.5rem);
+  /* Defaults until the script runs: the whole image, no highlight. */
+  --x: 0;
+  --y: 0;
+  --w: 1;
+  --h: 1;
+}
+
+.tour__tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0 calc(var(--gutter) * -1);
+  padding: 0.15rem var(--gutter);
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+
+.tour__tab {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+  scroll-snap-align: start;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease), color 0.15s var(--ease);
+}
+
+.tour__tab:hover {
+  color: var(--text);
+  border-color: var(--line-2);
+}
+
+.tour__tab[aria-selected='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.tour__num {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.tour__tab[aria-selected='true'] .tour__num {
+  color: var(--accent);
+}
+
+.tour__title {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tour__text {
+  display: none;
+}
+
+.tour__stage {
+  min-width: 0;
+}
+
+.tour__frame {
+  position: relative;
+  aspect-ratio: calc(var(--cw, 1) * var(--iw) / (var(--ch, 1) * var(--ih)));
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--bg-code);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.tour__frame img {
+  position: absolute;
+  max-width: none;
+  height: auto;
+  width: calc(100% / var(--cw, 1));
+  left: calc(var(--cx, 0) / var(--cw, 1) * -100%);
+  top: calc(var(--cy, 0) / var(--ch, 1) * -100%);
+}
+
+.tour__frame img[hidden] {
+  display: none;
+}
+
+.tour__hl {
+  display: none;
+}
+
+.tour__caption {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.tour__caption a[hidden] {
+  display: none;
+}
+
+/* From a tablet up: the whole window is shown, and the selected part is lit while the rest is dimmed. */
+@media (min-width: 52rem) {
+  .tour {
+    grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr);
+    gap: 2rem;
+    align-items: start;
+  }
+
+  .tour__tabs {
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .tour__tab {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.15rem 0.75rem;
+    padding: 0.8rem 0.9rem;
+  }
+
+  .tour__title {
+    white-space: normal;
+  }
+
+  .tour__text {
+    display: none;
+    grid-column: 2;
+    color: var(--text-2);
+    font-size: var(--fs-sm);
+    line-height: 1.5;
+  }
+
+  .tour__tab[aria-selected='true'] .tour__text {
+    display: block;
+  }
+
+  .tour__frame {
+    aspect-ratio: calc(var(--iw) / var(--ih));
+  }
+
+  .tour__frame img {
+    inset: 0;
+    width: 100%;
+    left: 0;
+    top: 0;
+  }
+
+  .tour__hl {
+    display: block;
+    position: absolute;
+    left: calc(var(--x) * 100%);
+    top: calc(var(--y) * 100%);
+    width: calc(var(--w) * 100%);
+    height: calc(var(--h) * 100%);
+    border: 2px solid var(--accent);
+    border-radius: 6px;
+    box-shadow: 0 0 0 100vmax rgb(4 8 10 / 0.58);
+    pointer-events: none;
+    transition: left 0.35s var(--ease), top 0.35s var(--ease), width 0.35s var(--ease), height 0.35s var(--ease);
+  }
+
+  .tour__caption {
+    display: none;
+  }
+}
+
+@media (min-width: 52rem) and (prefers-reduced-motion: reduce) {
+  .tour__hl {
+    transition: none;
+  }
+}

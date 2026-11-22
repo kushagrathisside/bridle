@@ -1,0 +1,228 @@
+---
+import { byId, eventLogSample, explain, redaction, reasonOf } from '../../data/policy';
+import { doc } from '../../data/site';
+
+// The seven classes, from least to most severe, each with a recorded example.
+const ladder = [
+  { cls: 'READ_ONLY', id: 'git-status' },
+  { cls: 'WRITE', id: 'edit-source' },
+  { cls: 'EXECUTE_SAFE', id: 'unittest' },
+  { cls: 'EXECUTE_RISKY', id: 'make' },
+  { cls: 'NETWORK', id: 'curl' },
+  { cls: 'DESTRUCTIVE', id: 'rm-rf' },
+  { cls: 'PRIVILEGED', id: 'sudo' },
+].map((row, index) => {
+  const found = byId(row.id);
+  const verdict = found.answer.verdict ?? 'allow';
+  return {
+    ...row,
+    example: found.shows.replace(/^bash: /, ''),
+    verdict,
+    label: verdict === 'ask' ? 'Ask, so blocked' : verdict === 'deny' ? 'Deny' : 'Allow',
+    reach: 14 + index * 14.3,
+    ok: found.answer.class === row.cls,
+  };
+});
+if (ladder.some((row) => !row.ok)) throw new Error('site: a recorded class does not match the capability ladder; run scripts/record-policy.mjs');
+
+// Measured on the tested machine (README, "Models and GPU memory"): Qwen3.5-9B Q4_K_M, 8-bit cache, RTX 4060 Laptop, 8,188 MiB.
+const vram = [
+  { context: '16,384 tokens', note: 'no vision projector', used: 5455, free: 2502 },
+  { context: '65,536 tokens', note: 'the default; projector in system memory', used: 6499, free: 1458 },
+  { context: '98,304 tokens', note: 'projector in system memory', used: 7203, free: 754 },
+  { context: '98,304 tokens', note: 'projector on the GPU', used: 7887, free: 70 },
+];
+
+const loopRules = [
+  ['repeated_command', 'The same command again and again, with no edit between', '3 of the last 5 calls'],
+  ['repeated_edit', 'One file edited again and again since the last verification', '4 edits'],
+  ['same_failure', 'The same failure in consecutive verifications', '3 in a row'],
+  ['implementation_retries', 'The task enters Implement too often', 'more than 3'],
+  ['iteration_limit', 'The task reaches its iteration limit', '8 iterations'],
+];
+
+const parts = (text: string) => text.split(/(\[REDACTED\])/);
+---
+
+<section class="section" id="capabilities" aria-labelledby="cap-title">
+  <div class="wrap">
+    <div class="head head--wide">
+      <p class="kicker"><b>05</b> Capabilities</p>
+      <h2 id="cap-title">What is built, and how far along it is</h2>
+      <p>
+        Every item here exists in the repository. Each says where it stands: <b>implemented</b> and used on the tested machine, <b>optional</b>,
+        <b>experimental</b> and off by default, or <b>planned</b>. Nothing here is a benchmark; the numbers are measurements on one machine.
+      </p>
+    </div>
+
+    <div class="specs">
+      <article class="spec">
+        <div class="spec__info">
+          <p class="tag tag--on mono">Implemented</p>
+          <h3>A verdict for every call</h3>
+          <p>Seven command classes, each with a configured verdict. Nested commands are classified up to four levels deep, and the most severe part of a command decides.</p>
+          <a class="link" href={doc('concepts/how-decisions-are-made')}>Command classes and defaults</a>
+        </div>
+        <div class="spec__view">
+          <ol class="ladder" aria-label="Command classes from least to most severe">
+            {
+              ladder.map((row) => (
+                <li class="rung" data-verdict={row.verdict}>
+                  <span class="rung__class mono">{row.cls}</span>
+                  <span class="rung__bar" style={`--reach:${row.reach}%`} aria-hidden="true"></span>
+                  <span class={`stamp stamp--${row.verdict}`}>{row.label}</span>
+                  <code class="rung__example">{row.example}</code>
+                </li>
+              ))
+            }
+          </ol>
+        </div>
+      </article>
+
+      <article class="spec">
+        <div class="spec__info">
+          <p class="tag tag--on mono">Implemented</p>
+          <h3>Secrets stay out of the model</h3>
+          <p>Secret files are denied to file tools and shell arguments, secret-looking variables are blanked for shell tools, and secret values in output are redacted before the model reads it.</p>
+          <p class="spec__limit">Redaction recognises known shapes. A secret in a format it does not know is not caught.</p>
+          <a class="link" href={doc('project/security-model', '#secrets')}>What is protected, and what is not</a>
+        </div>
+        <div class="spec__view">
+          <div class="redact">
+            <div>
+              <p class="redact__label mono">Command output</p>
+              <pre><code>{redaction[0].before}</code></pre>
+            </div>
+            <div>
+              <p class="redact__label mono">What the model reads</p>
+              <pre><code>{parts(redaction[0].after).map((piece) => (piece === '[REDACTED]' ? <mark>{piece}</mark> : piece))}</code></pre>
+            </div>
+          </div>
+          <p class="spec__source">Recorded from <code>bridle hook tool-after</code>. The values are made up.</p>
+        </div>
+      </article>
+
+      <article class="spec">
+        <div class="spec__info">
+          <p class="tag tag--on mono">Implemented</p>
+          <h3>Local models, guarded</h3>
+          <p>Models run through llama.cpp on 127.0.0.1, one GPU model at a time. A start is refused when the model file’s own header says it will not fit, with at least 768 MiB left free.</p>
+          <a class="link" href={doc('concepts/models-and-slots')}>Models and slots</a>
+        </div>
+        <div class="spec__view">
+          <div class="vram" role="table" aria-label="Video memory used by Qwen3.5-9B at four settings, out of 8,188 MiB">
+            <div class="vram__head mono" role="row">
+              <span role="columnheader">Context and projector</span>
+              <span role="columnheader">Used of 8,188 MiB</span>
+            </div>
+            {
+              vram.map((row) => (
+                <div class="vram__row" role="row">
+                  <span role="cell">
+                    <b>{row.context}</b>
+                    <em>{row.note}</em>
+                  </span>
+                  <span role="cell" class="vram__bar">
+                    <span class="vram__fill" style={`--used:${(row.used / 8188) * 100}%`}></span>
+                    <span class="mono">{row.used.toLocaleString('en-US')} used · {row.free.toLocaleString('en-US')} free</span>
+                  </span>
+                </div>
+              ))
+            }
+          </div>
+          <p class="spec__source">
+            Measured on an RTX 4060 Laptop GPU with Qwen3.5-9B Q4_K_M. The guard is an estimate calibrated on one model and one GPU; these figures are not a guarantee for other hardware.
+          </p>
+        </div>
+      </article>
+
+      <article class="spec">
+        <div class="spec__info">
+          <p class="tag tag--on mono">Implemented</p>
+          <h3>A record of every decision</h3>
+          <p>One line per decision, with its class, verdict and rule and without secret values. <code>bridle trace</code> and <code>bridle explain</code> read the task journal back.</p>
+          <a class="link" href={doc('guides/run-a-task')}>Run a task</a>
+        </div>
+        <div class="spec__view">
+          <pre class="record"><code>{eventLogSample}</code></pre>
+          <pre class="record"><code>$ bridle explain
+{explain}</code></pre>
+        </div>
+      </article>
+
+      <article class="spec">
+        <div class="spec__info">
+          <p class="tag tag--opt mono">Optional</p>
+          <h3>Loop rules</h3>
+          <p>With the task workflow on, calls are journalled and a rule refuses an agent that is going round in circles. The refusal names the rule and says what to do next. Read-only calls are never refused.</p>
+          <a class="link" href={doc('concepts/tasks-and-loops')}>Tasks and loops</a>
+        </div>
+        <div class="spec__view">
+          <table class="rules">
+            <caption class="sr-only">Loop rules and their default thresholds</caption>
+            <thead>
+              <tr><th scope="col">Rule</th><th scope="col">Fires when</th><th scope="col">Default</th></tr>
+            </thead>
+            <tbody>
+              {loopRules.map(([rule, when, limit]) => <tr><th scope="row" class="mono">{rule}</th><td>{when}</td><td>{limit}</td></tr>)}
+            </tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="spec">
+        <div class="spec__info">
+          <p class="tag tag--on mono">Implemented</p>
+          <h3>A team, a board and lanes</h3>
+          <p>Named members with roles sit on the right edge of the window. A tag in the chat becomes an issue on the board, and the runner gives it to the member. The work happens one member at a time; parallel turns are planned.</p>
+          <a class="link" href={doc('guides/team-and-board')}>Team and board</a>
+        </div>
+        <div class="spec__view">
+          <dl class="roles">
+            <div><dt class="mono">@pm.manager</dt><dd>Splits a request into issues for other teams. Does not change source files.</dd></div>
+            <div><dt class="mono">@eng.senior</dt><dd>Implements what is assigned, in small steps, and runs the checks.</dd></div>
+            <div><dt class="mono">@eng.intern</dt><dd>Works small tasks. The work is reviewed before it counts as done.</dd></div>
+            <div><dt class="mono">@qa.lead</dt><dd>Reviews the change against its acceptance criteria and reports. Does not change files.</dd></div>
+          </dl>
+          <p class="spec__source">What a member may do depends on the role and is checked in code. Every member’s calls pass the same policy as the chat’s own. Lanes give each member a separate working copy that you merge.</p>
+        </div>
+      </article>
+
+      <article class="spec">
+        <div class="spec__info">
+          <p class="tag tag--exp mono">Experimental · off by default</p>
+          <h3>Web research and a managed browser</h3>
+          <p>Search, read pages and download files with a checksum, and drive a pinned Chromium behind Bridle’s own egress proxy. Each call is checked again inside the tool.</p>
+        </div>
+        <div class="spec__view">
+          <p class="spec__plain">The tools and their checks are tested against local fake servers. The search providers have never talked to the real services, and the DNS-rebinding defence is shown against a scripted resolver, not a hostile one.</p>
+          <a class="link" href={doc('guides/web-research')}>Web research</a>
+        </div>
+      </article>
+
+      <article class="spec">
+        <div class="spec__info">
+          <p class="tag tag--exp mono">Experimental · off by default</p>
+          <h3>A fleet of small models</h3>
+          <p>Small models loaded together while the large one is unloaded, with a scheduler that swaps them safely and a record that survives a crash.</p>
+        </div>
+        <div class="spec__view">
+          <p class="spec__plain">On the real models, eight tasks ran about 3.7 times faster than one at a time, and the swap and its crash recovery were shown. The small models’ answers were not graded.</p>
+          <a class="link" href={doc('guides/fleet')}>The fleet</a>
+        </div>
+      </article>
+    </div>
+
+    <div class="planned">
+      <h3 class="mono">Planned, and not built</h3>
+      <ul>
+        <li>Linux and macOS. A WSL runtime is planned.</li>
+        <li>Parallel turns on one repository. Today the team works one member at a time.</li>
+        <li>Enforcing <code>security.require_worktree</code> and <code>verification.required_for_done</code>. Both are read, and neither is enforced yet.</li>
+        <li>Crawling, and academic and news providers, for web research.</li>
+        <li>A persistent code index. Code tools parse the files they need on each call.</li>
+      </ul>
+      <a class="link" href={doc('project/status')}>Status and known limits</a>
+    </div>
+  </div>
+</section>

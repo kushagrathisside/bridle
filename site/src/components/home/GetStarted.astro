@@ -1,0 +1,92 @@
+---
+import Command from './Command.astro';
+import Icon from './Icon.astro';
+import { doc, links, version, zipName } from '../../data/site';
+---
+
+<section class="section" id="start" aria-labelledby="start-title">
+  <div class="wrap start">
+    <div class="start__text">
+      <p class="kicker"><b>07</b> Get started</p>
+      <h2 id="start-title">From download to first run</h2>
+      <p>One zip, one installer, one command. Model weights are not included, so have them ready.</p>
+
+      <ul class="needs">
+        <li><b>Windows 11.</b> The window uses WebView2, which ships with it. Only Windows 11 is verified.</li>
+        <li><b>An NVIDIA GPU</b> with a current driver. The shipped profile is tuned for 8 GB of video memory.</li>
+        <li>
+          <b>Model weights and llama.cpp.</b> Not included. <a class="link" href={doc('guides/serve-models')}>The models guide</a> lists the files, their sources and their SHA-256 values.
+        </li>
+        <li><b>Git for Windows</b>, recommended. Git Bash is the terminal’s default shell.</li>
+      </ul>
+
+      <p class="start__note">The program is not code-signed, so Windows SmartScreen may warn the first time. Check the download’s hash first.</p>
+
+      <p class="hero__actions">
+        <a class="btn btn--primary" href={links.releases} rel="noopener"><Icon name="download" size={16} /> Download for Windows</a>
+        <a class="btn" href={doc('guides/install')}>Install guide</a>
+      </p>
+    </div>
+
+    <div class="start__steps" data-start>
+      <div class="paths" role="tablist" aria-label="How to install">
+        <button type="button" role="tab" id="way-zip-tab" aria-selected="true" aria-controls="way-zip" data-way="zip">Release zip</button>
+        <button type="button" role="tab" id="way-src-tab" aria-selected="false" aria-controls="way-src" tabindex="-1" data-way="src">From source</button>
+        <button type="button" role="tab" id="way-oc-tab" aria-selected="false" aria-controls="way-oc" tabindex="-1" data-way="oc">With OpenCode</button>
+      </div>
+
+      <div class="way" id="way-zip" role="tabpanel" aria-labelledby="way-zip-tab">
+        <p><code>{zipName}</code> holds <code>bridle.exe</code>, an installer, a short README, the licences and a checksum file.</p>
+        <Command
+          label="cmd.exe"
+          lines={[
+            '::  in the unpacked folder: check the program, then install it',
+            'certutil -hashfile bridle.exe SHA256',
+            'install.cmd',
+            '::  in a new terminal, open a project',
+            'cd path\\to\\your\\project',
+            'bridle',
+          ]}
+        />
+        <ol>
+          <li>Compare the hash with <code>SHA256SUMS.txt</code> before you run it.</li>
+          <li><code>install.cmd</code> copies <code>bridle.exe</code> to <code>%LOCALAPPDATA%\Bridle\bin</code> and adds that folder to your user <code>PATH</code>. Delete the folder to undo it.</li>
+          <li>The first time on a computer, Bridle asks where your models and runtimes are. The first time in a project, it asks before it writes <code>bridle.toml</code>.</li>
+        </ol>
+      </div>
+
+      <div class="way" id="way-src" role="tabpanel" aria-labelledby="way-src-tab" hidden>
+        <p>Needs Visual Studio 2022 with the C++ workload and Rust. <code>rustup</code> installs the version pinned in <code>rust-toolchain.toml</code>.</p>
+        <Command
+          label="cmd.exe"
+          lines={['git clone https://github.com/kushagrathisside/bridle.git', 'cd bridle', 'scripts\\dev.cmd release', 'scripts\\dev.cmd install']}
+        />
+        <ol>
+          <li><code>scripts\dev.cmd gate</code> runs the format check, clippy with warnings as errors, and the tests, as CI does.</li>
+          <li><a class="link" href={doc('project/contributing')}>Contributing</a> says what a change must pass.</li>
+        </ol>
+      </div>
+
+      <div class="way" id="way-oc" role="tabpanel" aria-labelledby="way-oc-tab" hidden>
+        <p>Prefer OpenCode’s interface? Bridle’s policy sits around it. This is written for OpenCode 1.19.3.</p>
+        <Command
+          label="cmd.exe · in a project"
+          lines={['bridle init --profile local-only', 'bridle config validate', 'opencode run "Describe the files in this repository."']}
+        />
+        <ol>
+          <li><code>bridle init</code> writes <code>bridle.toml</code>, <code>opencode.json</code> and the plugin, and ignores <code>.bridle/</code> in Git.</li>
+          <li>OpenCode loads the plugin, so every tool call goes through the same policy.</li>
+        </ol>
+      </div>
+
+      <p class="spec__source">
+        Check the install with <code>bridle --version</code>, which prints <code>bridle {version}</code>, and <code>bridle doctor</code>, which checks the machine.
+        <a class="link" href={doc('getting-started')}>The full walk-through</a>
+      </p>
+    </div>
+  </div>
+</section>
+
+<script>
+  import '../../scripts/start';
+</script>

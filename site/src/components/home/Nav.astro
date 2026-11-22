@@ -1,0 +1,55 @@
+---
+import Icon from './Icon.astro';
+import Logo from './Logo.astro';
+import { base, doc, links } from '../../data/site';
+
+// In-page links point at sections of this page; the rest leave it. The same list feeds the desktop bar and the phone menu.
+const items = [
+  { label: 'Product', href: `${base}/#product` },
+  { label: 'Architecture', href: `${base}/#architecture` },
+  { label: 'Policy lab', href: `${base}/#policy-lab` },
+  { label: 'Security', href: `${base}/#security` },
+  { label: 'Docs', href: doc('introduction') },
+];
+---
+
+<header class="nav" data-nav>
+  <div class="nav__bar wrap">
+    <a class="nav__brand" href={`${base}/`} aria-label="Bridle, home">
+      <Logo size={26} />
+      <span>Bridle</span>
+    </a>
+
+    <nav class="nav__links" aria-label="Primary">
+      {items.map((item) => <a href={item.href}>{item.label}</a>)}
+    </nav>
+
+    <div class="nav__tools">
+      <button class="nav__search" type="button" data-search-open aria-label="Search the documentation" aria-keyshortcuts="Control+K">
+        <Icon name="search" size={16} />
+        <span class="nav__search-text">Search</span>
+        <kbd aria-hidden="true">Ctrl K</kbd>
+      </button>
+      <a class="nav__icon" href={links.repo} aria-label="Bridle on GitHub" rel="noopener">
+        <Icon name="github" size={18} />
+      </a>
+      <button class="nav__icon" type="button" data-theme-toggle aria-label="Switch to light theme">
+        <span class="theme-sun"><Icon name="sun" size={18} /></span>
+        <span class="theme-moon"><Icon name="moon" size={18} /></span>
+      </button>
+      <a class="btn btn--primary btn--sm nav__cta" href={doc('getting-started')}>Get started</a>
+      <button class="nav__icon nav__menu" type="button" data-menu-toggle aria-expanded="false" aria-controls="menu" aria-label="Open the menu">
+        <span class="menu-open"><Icon name="menu" size={20} /></span>
+        <span class="menu-close"><Icon name="close" size={20} /></span>
+      </button>
+    </div>
+  </div>
+
+  <div class="nav__panel" id="menu" data-menu hidden>
+    <nav class="wrap" aria-label="Menu">
+      {items.map((item) => <a href={item.href}>{item.label}</a>)}
+      <a href={links.repo} rel="noopener">GitHub</a>
+      <a href={doc('getting-started')} class="btn btn--primary">Get started</a>
+    </nav>
+  </div>
+</header>

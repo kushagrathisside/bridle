@@ -1,0 +1,415 @@
+/* Security and trust, the start steps, the documentation index and the closing section. */
+
+/* ---- Security ---------------------------------------------------------------------------------------------------------- */
+
+.trust {
+  display: grid;
+  gap: 2rem;
+  margin-top: clamp(2rem, 5vw, 3.5rem);
+  align-items: start;
+}
+
+/* A grid item may be narrower than its widest line; a long command scrolls inside its own block instead of stretching the page. */
+.trust > *,
+.verify > *,
+.start > *,
+.spec > *,
+.why > * {
+  min-width: 0;
+}
+
+.trust__label {
+  margin-bottom: 0.9rem;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.proofs {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line-2);
+}
+
+.proofs li {
+  padding-block: 1.1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.proofs h4 {
+  margin: 0 0 0.3rem;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+
+.proofs p {
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.proofs__proof {
+  margin-top: 0.5rem;
+  color: var(--text-3);
+}
+
+.proofs__proof span {
+  margin-right: 0.4rem;
+  color: var(--allow);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.proofs__proof a {
+  color: var(--accent);
+}
+
+.closed {
+  margin-top: 2rem;
+}
+
+.closed p,
+.closed li {
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.closed pre {
+  margin: 0.8rem 0;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid var(--line-2);
+  border-left: 3px solid var(--deny);
+  border-radius: var(--radius-sm);
+  background: var(--bg-code);
+  color: var(--text);
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.closed ul {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.closed code,
+.trust__limits code,
+.verify code {
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: var(--bg-code);
+  color: var(--text);
+}
+
+/* The limits are given the same visual weight as the evidence: a bordered panel, not a footnote. */
+.trust__limits {
+  padding: clamp(1.1rem, 3vw, 1.6rem);
+  border: 1px solid var(--ask);
+  border-radius: var(--radius);
+  background: var(--ask-soft);
+}
+
+.trust__limits .trust__label {
+  color: var(--ask);
+}
+
+.trust__limits ul {
+  display: grid;
+  gap: 0.8rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trust__limits li {
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.trust__limits li b {
+  color: var(--text);
+}
+
+.trust__more {
+  margin-top: 1rem;
+  font-size: var(--fs-sm);
+}
+
+.verify {
+  display: grid;
+  gap: 2rem;
+  margin-top: clamp(2.5rem, 6vw, 4rem);
+  padding-top: clamp(2rem, 4vw, 2.75rem);
+  border-top: 1px solid var(--line);
+}
+
+.verify h3 {
+  margin-bottom: 0.5rem;
+  font-size: var(--fs-h3);
+}
+
+.verify > div > p {
+  max-width: 40rem;
+  margin-bottom: 1rem;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.verify__links {
+  display: grid;
+  gap: 0.9rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  align-content: start;
+}
+
+.verify__links a {
+  display: block;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+}
+
+.verify__links span {
+  display: block;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+@media (min-width: 64rem) {
+  .trust {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    gap: 3rem;
+  }
+
+  .trust__limits {
+    position: sticky;
+    top: calc(var(--nav-h) + 1.5rem);
+  }
+
+  .verify {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 4fr);
+    gap: 3rem;
+  }
+}
+
+/* ---- Start ------------------------------------------------------------------------------------------------------------- */
+
+.start {
+  display: grid;
+  gap: 2.5rem 4rem;
+  align-items: start;
+}
+
+.start__text {
+  max-width: 34rem;
+}
+
+.start__text h2 {
+  font-size: var(--fs-h2);
+}
+
+.start__text > p {
+  margin-top: 1.1rem;
+  color: var(--text-2);
+  font-size: var(--fs-lg);
+}
+
+.needs {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.needs li {
+  display: grid;
+  gap: 0.1rem;
+  padding-left: 1rem;
+  border-left: 2px solid var(--line-2);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.needs b {
+  color: var(--text);
+}
+
+.start__note {
+  margin-top: 1.25rem;
+  padding: 0.7rem 0.9rem;
+  border-left: 3px solid var(--ask);
+  background: var(--ask-soft);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.start__steps {
+  display: grid;
+  gap: 1.5rem;
+  min-width: 0;
+}
+
+.paths {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.paths button {
+  min-height: 2.25rem;
+  padding: 0 0.85rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.paths button[aria-selected='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.way[hidden] {
+  display: none;
+}
+
+.way > p {
+  margin-bottom: 0.8rem;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.way ol {
+  display: grid;
+  gap: 0.35rem;
+  margin: 1rem 0 0;
+  padding-left: 1.2rem;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.way code {
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: var(--bg-code);
+  color: var(--text);
+}
+
+@media (min-width: 64rem) {
+  .start {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  }
+
+  .start__text {
+    position: sticky;
+    top: calc(var(--nav-h) + 2rem);
+  }
+}
+
+/* ---- Documentation index ----------------------------------------------------------------------------------------------- */
+
+.docs {
+  display: grid;
+  gap: 0 3rem;
+  margin: clamp(2rem, 5vw, 3rem) 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line-2);
+}
+
+.docs a {
+  display: grid;
+  gap: 0.1rem 1.5rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--line);
+  text-decoration: none;
+}
+
+.docs strong {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+
+.docs strong .icon {
+  color: var(--text-3);
+  transition: transform 0.15s var(--ease), color 0.15s var(--ease);
+}
+
+.docs a:hover strong .icon {
+  color: var(--accent);
+  transform: translateX(3px);
+}
+
+.docs span {
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+@media (min-width: 52rem) {
+  .docs {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ---- Closing ----------------------------------------------------------------------------------------------------------- */
+
+.closing {
+  text-align: left;
+}
+
+.closing h2 {
+  max-width: 18ch;
+  font-size: clamp(2.2rem, 1rem + 5vw, 4.2rem);
+  letter-spacing: -0.04em;
+  line-height: 1.02;
+}
+
+.closing h2 span {
+  color: var(--accent);
+}
+
+.closing p {
+  max-width: 38rem;
+  margin-top: 1.25rem;
+  color: var(--text-2);
+  font-size: var(--fs-lg);
+}
+
+.closing__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 2rem;
+}
+
+.closing__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.5rem;
+  margin: 2rem 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+}

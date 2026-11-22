@@ -1,0 +1,10 @@
+/* The home page. The parts are split by area; tokens.css holds every colour, size and font. */
+@import './home/base.css';
+@import './home/chrome.css';
+@import './home/hero.css';
+@import './home/sections.css';
+@import './home/tour.css';
+@import './home/diagrams.css';
+@import './home/capabilities.css';
+@import './home/lab.css';
+@import './home/trust.css';

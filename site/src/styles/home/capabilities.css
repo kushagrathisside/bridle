@@ -1,0 +1,441 @@
+/* Capabilities: a spec sheet. Each row has the claim on the left and its own evidence on the right. */
+
+.specs {
+  margin-top: clamp(2rem, 5vw, 3.5rem);
+  border-top: 1px solid var(--line-2);
+}
+
+.spec {
+  display: grid;
+  gap: 1.25rem 3rem;
+  padding-block: clamp(1.75rem, 4vw, 2.75rem);
+  border-bottom: 1px solid var(--line);
+}
+
+.spec__info {
+  max-width: 28rem;
+}
+
+.spec__info h3 {
+  margin: 0.5rem 0 0.6rem;
+  font-size: var(--fs-h3);
+}
+
+.spec__info p:not(.tag) {
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.spec__info .link {
+  display: inline-block;
+  margin-top: 0.8rem;
+  font-size: var(--fs-sm);
+}
+
+.spec__limit {
+  margin-top: 0.6rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--ask);
+}
+
+.spec__view {
+  min-width: 0;
+}
+
+.spec__source {
+  margin-top: 0.7rem;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.spec__plain {
+  max-width: 40rem;
+  color: var(--text-2);
+}
+
+.spec__view .link {
+  display: inline-block;
+  margin-top: 0.8rem;
+  font-size: var(--fs-sm);
+}
+
+@media (min-width: 60rem) {
+  .spec {
+    grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+  }
+}
+
+/* Maturity tags: a symbol and a word. No colour is borrowed from the verdicts. */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.tag::before {
+  content: '';
+  width: 0.55rem;
+  height: 0.55rem;
+  border: 2px solid var(--text-2);
+  border-radius: 50%;
+}
+
+.tag--on::before {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.tag--opt::before {
+  background: linear-gradient(90deg, var(--accent) 50%, transparent 50%);
+  border-color: var(--accent);
+}
+
+.tag--exp::before {
+  border-style: dashed;
+}
+
+/* ---- The class ladder -------------------------------------------------------------------------------------------------- */
+
+.ladder {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rung {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.2rem 0.75rem;
+  align-items: center;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+}
+
+.rung__class {
+  grid-column: 1 / -1;
+  color: var(--text);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.rung__bar {
+  display: none;
+}
+
+.rung__example {
+  color: var(--text-2);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 40rem) {
+  .rung {
+    grid-template-columns: 9rem minmax(3rem, 1fr) 9.5rem minmax(0, 12rem);
+    gap: 0.75rem;
+  }
+
+  .rung__class {
+    grid-column: auto;
+  }
+
+  .rung__bar {
+    display: block;
+    position: relative;
+    height: 0.5rem;
+    border-radius: 99px;
+    background: var(--bg-2);
+  }
+
+  .rung__bar::after {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: var(--reach);
+    border-radius: inherit;
+    background: var(--text-3);
+  }
+
+  .rung[data-verdict='ask'] .rung__bar::after {
+    background: var(--ask);
+  }
+
+  .rung[data-verdict='deny'] .rung__bar::after {
+    background: var(--deny);
+  }
+
+  .rung[data-verdict='allow'] .rung__bar::after {
+    background: var(--allow);
+  }
+
+  .rung__example {
+    grid-column: auto;
+  }
+}
+
+/* ---- Redaction --------------------------------------------------------------------------------------------------------- */
+
+.redact {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.redact__label {
+  margin-bottom: 0.35rem;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.redact pre,
+.record {
+  padding: 0.8rem 0.95rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-code);
+  color: var(--text);
+  font-size: 0.8rem;
+  line-height: 1.65;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.record + .record {
+  margin-top: 0.6rem;
+}
+
+.redact mark {
+  padding: 0 0.2rem;
+  border-radius: 3px;
+  background: var(--allow-soft);
+  color: var(--allow);
+}
+
+@media (min-width: 48rem) {
+  .redact {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ---- Video memory ------------------------------------------------------------------------------------------------------ */
+
+.vram {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.vram__head {
+  display: none;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.vram__row {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+}
+
+.vram__row b {
+  display: block;
+  font-size: var(--fs-sm);
+}
+
+.vram__row em {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-style: normal;
+}
+
+.vram__bar {
+  display: grid;
+  gap: 0.3rem;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+
+.vram__fill {
+  position: relative;
+  display: block;
+  height: 0.6rem;
+  border-radius: 99px;
+  background: var(--bg-2);
+}
+
+.vram__fill::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--used);
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+/* The 768 MiB the guard keeps free, at the right edge of the bar. */
+.vram__fill::after {
+  content: '';
+  position: absolute;
+  top: -0.2rem;
+  bottom: -0.2rem;
+  right: 9.4%;
+  width: 2px;
+  background: var(--text-3);
+}
+
+@media (min-width: 40rem) {
+  .vram__head,
+  .vram__row {
+    grid-template-columns: 14rem minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: center;
+  }
+
+  .vram__head {
+    display: grid;
+    padding-inline: 0.8rem;
+  }
+}
+
+/* ---- Loop rules and roles ---------------------------------------------------------------------------------------------- */
+
+.rules {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.rules th,
+.rules td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.rules thead th {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.rules tbody th {
+  color: var(--accent);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.rules td {
+  color: var(--text-2);
+}
+
+@media (max-width: 39.99rem) {
+  .rules thead {
+    display: none;
+  }
+
+  .rules tr {
+    display: grid;
+    gap: 0.1rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .rules th,
+  .rules td {
+    padding: 0.1rem 0.25rem;
+    border: 0;
+  }
+}
+
+.roles {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.roles div {
+  display: grid;
+  gap: 0.15rem 1.5rem;
+  padding: 0.7rem 0.9rem;
+  background: var(--bg-1);
+}
+
+.roles div + div {
+  border-top: 1px solid var(--line);
+}
+
+.roles dt {
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
+.roles dd {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+@media (min-width: 40rem) {
+  .roles div {
+    grid-template-columns: 9rem 1fr;
+    align-items: baseline;
+  }
+}
+
+/* ---- Planned ----------------------------------------------------------------------------------------------------------- */
+
+.planned {
+  margin-top: clamp(2rem, 5vw, 3rem);
+  padding: 1.25rem 1.4rem;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius);
+}
+
+.planned h3 {
+  margin-bottom: 0.7rem;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.planned ul {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0 0 0.9rem;
+  padding: 0 0 0 1.1rem;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.planned code {
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: var(--bg-code);
+  color: var(--text);
+}
+
+.planned .link {
+  font-size: var(--fs-sm);
+}

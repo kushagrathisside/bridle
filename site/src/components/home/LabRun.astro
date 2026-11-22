@@ -1,0 +1,87 @@
+---
+// One recorded call, laid out as the six stages. The first one is in the page; the others are kept in <template> elements and
+// copied in when chosen, so the page does not carry (and the browser does not lay out) every panel at once.
+import Command from './Command.astro';
+import { family, checksFor, outcomeOf, payloadOf } from '../../data/lab';
+import type { RecordedCase } from '../../data/policy';
+
+interface Props {
+  item: RecordedCase;
+  hidden?: boolean;
+}
+const { item, hidden = false } = Astro.props;
+const outcome = outcomeOf(item.answer, item.tool);
+const checks = checksFor(item.tool, item.answer);
+const stages = ['Requested operation', 'Tool classification', 'Policy evaluation', 'Decision', 'Execution or rejection', 'Result and explanation'];
+const cmdLine = (json: string) => `echo ${json} | bridle hook tool-before`;
+---
+
+<article class="run" data-panel={item.id} hidden={hidden}>
+  <header class="run__call">
+    <p class="mono run__from">The model asks for</p>
+    <code>{item.shows}</code>
+  </header>
+  <ol class="steps">
+    <li class="step">
+      <h3><span class="mono">1</span>{stages[0]}</h3>
+      <p>The host turns the model’s call into this request and sends it to the policy.</p>
+      <pre><code>{payloadOf(item)}</code></pre>
+    </li>
+    <li class="step">
+      <h3><span class="mono">2</span>{stages[1]}</h3>
+      <p>
+        Tool family <b>{family(item.tool)}</b>{item.tool === 'bash' ? ', command ' : item.tool === 'webfetch' ? ', address ' : ', path '}
+        <code>{Object.values(item.args)[0]}</code>.
+      </p>
+    </li>
+    <li class="step">
+      <h3><span class="mono">3</span>{stages[2]}</h3>
+      <ul class="checks">
+        {
+          checks.map((check) => (
+            <li class={`check check--${check.state}`}>
+              <span class="check__mark" aria-hidden="true">{check.state === 'pass' ? '✓' : check.state === 'fail' ? '✕' : '–'}</span>
+              <span class="sr-only">{check.state === 'pass' ? 'Passed:' : check.state === 'fail' ? 'Decided here:' : 'Not reached:'}</span>
+              <span class="check__body">
+                <b>{check.title}</b>
+                <span>{check.state === 'pass' ? check.question : check.detail}</span>
+                {check.state === 'pass' && <em class="mono">{check.detail}</em>}
+              </span>
+            </li>
+          ))
+        }
+      </ul>
+    </li>
+    <li class="step step--decide" data-tone={outcome.tone}>
+      <h3><span class="mono">4</span>{stages[3]}</h3>
+      <p class="decision">
+        <span class={`stamp stamp--${outcome.tone}`}>{outcome.label}</span>
+        <span class="mono">{item.answer.class} · rule {item.answer.rule}</span>
+      </p>
+      {
+        item.answer.verdict === 'ask' && (
+          <p>
+            The verdict is <code>ask</code>. Bridle never allows an ask, because nobody is there to approve it, so the call is blocked.
+          </p>
+        )
+      }
+    </li>
+    <li class="step">
+      <h3><span class="mono">5</span>{stages[4]}</h3>
+      <p>{outcome.happens}</p>
+    </li>
+    <li class="step">
+      <h3><span class="mono">6</span>{stages[5]}</h3>
+      <p>{outcome.result}</p>
+      {
+        item.limit && (
+          <p class="lab__limit">
+            <b>A known limit.</b> The policy allows this. A recursive search can read secret files without naming them, so the path checks cannot see
+            it. Only the redaction of the output stands between a secret and the model.
+          </p>
+        )
+      }
+    </li>
+  </ol>
+  <Command label="Reproduce it · cmd.exe, in a project where you ran bridle init" lines={[cmdLine(payloadOf(item))]} />
+</article>

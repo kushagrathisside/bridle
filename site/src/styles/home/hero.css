@@ -1,0 +1,183 @@
+/* The hero: identity first, then the product. */
+
+.hero {
+  position: relative;
+  padding-top: clamp(3rem, 7vw, 6rem);
+  overflow: clip;
+}
+
+/* A drawing grid, faint, fading out downwards. It marks the page as a place where things are measured; it carries no data. */
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 38rem;
+  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 4rem 4rem;
+  background-position: center top;
+  mask-image: linear-gradient(to bottom, #000 0%, transparent 85%);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.hero > * {
+  position: relative;
+}
+
+.hero__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.1rem;
+  margin-bottom: 1.6rem;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hero__meta a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.hero__meta a:hover {
+  text-decoration: underline;
+}
+
+.hero__meta span + span::before,
+.hero__meta a + span::before {
+  content: '/';
+  margin-right: 1.1rem;
+  color: var(--line-2);
+}
+
+.hero h1 {
+  font-size: var(--fs-h1);
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  text-wrap: balance;
+}
+
+.hero h1 span {
+  color: var(--accent);
+}
+
+.hero__row {
+  display: grid;
+  gap: 2rem 3rem;
+  margin-top: clamp(1.75rem, 4vw, 2.75rem);
+  align-items: start;
+}
+
+.hero__lead {
+  max-width: 38rem;
+  color: var(--text-2);
+  font-size: clamp(1.05rem, 0.95rem + 0.5vw, 1.3rem);
+  line-height: 1.55;
+}
+
+.hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1.75rem;
+}
+
+.hero__req {
+  margin-top: 0.7rem;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}
+
+.hero__req a {
+  color: var(--text-2);
+}
+
+@media (min-width: 62rem) {
+  .hero__row {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  }
+}
+
+/* ---- The product, framed ----------------------------------------------------------------------------------------------- */
+
+.hero__shot {
+  margin-top: clamp(2.5rem, 5vw, 4rem);
+}
+
+.shot {
+  position: relative;
+  aspect-ratio: 14 / 9;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--bg-code);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.shot img,
+.shot video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top left;
+}
+
+.shot__poster {
+  transition: opacity 0.5s var(--ease);
+}
+
+.shot[data-playing] .shot__poster {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.shot__toggle {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  padding: 0 0.8rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+
+.shot__toggle:hover {
+  border-color: var(--text-3);
+}
+
+.shot__toggle span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.shot__toggle[data-paused='true'] .pause,
+.shot__toggle[data-paused='false'] .resume {
+  display: none;
+}
+
+.hero__shot figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin-top: 0.9rem;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}
+
+.hero__shot figcaption a {
+  color: var(--text-2);
+}

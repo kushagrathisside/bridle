@@ -1,0 +1,84 @@
+---
+import { Image } from 'astro:assets';
+import poster from '../../assets/shots/hero.png';
+import Icon from './Icon.astro';
+import Command from './Command.astro';
+import { base, doc, links, version } from '../../data/site';
+---
+
+<section class="hero" id="top" aria-labelledby="hero-title">
+  <div class="wrap">
+    <p class="hero__meta">
+      <a href={links.releaseNotes}>Release {version}</a>
+      <span>Apache-2.0</span>
+      <span>Windows 11</span>
+      <span>Local models</span>
+    </p>
+    <h1 id="hero-title">The model proposes.<br /><span>Bridle decides.</span></h1>
+
+    <div class="hero__row">
+      <div class="hero__copy">
+        <p class="hero__lead">
+          Bridle is a local-first coding agent for Windows. The model runs on your own GPU. Every file read, edit and shell command it
+          asks for is classified and judged by a policy written in code, before anything runs.
+        </p>
+        <div class="hero__actions">
+          <a class="btn btn--primary" href={doc('getting-started')}>Get started <Icon name="arrow" size={16} /></a>
+          <a class="btn" href="#architecture">Explore architecture</a>
+          <a class="btn btn--ghost" href={links.repo} rel="noopener"><Icon name="github" size={16} /> GitHub</a>
+        </div>
+      </div>
+
+      <div class="hero__install">
+        <Command
+          label="Quickstart · Windows 11"
+          lines={['::  from the unpacked release zip', 'install.cmd', '::  then, in a new terminal', 'cd path\\to\\your\\project', 'bridle']}
+        />
+        <p class="hero__req">
+          Needs an NVIDIA GPU. Model weights are not included. <a href="#start">Requirements</a>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <figure class="hero__shot wrap" data-demo>
+    <div class="shot shot--video">
+      <video
+        class="shot__video"
+        muted
+        loop
+        playsinline
+        preload="none"
+        width="1400"
+        height="900"
+        data-demo-video
+        data-src={`${base}/media/bridle-run.webm`}
+        aria-label="A recording of the Bridle window working on a real Python project: the agent explores the code, a network call is blocked, and a new function is added with tests."
+      ></video>
+      <Image
+        class="shot__poster"
+        src={poster}
+        alt="The Bridle window on a clone of the more-itertools library: the project's folders on the left, code in the editor, a terminal, and the agent's chat with its tool calls on the right."
+        widths={[800, 1200, 1750]}
+        sizes="(min-width: 80rem) 75rem, 100vw"
+        loading="eager"
+        fetchpriority="high"
+        decoding="async"
+        data-demo-poster
+      />
+      <button class="shot__toggle" type="button" data-demo-toggle aria-pressed="false" hidden>
+        <span class="pause"><Icon name="close" size={14} /> Pause</span>
+        <span class="resume"><Icon name="play" size={14} /> Play</span>
+      </button>
+    </div>
+    <figcaption>
+      A recording of <code>bridle.exe</code> {version} on a clone of <a href="https://github.com/more-itertools/more-itertools">more-itertools</a>
+      (MIT), with Qwen3.5-9B on an RTX 4060 Laptop GPU. Waiting time is cut and typing is sped up.
+      <a href="#product">See what is on screen</a>
+    </figcaption>
+  </figure>
+</section>
+
+<script>
+  import '../../scripts/demo';
+</script>

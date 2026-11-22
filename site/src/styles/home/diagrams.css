@@ -1,0 +1,418 @@
+/* The architecture diagram. Built from HTML and CSS, so it follows the theme, can be selected and read by a screen reader, and is
+   recomposed (not shrunk) on a phone: a column of stages with the return path as the last row. */
+
+.arch {
+  margin-top: clamp(2rem, 5vw, 3.5rem);
+}
+
+.arch__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.seg {
+  display: inline-flex;
+  padding: 0.2rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+}
+
+.seg button {
+  min-height: 2.25rem;
+  padding: 0 0.9rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.seg button[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.seg button:not([aria-pressed='true']):hover {
+  color: var(--text);
+}
+
+.arch__note {
+  flex: 1 1 18rem;
+  min-height: 1.5em;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+/* ---- The stages -------------------------------------------------------------------------------------------------------- */
+
+.flow {
+  display: grid;
+  gap: 0.9rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stage {
+  position: relative;
+  min-width: 0;
+}
+
+.stage__btn {
+  display: grid;
+  gap: 0.25rem;
+  width: 100%;
+  height: 100%;
+  padding: 0.9rem 0.95rem 0.95rem;
+  border: 1px solid var(--line-2);
+  border-top-width: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s var(--ease), background 0.2s var(--ease), opacity 0.2s var(--ease), transform 0.2s var(--ease);
+}
+
+.stage[data-tone='bridle'] .stage__btn {
+  border-top-color: var(--accent);
+}
+
+.stage[data-tone='machine'] .stage__btn {
+  border-top-color: var(--text-3);
+}
+
+.stage[data-tone='outside'] .stage__btn {
+  border-top-style: dashed;
+  border-top-color: var(--text-3);
+}
+
+.stage__btn:hover {
+  border-color: var(--text-3);
+}
+
+.stage__btn[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.stage__n {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.stage__name {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+}
+
+.stage__line {
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+
+.stage__owner {
+  margin-top: 0.35rem;
+  color: var(--text-3);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.stage__skip {
+  display: none;
+  color: var(--text-3);
+  font-size: 0.7rem;
+}
+
+/* The arrow between two stages: down on a phone, right on a wide screen. */
+.stage__arrow {
+  display: block;
+  width: 2px;
+  height: 0.9rem;
+  margin: 0 auto;
+  background: var(--line-2);
+  position: relative;
+}
+
+.stage__arrow::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -1px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--line-2);
+  border-bottom: 2px solid var(--line-2);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+/* While a call is traced, or after it was, the stages on its path are lit. */
+.stage.is-reached .stage__btn {
+  border-color: var(--accent);
+}
+
+.stage.is-active .stage__btn {
+  background: var(--accent-soft);
+  transform: translateY(-2px);
+}
+
+/* A denied call never gets to the tool or to result processing. */
+.arch[data-outcome='deny'] [data-stage='tool'] .stage__btn,
+.arch[data-outcome='deny'] [data-stage='result'] .stage__btn {
+  opacity: 0.45;
+  border-style: dashed;
+}
+
+.arch[data-outcome='deny'] [data-stage='tool'] .stage__skip,
+.arch[data-outcome='deny'] [data-stage='result'] .stage__skip {
+  display: block;
+}
+
+/* ---- The way back ------------------------------------------------------------------------------------------------------ */
+
+.lane {
+  position: relative;
+  padding: 0.7rem 0.9rem 0.7rem 2.3rem;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+}
+
+.lane::before {
+  content: '\21A9';
+  position: absolute;
+  left: 0.85rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--accent);
+  font-size: 1rem;
+}
+
+.lane__text--deny,
+.arch[data-outcome='deny'] .lane__text--allow {
+  display: none;
+}
+
+.arch[data-outcome='deny'] .lane__text--deny {
+  display: inline;
+}
+
+@media (min-width: 64rem) {
+  .flow {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    column-gap: 1.6rem;
+    row-gap: 1rem;
+  }
+
+  .stage__arrow {
+    position: absolute;
+    top: 2.1rem;
+    right: -1.6rem;
+    width: 1.6rem;
+    height: 2px;
+    margin: 0;
+  }
+
+  .stage__arrow::after {
+    left: auto;
+    right: 0;
+    bottom: auto;
+    top: 50%;
+    transform: translateY(-50%) rotate(-45deg);
+  }
+
+  /* The return path runs under the stages, from where the call ended back to the model. */
+  .lane {
+    grid-row: 2;
+    grid-column: 1 / 6;
+    padding: 0.6rem 0.9rem 0.6rem 0.9rem;
+    border: 0;
+    border-bottom: 2px solid var(--line-2);
+    border-left: 2px solid var(--line-2);
+    border-right: 2px solid var(--line-2);
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+    margin: -0.2rem 2.6rem 0 2.6rem;
+    text-align: center;
+  }
+
+  .lane::before {
+    left: -0.62rem;
+    top: auto;
+    bottom: calc(100% - 0.15rem);
+    transform: none;
+    content: '\25B2';
+    font-size: 0.7rem;
+    color: var(--line-2);
+  }
+
+  .arch[data-outcome='deny'] .lane {
+    grid-column: 1 / 4;
+  }
+}
+
+/* ---- The detail of the selected stage ---------------------------------------------------------------------------------- */
+
+.arch__detail {
+  margin-top: 1.5rem;
+  padding: clamp(1.1rem, 3vw, 1.75rem);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+
+.arch__detail article[hidden] {
+  display: none;
+}
+
+.arch__detail h3 {
+  margin: 0.25rem 0 0.6rem;
+  font-size: var(--fs-h3);
+}
+
+.arch__detail header p:last-child {
+  max-width: 52rem;
+  color: var(--text-2);
+}
+
+.arch__owner {
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.arch__cols {
+  display: grid;
+  gap: 1.5rem 2rem;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.arch__cols h4 {
+  margin: 0 0 0.45rem;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.arch__cols h4:not(:first-child) {
+  margin-top: 1.1rem;
+}
+
+.arch__cols p,
+.arch__cols li {
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+}
+
+.arch__cols ul {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.arch__cols li code {
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: var(--bg-code);
+  color: var(--text);
+}
+
+.arch__code a {
+  display: inline-block;
+  padding-block: 0.3rem;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.arch__more {
+  display: inline-block;
+  margin-top: 1rem;
+  font-size: var(--fs-sm);
+}
+
+@media (min-width: 56rem) {
+  .arch__cols {
+    grid-template-columns: 1.2fr 1fr 0.8fr;
+  }
+}
+
+/* ---- The crates ------------------------------------------------------------------------------------------------------- */
+
+.crates {
+  margin-top: 2.5rem;
+}
+
+.crates__title {
+  margin-bottom: 0.9rem;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.crates ul {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.crates li + li {
+  border-top: 1px solid var(--line);
+}
+
+.crates a {
+  display: grid;
+  gap: 0.15rem 2rem;
+  padding: 0.85rem 1.1rem;
+  text-decoration: none;
+  transition: background 0.15s var(--ease);
+}
+
+.crates a:hover {
+  background: var(--bg-1);
+}
+
+.crates a .mono {
+  color: var(--accent);
+}
+
+.crates a span:last-child {
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+@media (min-width: 48rem) {
+  .crates a {
+    grid-template-columns: 11rem 1fr;
+    align-items: baseline;
+  }
+}

@@ -1,0 +1,140 @@
+---
+import Icon from './Icon.astro';
+import LabRun from './LabRun.astro';
+import { explain, failClosed, meta, stamp, eventLogSample } from '../../data/policy';
+import { groups, loop } from '../../data/lab';
+import { doc, links } from '../../data/site';
+
+const recorded = groups.flatMap((group) => group.items);
+const first = recorded[0];
+const repeated = loop.map((entry) => ({ ...entry, mark: stamp(entry.answer) }));
+const version = meta.bridle.replace('bridle ', '');
+---
+
+<section class="section" id="policy-lab" aria-labelledby="lab-title">
+  <div class="wrap">
+    <div class="head head--wide">
+      <p class="kicker"><b>04</b> Policy lab</p>
+      <h2 id="lab-title">Run a call through the policy</h2>
+      <p>
+        Pick an operation and watch it pass the six stages every call passes. The answers are not simulated: each one was recorded from
+        the real policy.
+      </p>
+    </div>
+
+    <p class="lab__honest" role="note">
+      <Icon name="check" size={16} />
+      <span>
+        <b>Recorded, not computed.</b> Each result is the output of <code>bridle hook tool-before</code> from Bridle {version} on
+        {meta.system}, with the <code>{meta.profile}</code> profile, on {meta.recordedAt}. This page replays them and evaluates nothing, so it
+        proves nothing about the security of your setup. The order of the checks follows
+        <a href={links.source('crates/harness-core/src/security/tool_policy.rs')} rel="noopener">tool_policy.rs</a>; the final rule, class, verdict and
+        message are the recorded ones.
+      </span>
+    </p>
+
+    <div class="lab" data-lab>
+      <div class="lab__ops">
+        {
+          groups.map((group) => (
+            <div class="ops" role="group" aria-labelledby={`ops-${group.id}`}>
+              <p class="ops__label mono" id={`ops-${group.id}`}>{group.label}</p>
+              <ul>
+                {group.id === 'repeat' ? (
+                  <li>
+                    <button type="button" class="op" aria-pressed="false" aria-controls="lab-stage" data-run="loop">
+                      Edit the same file five times
+                    </button>
+                  </li>
+                ) : (
+                  group.items.map((item) => (
+                    <li>
+                      <button type="button" class="op" aria-pressed={item.id === first.id ? 'true' : 'false'} aria-controls="lab-stage" data-run={item.id}>
+                        {item.label}
+                      </button>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </div>
+          ))
+        }
+        <div class="ops" role="group" aria-labelledby="ops-fail">
+          <p class="ops__label mono" id="ops-fail">When it cannot decide</p>
+          <ul>
+            <li>
+              <button type="button" class="op" aria-pressed="false" aria-controls="lab-stage" data-run="fail">A project with a broken configuration</button>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="lab__stage" id="lab-stage" tabindex="-1">
+        <LabRun item={first} />
+        {recorded.slice(1).map((item) => <template data-template={item.id}><LabRun item={item} hidden /></template>)}
+
+        <template data-template="loop">
+          <article class="run" data-panel="loop" hidden>
+            <header class="run__call">
+              <p class="mono run__from">The model asks for</p>
+              <code>edit src/calc.py</code>
+              <span class="run__again mono" data-loop-count>call 1 of 5</span>
+            </header>
+            <ol class="loop" data-loop>
+              {
+                repeated.map((entry) => (
+                  <li class="loop__row" data-n={entry.n} hidden={entry.n > 1}>
+                    <span class="mono loop__n">#{entry.n}</span>
+                    <span class={`stamp stamp--${entry.mark.tone}`}>{entry.mark.text}</span>
+                    <span class="mono loop__rule">{entry.answer.rule}</span>
+                    <p>{entry.answer.message || 'The edit is applied.'}</p>
+                  </li>
+                ))
+              }
+            </ol>
+            <div class="loop__actions">
+              <button class="btn btn--sm btn--primary" type="button" data-loop-next>Run the edit again</button>
+              <button class="btn btn--sm" type="button" data-loop-reset>Start over</button>
+            </div>
+            <p class="lab__limit">
+              Loop rules need the task workflow, which is off in the default profile. The refusal stops the call, not the task: the agent
+              is told what to do next, and <code>bridle task reset</code> starts the counters again.
+            </p>
+            <pre class="lab__explain"><code>$ bridle explain
+{explain}</code></pre>
+          </article>
+        </template>
+
+        <template data-template="fail">
+          <article class="run" data-panel="fail" hidden>
+            <header class="run__call">
+              <p class="mono run__from">Any call, in a project whose configuration has errors</p>
+              <code>read src/calc.py</code>
+            </header>
+            <div class="fail">
+              <p><span class="stamp stamp--deny">Blocked</span></p>
+              <pre><code>{failClosed.message}</code></pre>
+              <p>
+                The policy cannot start, so nothing is decided and nothing runs. This is the recorded answer of the hook in a project with
+                no model configured. A hook that cannot answer blocks the call; output that cannot be redacted is withheld.
+                <a href={doc('project/security-model')}>Read the failure rules</a>
+              </p>
+            </div>
+          </article>
+        </template>
+
+        <div class="lab__log">
+          <h3 class="mono">What the event log keeps</h3>
+          <p>One line per decision in <code>.bridle/tool-events.jsonl</code>. This is the recorded line for an edit of <code>bridle.toml</code>:</p>
+          <pre><code>{eventLogSample}</code></pre>
+        </div>
+      </div>
+    </div>
+
+    <p class="sr-only" role="status" aria-live="polite" data-lab-status></p>
+  </div>
+</section>
+
+<script>
+  import '../../scripts/lab';
+</script>

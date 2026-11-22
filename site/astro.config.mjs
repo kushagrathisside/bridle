@@ -6,6 +6,8 @@ import { BASE, SITE_URL } from './site.config.mjs';
 export default defineConfig({
   site: SITE_URL,
   base: BASE,
+  // Compression would drop the space where a line of text ends before an inline element, and glue the words together.
+  compressHTML: false,
   integrations: [
     starlight({
       title: 'Bridle',

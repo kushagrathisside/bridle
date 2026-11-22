@@ -1,0 +1,463 @@
+/* Navigation, footer, search dialog and the copyable command block. */
+
+/* ---- Navigation -------------------------------------------------------------------------------------------------------- */
+
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  border-bottom: 1px solid transparent;
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  backdrop-filter: saturate(1.4) blur(12px);
+  transition: border-color 0.2s var(--ease);
+}
+
+.nav.is-scrolled {
+  border-bottom-color: var(--line);
+}
+
+.nav__bar {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  height: var(--nav-h);
+}
+
+.nav__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+
+.nav__brand span {
+  color: var(--text);
+}
+
+.nav__links {
+  display: none;
+  gap: 0.25rem;
+  margin-left: 1rem;
+}
+
+.nav__links a {
+  padding: 0.4rem 0.7rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  text-decoration: none;
+  transition: color 0.15s var(--ease), background 0.15s var(--ease);
+}
+
+.nav__links a:hover,
+.nav__links a[aria-current='true'] {
+  color: var(--text);
+  background: var(--bg-2);
+}
+
+.nav__tools {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
+.nav__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: color 0.15s var(--ease), background 0.15s var(--ease);
+}
+
+.nav__icon:hover {
+  color: var(--text);
+  background: var(--bg-2);
+}
+
+.nav__search {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2.5rem;
+  padding: 0 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  color: var(--text-3);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease), color 0.15s var(--ease);
+}
+
+.nav__search:hover {
+  border-color: var(--line-2);
+  color: var(--text-2);
+}
+
+.nav__search-text,
+.nav__search kbd,
+.nav__cta {
+  display: none;
+}
+
+/* The theme button shows the icon of the theme it switches to. */
+.theme-sun {
+  display: none;
+}
+
+:root[data-theme='dark'] .theme-sun,
+:root:not([data-theme]) .theme-sun {
+  display: inline-flex;
+}
+
+:root[data-theme='dark'] .theme-moon,
+:root:not([data-theme]) .theme-moon {
+  display: none;
+}
+
+:root[data-theme='light'] .theme-moon {
+  display: inline-flex;
+}
+
+.theme-moon {
+  display: inline-flex;
+}
+
+.menu-close {
+  display: none;
+}
+
+[data-menu-toggle][aria-expanded='true'] .menu-open {
+  display: none;
+}
+
+[data-menu-toggle][aria-expanded='true'] .menu-close {
+  display: inline-flex;
+}
+
+.nav__panel {
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.nav__panel[hidden] {
+  display: none;
+}
+
+.nav__panel nav {
+  display: grid;
+  gap: 0.25rem;
+  padding-block: 1rem 1.5rem;
+}
+
+.nav__panel a:not(.btn) {
+  padding: 0.7rem 0.25rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  font-size: var(--fs-lg);
+  text-decoration: none;
+}
+
+.nav__panel .btn {
+  margin-top: 0.75rem;
+}
+
+@media (min-width: 40rem) {
+  .nav__search-text,
+  .nav__search kbd {
+    display: inline;
+  }
+
+  .nav__cta {
+    display: inline-flex;
+  }
+}
+
+@media (min-width: 56rem) {
+  .nav__links {
+    display: flex;
+  }
+
+  .nav__menu,
+  .nav__panel {
+    display: none;
+  }
+}
+
+/* ---- Footer ------------------------------------------------------------------------------------------------------------ */
+
+.footer {
+  margin-top: var(--section);
+  border-top: 1px solid var(--line);
+  background: var(--bg-1);
+}
+
+.footer__grid {
+  display: grid;
+  gap: 2.5rem 2rem;
+  padding-block: 3.5rem 2.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.footer__about {
+  grid-column: 1 / -1;
+  max-width: 24rem;
+}
+
+.footer__about p {
+  margin-top: 0.9rem;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.footer h2 {
+  margin-bottom: 0.9rem;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.footer ul {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0;
+  list-style: none;
+}
+
+.footer li a {
+  display: inline-block;
+  padding-block: 0.2rem;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  text-decoration: none;
+}
+
+.footer li a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.footer__base {
+  display: grid;
+  gap: 0.35rem;
+  padding-block: 1.5rem 2.5rem;
+  border-top: 1px solid var(--line);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+@media (min-width: 52rem) {
+  .footer__grid {
+    grid-template-columns: 1.4fr repeat(4, 1fr);
+  }
+
+  .footer__about {
+    grid-column: auto;
+  }
+}
+
+/* ---- Search dialog ----------------------------------------------------------------------------------------------------- */
+
+.search {
+  width: min(40rem, calc(100vw - 2rem));
+  max-height: min(34rem, 80vh);
+  margin: 12vh auto auto;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.search::backdrop {
+  background: rgb(4 8 10 / 0.6);
+}
+
+.search[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.search__box {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-3);
+}
+
+.search__box input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-lg);
+}
+
+.search__box input:focus-visible {
+  outline: none;
+}
+
+.search__box input::placeholder {
+  color: var(--text-3);
+}
+
+.search__esc {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.search__list {
+  margin: 0;
+  padding: 0.4rem;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.search__list:empty {
+  display: none;
+}
+
+.search__list a {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+}
+
+.search__list strong {
+  font-size: var(--fs-sm);
+}
+
+.search__list span {
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.search__list mark {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 2px;
+}
+
+.search__list [aria-selected='true'] a,
+.search__list a:hover {
+  background: var(--bg-2);
+}
+
+.search__status {
+  margin: 0;
+  padding: 0.7rem 1rem;
+  border-top: 1px solid var(--line);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.search__status:empty {
+  display: none;
+}
+
+/* ---- A command you can copy -------------------------------------------------------------------------------------------- */
+
+.cmd {
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--bg-code);
+  overflow: hidden;
+}
+
+.cmd__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 2.5rem;
+  padding: 0.25rem 0.5rem 0.25rem 0.9rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.cmd__copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2rem;
+  padding: 0 0.6rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.cmd__copy:hover {
+  background: var(--bg-2);
+  color: var(--text);
+}
+
+.cmd__copy .done,
+.cmd__copy .failed,
+.cmd__copy[data-state] .idle {
+  display: none;
+}
+
+.cmd__copy[data-state='copied'] .done {
+  display: inline-flex;
+  color: var(--allow);
+}
+
+.cmd__copy[data-state='failed'] .failed {
+  display: inline;
+  color: var(--deny);
+}
+
+.cmd pre {
+  padding: 0.9rem 1rem 1rem;
+  overflow-x: auto;
+  color: var(--text);
+  font-size: 0.86rem;
+  line-height: 1.7;
+  tab-size: 2;
+}
+
+.cmd .c {
+  color: var(--text-3);
+}
+
+.cmd .p {
+  color: var(--accent);
+  user-select: none;
+}

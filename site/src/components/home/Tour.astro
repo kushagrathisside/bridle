@@ -1,0 +1,82 @@
+---
+import { Image } from 'astro:assets';
+import { tour } from '../../data/tour';
+import { doc } from '../../data/site';
+
+// Every screenshot lives in src/assets/shots. They are optimised at build time and only the first one is loaded eagerly.
+const shots = import.meta.glob<ImageMetadata>('../../assets/shots/*.png', { eager: true, import: 'default' });
+const shot = (name: string): ImageMetadata => {
+  const found = shots[`../../assets/shots/${name}.png`];
+  if (!found) throw new Error(`site: missing screenshot src/assets/shots/${name}.png`);
+  return found;
+};
+const first = shot(tour[0].image);
+---
+
+<section class="section" id="product" aria-labelledby="product-title">
+  <div class="wrap">
+    <div class="head head--wide">
+      <p class="kicker"><b>02</b> The product</p>
+      <h2 id="product-title">Watch what the agent is doing, and who is doing it.</h2>
+      <p>
+        The Bridle window shows the model’s work as it happens: its tool calls, its edits as diffs, the project, your own terminal, and a
+        team of named members. These are screenshots of the real program on a real project.
+      </p>
+    </div>
+
+    <div class="tour" data-tour style={`--iw:${first.width};--ih:${first.height}`}>
+      <div class="tour__tabs" role="tablist" aria-label="Parts of the window" aria-orientation="vertical">
+        {
+          tour.map((item, index) => (
+            <button
+              class="tour__tab"
+              type="button"
+              role="tab"
+              id={`tour-tab-${item.id}`}
+              aria-controls="tour-stage"
+              aria-selected={index === 0 ? 'true' : 'false'}
+              tabindex={index === 0 ? 0 : -1}
+              data-id={item.id}
+              data-region={item.region.join(',')}
+              data-crop={(item.crop ?? item.region).join(',')}
+              data-more-label={item.more?.label}
+              data-more-href={item.more ? doc(item.more.href) : undefined}
+            >
+              <span class="tour__num mono">{String(index + 1).padStart(2, '0')}</span>
+              <span class="tour__title">{item.title}</span>
+              <span class="tour__text">{item.text}</span>
+            </button>
+          ))
+        }
+      </div>
+
+      <div class="tour__stage" id="tour-stage" role="tabpanel" aria-labelledby="tour-tab-chat">
+        <div class="tour__frame" data-frame>
+          {
+            tour.map((item, index) => (
+              <Image
+                src={shot(item.image)}
+                alt={`${item.title}: ${item.text}`}
+                widths={[900, 1400, 1650]}
+                sizes="(min-width: 64rem) 52rem, 100vw"
+                loading={index === 0 ? 'eager' : 'lazy'}
+                decoding="async"
+                data-shot={item.id}
+                hidden={index !== 0}
+              />
+            ))
+          }
+          <span class="tour__hl" data-hl aria-hidden="true"></span>
+        </div>
+        <div class="tour__caption" aria-live="polite">
+          <p data-caption>{tour[0].text}</p>
+          <a class="link" data-more href={doc(tour[0].more?.href ?? 'guides/desktop')}>{tour[0].more?.label ?? 'The desktop window'}</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  import '../../scripts/tour';
+</script>

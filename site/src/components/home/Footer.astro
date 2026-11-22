@@ -1,0 +1,78 @@
+---
+import Logo from './Logo.astro';
+import { doc, links, version } from '../../data/site';
+
+const columns = [
+  {
+    heading: 'Product',
+    items: [
+      { label: 'The desktop window', href: doc('guides/desktop') },
+      { label: 'Team and board', href: doc('guides/team-and-board') },
+      { label: 'Models and slots', href: doc('concepts/models-and-slots') },
+      { label: 'Web research', href: doc('guides/web-research') },
+      { label: 'Use with OpenCode', href: doc('getting-started', '#6-or-use-opencode') },
+    ],
+  },
+  {
+    heading: 'Learn',
+    items: [
+      { label: 'Getting started', href: doc('getting-started') },
+      { label: 'Install Bridle', href: doc('guides/install') },
+      { label: 'How decisions are made', href: doc('concepts/how-decisions-are-made') },
+      { label: 'Command line', href: doc('reference/cli') },
+      { label: 'Configuration', href: doc('reference/configuration') },
+    ],
+  },
+  {
+    heading: 'Project',
+    items: [
+      { label: 'Architecture', href: doc('project/architecture') },
+      { label: 'Security model', href: doc('project/security-model') },
+      { label: 'Status and limits', href: doc('project/status') },
+      { label: 'Decisions', href: doc('project/decisions/adr-0001-rust-core-thin-host-adapter') },
+      { label: 'Changelog', href: doc('project/changelog') },
+      { label: 'Contributing', href: doc('project/contributing') },
+    ],
+  },
+  {
+    heading: 'Source',
+    items: [
+      { label: 'GitHub repository', href: links.repo },
+      { label: `Release ${version}`, href: links.releaseNotes },
+      { label: 'Issues', href: links.issues },
+      { label: 'Report a vulnerability', href: doc('project/security-policy') },
+      { label: 'Apache-2.0 licence', href: links.license },
+    ],
+  },
+];
+---
+
+<footer class="footer">
+  <div class="wrap footer__grid">
+    <div class="footer__about">
+      <a class="nav__brand" href="#top" aria-label="Bridle, back to the top">
+        <Logo size={24} />
+        <span>Bridle</span>
+      </a>
+      <p>A local-first coding agent for Windows. The model proposes; Bridle decides.</p>
+    </div>
+    {
+      columns.map((column) => (
+        <nav aria-label={column.heading}>
+          <h2>{column.heading}</h2>
+          <ul>
+            {column.items.map((item) => (
+              <li>
+                <a href={item.href}>{item.label}</a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      ))
+    }
+  </div>
+  <div class="wrap footer__base">
+    <p>Bridle {version} · Apache-2.0 · Native Windows 11, verified on one machine · The program is not code-signed.</p>
+    <p>Built on llama.cpp, Tauri, tree-sitter, Monaco and xterm.js. Model weights are not included.</p>
+  </div>
+</footer>

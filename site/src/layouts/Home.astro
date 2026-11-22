@@ -1,0 +1,82 @@
+---
+// The shell of the home page: metadata, the theme script, the skip link, the navigation, the search dialog and the footer.
+// The documentation pages use Starlight's own layout; both read the theme from the same storage key.
+import '../styles/tokens.css';
+import '../styles/home.css';
+import Nav from '../components/home/Nav.astro';
+import Footer from '../components/home/Footer.astro';
+import SearchDialog from '../components/home/SearchDialog.astro';
+import { base, description, homeUrl, links, origin, title, version } from '../data/site';
+
+const social = `${origin}${base}/og.png`;
+const structured = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'Bridle',
+  applicationCategory: 'DeveloperApplication',
+  operatingSystem: 'Windows 11',
+  softwareVersion: version,
+  license: 'https://www.apache.org/licenses/LICENSE-2.0',
+  description,
+  url: homeUrl,
+  downloadUrl: links.releases,
+  codeRepository: links.repo,
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+};
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={homeUrl} />
+    <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
+    <meta name="theme-color" content="#0a0d10" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f7f9fa" media="(prefers-color-scheme: light)" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Bridle" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={homeUrl} />
+    <meta property="og:image" content={social} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="The Bridle window on a real Python project: the explorer, a diff, a terminal and the agent's chat with its tool calls." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={social} />
+    <script type="application/ld+json" set:html={JSON.stringify(structured)} />
+    <script is:inline>
+      // Runs before the first paint so the page never flashes the wrong theme. It shares Starlight's storage key, so a choice
+      // made here carries over to the documentation and back.
+      (function () {
+        try {
+          var saved = localStorage.getItem('starlight-theme');
+          var theme = saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+          document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+        } catch (error) {
+          /* storage can be blocked; the stylesheet follows the system setting then */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <Nav />
+    <main id="main">
+      <slot />
+    </main>
+    <Footer />
+    <SearchDialog />
+    <script>
+      import '../scripts/theme';
+      import '../scripts/nav';
+      import '../scripts/copy';
+      import '../scripts/search';
+    </script>
+  </body>
+</html>

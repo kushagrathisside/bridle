@@ -1,0 +1,17 @@
+---
+// The Bridle mark: the same B-shaped stroke as the favicon, on the accent colour.
+interface Props {
+  size?: number;
+}
+const { size = 24 } = Astro.props;
+---
+
+<svg class="logo-mark" width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+  <rect width="32" height="32" rx="7" fill="currentColor"></rect>
+  <path
+    d="M10 8h7.5a5 5 0 0 1 0 10H10zm0 10h8.5a5 5 0 0 1 0 10H10z"
+    fill="none"
+    stroke="var(--accent-ink)"
+    stroke-width="2.6"
+    stroke-linejoin="round"></path>
+</svg>

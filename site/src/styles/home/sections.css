@@ -1,0 +1,158 @@
+/* Section layouts. Each section has its own composition on purpose: a split with a sticky title, a ledger, a tabbed stage, a
+   spec sheet. Nothing here is a grid of identical cards. */
+
+/* ---- 01 Why: text on the left, a ledger of recorded calls on the right -------------------------------------------------- */
+
+.why {
+  display: grid;
+  gap: 3rem 4rem;
+  align-items: start;
+}
+
+.why__text {
+  max-width: 34rem;
+}
+
+.why__text h2 {
+  font-size: var(--fs-h2);
+}
+
+.why__lead {
+  margin-top: 1.25rem;
+  color: var(--text-2);
+  font-size: var(--fs-lg);
+}
+
+.why__points {
+  display: grid;
+  gap: 0.9rem;
+  margin: 1.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.why__points li {
+  padding-left: 1.1rem;
+  border-left: 2px solid var(--line-2);
+  color: var(--text-2);
+}
+
+.why__points b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.why__more {
+  margin-top: 1.5rem;
+  font-size: var(--fs-sm);
+}
+
+.why__more a,
+.ledger__source a,
+.link {
+  color: var(--accent);
+}
+
+/* Links that stand on their own are at least 24 px tall, so they are easy to hit. */
+.link,
+.why__more a {
+  display: inline-block;
+  padding-block: 0.2rem;
+}
+
+.why__ledger {
+  min-width: 0;
+}
+
+.ledger__head {
+  display: none;
+  padding: 0 1.1rem 0.6rem;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ledger {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+
+.ledger__row {
+  display: grid;
+  gap: 0.9rem 1.5rem;
+  padding: 1.1rem;
+}
+
+.ledger__row + .ledger__row {
+  border-top: 1px solid var(--line);
+}
+
+.ledger__ask code {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0.25rem 0.55rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-code);
+  color: var(--text);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.ledger__ask p,
+.ledger__verdict p {
+  margin-top: 0.5rem;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.ledger__verdict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.ledger__verdict p {
+  flex-basis: 100%;
+  margin-top: 0.15rem;
+}
+
+.ledger__rule {
+  color: var(--text-3);
+}
+
+.ledger__source {
+  margin-top: 0.9rem;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+@media (min-width: 64rem) {
+  .why {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  }
+
+  .why__text {
+    position: sticky;
+    top: calc(var(--nav-h) + 2rem);
+  }
+}
+
+@media (min-width: 40rem) {
+  .ledger__head,
+  .ledger__row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .ledger__head {
+    display: grid;
+  }
+}

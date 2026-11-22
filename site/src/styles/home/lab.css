@@ -1,0 +1,421 @@
+/* The policy lab. Operations on the left, the six stages of the chosen call on the right. */
+
+.lab__honest {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.75rem;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid var(--line-2);
+  border-left: 3px solid var(--allow);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.lab__honest .icon {
+  margin-top: 0.2rem;
+  color: var(--allow);
+}
+
+.lab__honest b {
+  color: var(--text);
+}
+
+.lab__honest a {
+  color: var(--accent);
+}
+
+.lab {
+  display: grid;
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.lab__ops {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
+.ops__label {
+  margin-bottom: 0.4rem;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ops ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.op {
+  min-height: 2.25rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease), color 0.15s var(--ease);
+}
+
+.op:hover {
+  color: var(--text);
+  border-color: var(--text-3);
+}
+
+.op[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.lab__stage {
+  min-width: 0;
+  outline: none;
+}
+
+.run[hidden] {
+  display: none;
+}
+
+.run__call {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.9rem;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--bg-1);
+}
+
+.run__from {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.run__call code {
+  color: var(--text);
+  font-size: 0.95rem;
+  overflow-wrap: anywhere;
+}
+
+.run__again {
+  margin-left: auto;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+}
+
+/* ---- Stages ------------------------------------------------------------------------------------------------------------ */
+
+.steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line-2);
+  border-top: 0;
+  background: var(--bg);
+}
+
+.step {
+  position: relative;
+  padding: 1rem 1.1rem 1.1rem 3.25rem;
+  transition: opacity 0.3s var(--ease);
+}
+
+.step + .step {
+  border-top: 1px solid var(--line);
+}
+
+/* Once the script runs, the stages that have not been reached yet keep their number and wait. Their text is hidden rather than
+   faded, so no text is ever shown below the contrast minimum. Without the script they are all visible. */
+.lab.is-ready .step:not(.is-on) > :not(h3) {
+  visibility: hidden;
+}
+
+.step h3 {
+  margin-bottom: 0.4rem;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.step h3 span {
+  position: absolute;
+  left: 1.1rem;
+  top: 1rem;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 1px solid var(--line-2);
+  border-radius: 50%;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+}
+
+.step.is-on h3 span {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.step p {
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.step p + p {
+  margin-top: 0.5rem;
+}
+
+.step code,
+.fail code {
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: var(--bg-code);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.step pre,
+.fail pre,
+.lab__explain,
+.lab__log pre {
+  margin-top: 0.6rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-code);
+  color: var(--text);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.step pre code,
+.fail pre code,
+.lab__log pre code {
+  padding: 0;
+  background: none;
+}
+
+.checks {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.check {
+  display: flex;
+  gap: 0.65rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+}
+
+.check__mark {
+  flex: none;
+  width: 1.1rem;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  text-align: center;
+}
+
+.check__body {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+  color: var(--text-2);
+}
+
+.check__body b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.check__body em {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-style: normal;
+}
+
+.check--pass .check__mark {
+  color: var(--allow);
+}
+
+.check--fail {
+  background: var(--deny-soft);
+}
+
+.check--fail .check__mark,
+.check--fail .check__body b {
+  color: var(--deny);
+}
+
+.check--skip {
+  opacity: 0.55;
+}
+
+.step--decide[data-tone='allow'] {
+  background: var(--allow-soft);
+}
+
+.step--decide[data-tone='ask'] {
+  background: var(--ask-soft);
+}
+
+.step--decide[data-tone='deny'] {
+  background: var(--deny-soft);
+}
+
+.decision {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.lab__limit {
+  margin-top: 0.8rem;
+  padding: 0.65rem 0.85rem;
+  border-left: 3px solid var(--ask);
+  background: var(--ask-soft);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.lab__limit b {
+  color: var(--ask);
+}
+
+.run .cmd {
+  margin-top: 1rem;
+}
+
+/* ---- Repeated edits ---------------------------------------------------------------------------------------------------- */
+
+.loop {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line-2);
+  border-top: 0;
+}
+
+.loop__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+  padding: 0.8rem 1.1rem;
+}
+
+.loop__row[hidden] {
+  display: none;
+}
+
+.loop__row + .loop__row {
+  border-top: 1px solid var(--line);
+}
+
+.loop__n {
+  color: var(--text-3);
+}
+
+.loop__rule {
+  color: var(--text-3);
+}
+
+.loop__row p {
+  flex-basis: 100%;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.loop__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.fail {
+  padding: 1.1rem;
+  border: 1px solid var(--line-2);
+  border-top: 0;
+  background: var(--bg);
+}
+
+.fail p:last-child {
+  margin-top: 0.8rem;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.fail a {
+  color: var(--accent);
+}
+
+.lab__log {
+  margin-top: 1.5rem;
+}
+
+.lab__log h3 {
+  margin-bottom: 0.4rem;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lab__log p {
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+@media (min-width: 62rem) {
+  .lab {
+    grid-template-columns: 17rem minmax(0, 1fr);
+    gap: 2rem;
+  }
+
+  .lab__ops {
+    position: sticky;
+    top: calc(var(--nav-h) + 1.5rem);
+  }
+
+  .ops ul {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 0.25rem;
+  }
+
+  .op {
+    width: 100%;
+  }
+}

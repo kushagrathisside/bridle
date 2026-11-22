@@ -1,0 +1,127 @@
+---
+import Command from './Command.astro';
+import { byId, failClosed } from '../../data/policy';
+import { doc, links } from '../../data/site';
+
+const enforced = [
+  {
+    title: 'Secret files never reach the model',
+    text: 'File tools and every shell argument are checked against secret file names: environment files, keys, certificates, .netrc and credential files. A glob that could match one is denied too.',
+    proof: '72 hostile and ordinary calls run through the real hook in the test suite.',
+    href: links.source('crates/harness-cli/tests/adversarial.rs'),
+    link: 'adversarial.rs',
+  },
+  {
+    title: 'Paths stay inside the project',
+    text: 'Windows device names, alternate data streams and UNC paths are refused, and a path is resolved before it is checked, so what was checked is what is opened.',
+    proof: 'Recorded: a read of the hosts file is denied by path_guard.',
+    href: links.source('crates/harness-core/src/security/path_guard.rs'),
+    link: 'path_guard.rs',
+  },
+  {
+    title: 'The agent cannot change the harness',
+    text: 'Writes to bridle.toml, opencode.json, .opencode, .bridle, .worktrees and .git, at any depth, are refused.',
+    proof: 'Recorded: an edit of bridle.toml is denied by protected_path.',
+    href: links.source('crates/harness-core/src/security/tool_policy.rs'),
+    link: 'tool_policy.rs',
+  },
+  {
+    title: 'A repository can only tighten the policy',
+    text: 'Settings that loosen it, such as extra safe commands and the proxy, are read from the machine configuration only. A cloned repository cannot mark its own scripts as safe.',
+    proof: 'Listed in the configuration reference.',
+    href: doc('reference/configuration', '#what-a-repository-file-cannot-set'),
+    link: 'What a repository file cannot set',
+  },
+  {
+    title: 'Model traffic stays on this machine',
+    text: 'Model endpoints must be on loopback unless you turn external providers on, and the client for them never uses a proxy.',
+    proof: 'Checked by the configuration validator.',
+    href: doc('reference/configuration'),
+    link: 'Configuration',
+  },
+];
+
+const notProtected = [
+  ['Bridle is not a sandbox.', 'An allowed command runs with your user account’s rights. A test run executes code the model wrote. Run it on repositories you would run yourself, ideally in a git worktree.'],
+  ['A determined program is not contained.', 'The policy stops obvious harm and keeps secrets out of the model’s context and the logs. It does not isolate a process that is set on bypassing it.'],
+  ['Recursive search can read secrets without naming them.', `The policy allows ${byId('grep-recursive').shows.replace('bash: ', '')}, because no path names a secret file. Only output redaction stands in the way.`],
+  ['Redaction knows shapes.', 'A secret in a format it does not recognise reaches the model.'],
+  ['The terminal in the window is yours.', 'What you type there is not judged by the model’s policy.'],
+  ['The model can weaken a test.', 'Nothing in the policy stops an edit to a test file.'],
+  ['Loop rules are heuristics.', 'A refusal can block a deliberate retry. It names its rule so you can decide.'],
+  ['It is one machine, on Windows, unaudited.', 'Version 0.1.0 is verified on one Windows 11 machine, the program is not code-signed, and the design has not been independently audited. Two settings are read but not enforced yet.'],
+];
+---
+
+<section class="section" id="security" aria-labelledby="sec-title">
+  <div class="wrap">
+    <div class="head head--wide">
+      <p class="kicker"><b>06</b> Security and trust</p>
+      <h2 id="sec-title">Evidence, not promises</h2>
+      <p>
+        Here is what the policy enforces and how you can check it, what it does when it cannot decide, and, given the same weight, what it
+        does not protect against.
+      </p>
+    </div>
+
+    <div class="trust">
+      <div class="trust__enforced">
+        <h3 class="mono trust__label">Enforced, with the evidence</h3>
+        <ul class="proofs">
+          {
+            enforced.map((item) => (
+              <li>
+                <h4>{item.title}</h4>
+                <p>{item.text}</p>
+                <p class="proofs__proof">
+                  <span class="mono">Evidence</span> {item.proof} <a href={item.href} rel="noopener">{item.link}</a>
+                </p>
+              </li>
+            ))
+          }
+        </ul>
+
+        <div class="closed">
+          <h3 class="mono trust__label">When it cannot decide, it blocks</h3>
+          <p>
+            This is the recorded answer of the real hook in a project whose configuration has errors. Nothing is decided and nothing runs.
+          </p>
+          <pre><code>{failClosed.message}</code></pre>
+          <ul>
+            <li>A command that cannot be parsed is denied, and a tool the policy does not know is treated as risky and blocked.</li>
+            <li>If the hook cannot answer, the plugin blocks the call. If redaction cannot run, the output is withheld.</li>
+            <li><code>ask</code> is reported as a block, so even an auto-approving host cannot approve what the policy did not allow.</li>
+          </ul>
+        </div>
+      </div>
+
+      <aside class="trust__limits" aria-labelledby="limits-title">
+        <h3 class="mono trust__label" id="limits-title">What Bridle does not protect against</h3>
+        <ul>
+          {notProtected.map(([title, text]) => <li><b>{title}</b> {text}</li>)}
+        </ul>
+        <p class="trust__more"><a class="link" href={doc('project/security-model', '#limits')}>The full list of limits</a></p>
+      </aside>
+    </div>
+
+    <div class="verify">
+      <div>
+        <h3>Check it yourself</h3>
+        <p>
+          The policy is a command you can call. After you have run <code>bridle</code> once on a computer and set up a project with
+          <code>bridle init</code>, this prints the verdict for reading <code>.env</code>, without any model:
+        </p>
+        <Command
+          label="cmd.exe · in the project folder"
+          lines={['bridle init --profile local-only', 'echo {"sessionID":"s1","callID":"c1","tool":"read","args":{"filePath":".env"}} | bridle hook tool-before']}
+        />
+      </div>
+      <ul class="verify__links">
+        <li><a href={doc('project/security-model')}>Security model</a><span>The rules for every call, the classes, and the residual risks.</span></li>
+        <li><a href={doc('project/security-policy')}>Report a vulnerability</a><span>How to report a security problem privately.</span></li>
+        <li><a href={links.tree('evals/security')} rel="noopener">The adversarial cases</a><span>The set of hostile and ordinary calls, in JSON.</span></li>
+        <li><a href={doc('project/decisions/adr-0001-rust-core-thin-host-adapter')}>Decision records</a><span>Why the policy is built the way it is.</span></li>
+      </ul>
+    </div>
+  </div>
+</section>

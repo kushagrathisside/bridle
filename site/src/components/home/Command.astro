@@ -1,0 +1,27 @@
+---
+// A block of commands with a working copy button. A line that starts with "::" is a comment (cmd.exe's own marker); it is shown
+// but not copied. The copied text is exactly the other lines.
+import Icon from './Icon.astro';
+
+interface Props {
+  label: string;
+  lines: string[];
+}
+const { label, lines } = Astro.props;
+const copy = lines.filter((line) => !line.startsWith('::') && line.trim() !== '').join('\n');
+---
+
+<div class="cmd">
+  <div class="cmd__bar">
+    <span>{label}</span>
+    <span>
+      <button class="cmd__copy" type="button" data-copy-text={copy} aria-label={`Copy the commands: ${label}`}>
+        <span class="idle"><Icon name="copy" size={14} /> Copy</span>
+        <span class="done"><Icon name="check" size={14} /> Copied</span>
+        <span class="failed">Select and copy</span>
+      </button>
+      <span class="sr-only" role="status" data-copy-status></span>
+    </span>
+  </div>
+  <pre tabindex="0"><code>{lines.map((line) => <><span class={line.startsWith('::') ? 'c' : undefined}>{line}</span>{'\n'}</>)}</code></pre>
+</div>
