@@ -32,7 +32,7 @@
 //! | V26 | Error | a repeated-command threshold is below 2, or its window is shorter than the count or longer than the call ring |
 //! | V27 | Error | the repeated-edit threshold is below 2 (one edit is progress, not a loop) |
 //! | V28 | Error | the refusal cap is below 1 |
-//! | V29 | Error | an `[agent]` loop bound would block the task at once: `max_iterations` below 2, or a retry bound below 1 |
+//! | V29 | Error | an `[agent]` loop bound would block the task at once: `max_iterations` below 2, `max_steps_per_turn` outside 1 to 1000, or a retry bound below 1 |
 //! | V30 | Error | `external.jev.enabled` without an `endpoint` |
 //! | V31 | Error | `external.jev.endpoint` is not an http(s) URL with a host |
 //! | V32 | Error | a non-loopback Jev endpoint over plain `http://` |
@@ -305,6 +305,13 @@ fn check_workflow(cfg: &Config, report: &mut Report) {
             "V29",
             "agent.max_iterations",
             "must be at least 2: the task would be blocked at once",
+        );
+    }
+    if !(1..=1000).contains(&agent.max_steps_per_turn) {
+        report.error(
+            "V29",
+            "agent.max_steps_per_turn",
+            "must be between 1 and 1000 model calls",
         );
     }
     if agent.max_implementation_retries < 1 {
@@ -2316,5 +2323,20 @@ mod workflow_rule_tests {
                 "agent.max_same_failure".to_owned(),
             ]
         );
+    }
+    #[test]
+    fn the_step_limit_per_turn_must_be_between_1_and_1000() {
+        let mut cfg = Config::default();
+        assert_eq!(cfg.agent.max_steps_per_turn, 30);
+        assert!(error_paths(&cfg, "V29").is_empty());
+        for bad in [0, 1001] {
+            cfg.agent.max_steps_per_turn = bad;
+            assert_eq!(
+                error_paths(&cfg, "V29"),
+                vec!["agent.max_steps_per_turn".to_owned()]
+            );
+        }
+        cfg.agent.max_steps_per_turn = 200;
+        assert!(error_paths(&cfg, "V29").is_empty());
     }
 }

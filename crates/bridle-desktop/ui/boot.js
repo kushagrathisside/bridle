@@ -2,7 +2,8 @@
 
 // Wires the controls to the code in the other files and starts the window.
 
-document.querySelectorAll("#activity button").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
+document.querySelectorAll("#activity button[data-view]").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
+$("open-settings").addEventListener("click", () => openSettings());
 document.querySelectorAll(".bottom-tabs button[data-panel]").forEach((b) => b.addEventListener("click", () => showBottom(b.dataset.panel)));
 $("toggle-bottom").addEventListener("click", toggleBottom);
 $("toggle-chat").addEventListener("click", toggleChat);
@@ -76,6 +77,7 @@ document.addEventListener("keydown", (e) => {
   if (e.ctrlKey && !e.shiftKey && key === "s") { e.preventDefault(); saveActive(); }
   else if (e.ctrlKey && !e.shiftKey && key === "w") { e.preventDefault(); if (activeId) closeTab(activeId); }
   else if (e.ctrlKey && !e.shiftKey && key === "p") { e.preventDefault(); quickOpen(); }
+  else if (e.ctrlKey && !e.shiftKey && e.key === ",") { e.preventDefault(); openSettings(); }
   else if (e.ctrlKey && e.shiftKey && key === "f") { e.preventDefault(); setView("search"); $("app").classList.remove("no-sidebar"); $("search-input").focus(); }
   else if (e.ctrlKey && e.shiftKey && key === "e") { e.preventDefault(); setView("explorer"); }
   else if (e.ctrlKey && e.shiftKey && key === "g") { e.preventDefault(); setView("changes"); }

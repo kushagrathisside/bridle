@@ -247,7 +247,7 @@ fn turn(
         end: match &end {
             TurnEnd::Done => "done".to_owned(),
             TurnEnd::Stopped => "stopped (time limit)".to_owned(),
-            TurnEnd::StepLimit => "step limit".to_owned(),
+            TurnEnd::StepLimit(_) => "step limit".to_owned(),
             TurnEnd::Failed(why) => format!("failed: {why}"),
         },
         seconds: started.elapsed().as_secs_f64(),

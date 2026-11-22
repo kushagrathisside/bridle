@@ -13,6 +13,7 @@ mod bridge;
 mod crew_cmd;
 mod ideas_cmd;
 mod lane_cmd;
+mod settings_cmd;
 mod view;
 
 use std::ffi::OsString;
@@ -185,6 +186,9 @@ fn run_window(raw: &[OsString]) -> ExitCode {
             bridge::pick_image,
             bridge::attach_image,
             bridge::attach_image_bytes,
+            settings_cmd::settings_manifest,
+            settings_cmd::settings_values,
+            settings_cmd::settings_set,
             bridge::get_network,
             bridge::set_network,
             bridge::test_network,

@@ -21,6 +21,11 @@
   "expect": "\\d+ in \\d+ file"
  },
  {
+  "name": "the Settings tab lists the schema's settings, refuses bad values, keeps comments and resets",
+  "eval": "(async () => { const sleep = ms => new Promise(r => setTimeout(r, ms)); const out = []; await openSettings(); await sleep(800); out.push('rows=' + (document.querySelectorAll('#settings-list .setting').length > 50)); const key = 'agent.max_steps_per_turn'; const bad = await invoke('settings_set', { scope: 'workspace', key, value: 0 }); out.push('refused=' + (!bad.ok && /at least 1/.test(bad.error))); const locked = await invoke('settings_set', { scope: 'workspace', key: 'network.proxy_mode', value: 'none' }); out.push('machine=' + (!locked.ok && /machine setting/.test(locked.error))); const good = await invoke('settings_set', { scope: 'workspace', key, value: 77 }); let v = await invoke('settings_values'); out.push('saved=' + (good.ok && v.workspace[key] === 77 && v.effective[key] === 77)); const text = await invoke('read_workspace_file', { path: 'bridle.toml' }); out.push('comments=' + (/^\\s*#/m.test(text.content || text.text || JSON.stringify(text)))); const reset = await invoke('settings_set', { scope: 'workspace', key, value: null }); v = await invoke('settings_values'); out.push('reset=' + (reset.ok && v.workspace[key] === undefined && v.effective[key] === 30)); await closeTab('settings:'); return out.join(' '); })()",
+  "expect": "rows=true refused=true machine=true saved=true comments=true reset=true"
+ },
+ {
   "name": "a diff against the last commit opens",
   "eval": "(async () => { const sleep = ms => new Promise(r => setTimeout(r, ms)); const waitTurn = async (max) => { const t0 = Date.now(); while (state.busy && Date.now() - t0 < max) await sleep(1000); return Math.round((Date.now() - t0) / 1000); }; const tail = () => [...document.querySelectorAll('#transcript > *')].map(n => n.className.replace('msg ','').slice(0,12) + ': ' + n.innerText.replace(/\\s+/g,' ').slice(0,200)).slice(-6); await loadChanges(); await openDiff('calc.py'); await sleep(1500); const d = editors.get('diff:calc.py'); return JSON.stringify({diff: !!d, differ: d && d.original.getValue() !== d.modified.getValue()}); })()",
   "expect": "\"diff\":true,\"differ\":true"

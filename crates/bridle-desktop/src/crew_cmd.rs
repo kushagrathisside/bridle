@@ -562,7 +562,7 @@ pub fn finish_member_turn(
     let outcome = match end {
         TurnEnd::Done => "done",
         TurnEnd::Stopped => "stopped",
-        TurnEnd::StepLimit => "step_limit",
+        TurnEnd::StepLimit(_) => "step_limit",
         TurnEnd::Failed(_) => "failed",
     };
     let finished = guard.finish(outcome);
@@ -651,9 +651,11 @@ fn settle_issue(bridge: &Bridge, active: &Active, end: &TurnEnd, answer: Option<
         TurnEnd::Done if review => (Status::InReview, None),
         TurnEnd::Done => (Status::Done, None),
         TurnEnd::Stopped => (Status::Ready, Some("Stopped by the user.".to_owned())),
-        TurnEnd::StepLimit => (
+        TurnEnd::StepLimit(steps) => (
             Status::Blocked,
-            Some("The turn used all its model calls. Continue it from the board.".to_owned()),
+            Some(format!(
+                "The turn used all {steps} of its model calls (agent.max_steps_per_turn). Continue it from the board."
+            )),
         ),
         TurnEnd::Failed(reason) => (Status::Blocked, Some(format!("The turn failed: {reason}"))),
     };

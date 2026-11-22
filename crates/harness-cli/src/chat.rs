@@ -32,8 +32,6 @@ use harness_core::journal::Record;
 use harness_core::team::{self, Role as TeamRole};
 use harness_runtime::state::StateDir;
 
-/// Model calls in one turn at most. A turn that needs more stops and says so.
-pub const MAX_STEPS: usize = 30;
 /// Characters of one tool result sent back to the model.
 const MAX_TOOL_CHARS: usize = 12_000;
 /// Characters of a tool call's arguments or result shown to the user.
@@ -119,8 +117,8 @@ pub enum TurnEnd {
     Done,
     /// The user stopped the turn.
     Stopped,
-    /// [`MAX_STEPS`] model calls were used.
-    StepLimit,
+    /// The turn used `agent.max_steps_per_turn` model calls (the number is carried).
+    StepLimit(usize),
     /// The model could not be reached or answered badly.
     Failed(String),
 }
@@ -256,7 +254,7 @@ impl Agent {
         match end {
             TurnEnd::Done => "done".to_owned(),
             TurnEnd::Stopped => "stopped".to_owned(),
-            TurnEnd::StepLimit => "step limit reached".to_owned(),
+            TurnEnd::StepLimit(_) => "step limit reached".to_owned(),
             TurnEnd::Failed(reason) => format!("failed: {reason}"),
         }
     }
@@ -285,6 +283,11 @@ impl Agent {
 
     /// Builds the agent for a loaded application. Refuses a configuration with errors, as the hook and
     /// `bridle mcp` do.
+    /// Model calls one turn may use: `agent.max_steps_per_turn`.
+    pub fn step_limit(&self) -> usize {
+        self.app.config.agent.max_steps_per_turn.max(1) as usize
+    }
+
     pub fn new(app: App) -> Result<Self, String> {
         Self::build(app, None, Vec::new())
     }
@@ -401,7 +404,8 @@ impl Agent {
         }
         self.messages
             .push(ChatMessage::user_with_images(user, images));
-        for _ in 0..MAX_STEPS {
+        let limit = self.step_limit();
+        for _ in 0..limit {
             if cancel.load(Ordering::Relaxed) {
                 return TurnEnd::Stopped;
             }
@@ -526,7 +530,7 @@ impl Agent {
                 self.push_result(call, &text);
             }
         }
-        TurnEnd::StepLimit
+        TurnEnd::StepLimit(limit)
     }
 
     fn push_result(&mut self, call: &ToolCall, text: &str) {
@@ -2223,10 +2227,15 @@ hard_limit = 8000
     }
 
     #[test]
-    fn a_turn_that_never_ends_stops_at_the_step_limit() {
-        let fx = Fixture::new("");
+    fn the_step_limit_comes_from_the_configuration() {
+        let fx = Fixture::new(
+            "[agent]
+max_steps_per_turn = 4
+",
+        );
         let mut agent = fx.agent();
-        let script = (0..MAX_STEPS + 2)
+        assert_eq!(agent.step_limit(), 4);
+        let script = (0..8)
             .map(|n| {
                 tool_call(
                     &format!("c{n}"),
@@ -2236,8 +2245,26 @@ hard_limit = 8000
             })
             .collect();
         let (end, _, provider) = turn(&fx, &mut agent, script, "loop");
-        assert_eq!(end, TurnEnd::StepLimit);
-        assert_eq!(provider.requests().len(), MAX_STEPS);
+        assert_eq!(end, TurnEnd::StepLimit(4));
+        assert_eq!(provider.requests().len(), 4);
+    }
+
+    #[test]
+    fn a_turn_that_never_ends_stops_at_the_step_limit() {
+        let fx = Fixture::new("");
+        let mut agent = fx.agent();
+        let script = (0..agent.step_limit() + 2)
+            .map(|n| {
+                tool_call(
+                    &format!("c{n}"),
+                    "list_files",
+                    json!({"depth": 1 + (n % 3)}),
+                )
+            })
+            .collect();
+        let (end, _, provider) = turn(&fx, &mut agent, script, "loop");
+        assert_eq!(end, TurnEnd::StepLimit(30));
+        assert_eq!(provider.requests().len(), 30);
     }
 
     #[test]

@@ -11,6 +11,7 @@
 
 mod load;
 mod schema;
+pub mod settings;
 mod trust;
 mod validate;
 

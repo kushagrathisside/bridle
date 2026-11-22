@@ -12,6 +12,7 @@ profile = "local-with-jev"
 [agent]
 default_model = "main"
 max_iterations = 8              # DEF
+max_steps_per_turn = 30        # model calls in one chat turn (window, terminal chat, team, board) before it stops; a new message continues
 max_implementation_retries = 3  # DEF
 max_same_failure = 2            # DEF
 max_deep_escalations = 1        # DEF

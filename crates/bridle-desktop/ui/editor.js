@@ -98,7 +98,7 @@ function renderTabs() {
   const bar = $("tabs");
   bar.replaceChildren(...[...editors.values()].map((entry) => {
     const tab = el("div", { class: `tab${entry.id === activeId ? " active" : ""}`, title: entry.path },
-      entry.kind === "diff" ? el("span", { class: "kind", text: "DIFF" }) : fileIcon(entry.path),
+      entry.kind === "diff" ? el("span", { class: "kind", text: "DIFF" }) : entry.kind === "settings" ? el("span", { class: "kind", text: "⚙" }) : fileIcon(entry.path),
       el("span", { class: entry.deleted ? "deleted" : "", text: baseName(entry.path) }),
       entry.conflict ? el("span", { class: "conflict", title: "Changed on disk while you were editing", text: "!" }) : null,
       entry.dirty ? el("span", { class: "dirty", title: "Unsaved changes", text: "●" }) : null,
@@ -114,7 +114,7 @@ function renderTabs() {
 }
 
 function showHost(name) {
-  for (const id of ["welcome", "monaco", "diff-monaco", "image-view"]) $(id).hidden = id !== name;
+  for (const id of ["welcome", "monaco", "diff-monaco", "image-view", "settings-view"]) $(id).hidden = id !== name;
 }
 
 function showWelcomeMessage(message) {
@@ -125,7 +125,7 @@ function showWelcomeMessage(message) {
 
 function renderBreadcrumbs(entry) {
   const bar = $("breadcrumbs");
-  if (!entry || entry.kind === "image") {
+  if (!entry || entry.kind === "image" || entry.kind === "settings") {
     bar.hidden = true;
     return;
   }
@@ -174,6 +174,12 @@ async function activate(id) {
   if (entry.kind === "image") {
     $("image-view").replaceChildren(el("img", { src: entry.preview, alt: entry.path }));
     return showHost("image-view");
+  }
+  if (entry.kind === "settings") {
+    updateEditorStatus();
+    showHost("settings-view");
+    renderSettingsList();
+    return;
   }
   await ensureEditors();
   if (activeId !== id) return;

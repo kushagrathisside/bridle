@@ -14,6 +14,14 @@ the settings each task needs. This page lists all of them.
 `bridle init` also writes `opencode.json`, `.opencode/plugins/bridle.ts` and a `.gitignore`. Do not edit the generated
 files. `bridle init --force` replaces them. `bridle config paths` lists the files Bridle loaded.
 
+## Changing settings in the window
+
+The window's Settings tab (the gear in the activity bar, or Ctrl+,) lists every plain setting with its help text, built-in default and
+allowed range. **User** saves to the machine file, **Workspace** to this project's `bridle.toml`. Search with words or `@modified`. A
+value outside its range is refused with the rule's reason and nothing is written. The reset arrow removes the key, so the default applies
+again. Your comments and the order of the file are kept. Model slots, runtimes, adapters and verification steps are tables: edit them in
+the file.
+
 ## Precedence
 
 From lowest to highest:
@@ -152,7 +160,7 @@ The shipped profiles satisfy these rules, so `bridle init` output loads as a pro
 | V26 | the repeated-command threshold is below 2, or its window is shorter than the count or longer than the 16-call ring |
 | V27 | the repeated-edit threshold is below 2 (one edit is progress, not a loop) |
 | V28 | the refusal cap is below 1 |
-| V29 | `[agent].max_iterations` below 2, or a retry bound below 1: the first step would already block or escalate |
+| V29 | `[agent].max_iterations` below 2, `max_steps_per_turn` outside 1 to 1000, or a retry bound below 1: the first step would already block or escalate |
 | V41 | `memory.file` is not a relative path inside the repository, or `memory.max_bytes` is outside 256 to 16384 |
 | V42 | `external.laya` is enabled without an `endpoint`, or the endpoint is not `http://` to a loopback host |
 | V43 | `external.laya.timeout_ms` is outside 100 to 60000 |
@@ -164,7 +172,7 @@ The shipped profiles satisfy these rules, so `bridle init` output loads as a pro
 
 ## Workflow and loop limits
 
-The loop bounds are in `[agent]`: `max_iterations` (8), `max_implementation_retries` (3),
+The loop bounds are in `[agent]`: `max_iterations` (8), `max_steps_per_turn` (30), `max_implementation_retries` (3),
 `max_same_failure` (2: the third verification with the same failure is a loop, and the rule fires there). The loop thresholds are
 in `[workflow]`:
 
@@ -209,6 +217,7 @@ The `[context]` section sets the budget for tool results in each model request. 
 |---|---|---|
 | `default_model` | `main` | The model slot that runs the agent's own turns. It must be a key of `[models]` (V2). |
 | `max_iterations` | 8 | The task is blocked when its iteration count reaches this value. At least 2 (V29). |
+| `max_steps_per_turn` | 30 | Model calls in one chat turn (the window, the terminal chat, a team member's turn, a board issue) before the turn stops and says so; sending another message continues it. Between 1 and 1000 (V29). Was a fixed constant before. |
 | `max_implementation_retries` | 3 | The implementation-retries rule fires when the iteration count goes above this value. At least 1 (V29). |
 | `max_same_failure` | 2 | The same-failure rule fires on the identical failure after this many in a row. With the default, the third identical failure fires it. |
 | `max_deep_escalations` | 1 | How many escalations to the `deep` slot a task may use. |

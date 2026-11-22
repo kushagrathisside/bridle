@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::chat::{Agent, Event, MAX_STEPS, TurnEnd};
+use crate::chat::{Agent, Event, TurnEnd};
 use crate::tui::data::Sev;
 
 /// Items kept on screen; older ones are dropped (the model's own history is separate).
@@ -191,10 +191,10 @@ impl ChatState {
                     TurnEnd::Stopped => {
                         self.push(Item::Notice(Sev::Warn, "stopped".to_owned()));
                     }
-                    TurnEnd::StepLimit => self.push(Item::Notice(
+                    TurnEnd::StepLimit(steps) => self.push(Item::Notice(
                         Sev::Warn,
                         format!(
-                            "stopped after {MAX_STEPS} steps without a final answer; send a message to continue"
+                            "stopped after {steps} steps without a final answer (agent.max_steps_per_turn in bridle.toml); send a message to continue"
                         ),
                     )),
                     TurnEnd::Failed(text) => self.push(Item::Notice(Sev::Fail, text)),

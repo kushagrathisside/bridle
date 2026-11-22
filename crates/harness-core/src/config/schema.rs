@@ -89,6 +89,7 @@ impl Default for Config {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct WebSection {
+    /// Offer the web research tools to the model. Off by default; each call still passes `security.network`.
     pub enabled: bool,
     /// The provider `web_search` uses first. Empty: the first enabled provider in name order.
     pub provider: String,
@@ -128,6 +129,7 @@ impl Default for WebSection {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct BrowserSection {
+    /// Offer the managed browser tools (ADR-0020). Off by default.
     pub enabled: bool,
     /// The browser engine. Only Chromium is supported.
     pub engine: BrowserEngine,
@@ -212,6 +214,7 @@ pub enum WebProviderKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DesktopSection {
+    /// Allow window screenshots of a program the harness starts (ADR-0021). Off by default.
     pub screenshots_enabled: bool,
     /// The longest a call may wait for the program's window to appear, in milliseconds.
     pub max_wait_ms: u64,
@@ -233,6 +236,7 @@ impl Default for DesktopSection {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct FleetSection {
+    /// Turn the small-model fleet and its scheduler on. Off by default.
     pub enabled: bool,
     /// The slots that run together while the fleet is up, in the order they are started. Each must be defined under `[models]` with a
     /// `launch` section.
@@ -293,12 +297,18 @@ pub enum ProxyMode {
 pub struct AgentSection {
     /// Model slot used when nothing else applies.
     pub default_model: String,
+    /// Iterations of a task before it is blocked (OpenCode host and `bridle task`; V29: at least 2). Not the chat turn limit: see `max_steps_per_turn`.
     pub max_iterations: u32,
+    /// Model calls in one chat turn (the window, the terminal chat, the team and the board) before the turn stops and
+    /// says so. A message sent afterwards continues the work (V29: 1 to 1000).
+    pub max_steps_per_turn: u32,
     /// Normal implementation retries before the decision engine is consulted.
     pub max_implementation_retries: u32,
     /// Same-failure retries before a STALLED classification.
     pub max_same_failure: u32,
+    /// Times one task may escalate to the deep slot, when `routing.enable_deep_escalation` is on.
     pub max_deep_escalations: u32,
+    /// Declared, but no rule reads it yet.
     pub max_command_retries: u32,
 }
 
@@ -307,6 +317,7 @@ impl Default for AgentSection {
         Self {
             default_model: "main".to_owned(),
             max_iterations: 8,
+            max_steps_per_turn: 30,
             max_implementation_retries: 3,
             max_same_failure: 2,
             max_deep_escalations: 1,
@@ -346,6 +357,7 @@ impl Default for SubagentsSection {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct PluginsSection {
+    /// Plugin manifest files to load (ADR-0013). Machine config only.
     pub manifests: Vec<String>,
 }
 
@@ -731,7 +743,9 @@ fn default_retries() -> u32 {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct RoutingSection {
+    /// Let the micro slot take part in decisions, with `decisions.provider = "local_lfm"`. Off by default.
     pub enable_micro_decisions: bool,
+    /// Allow a decision to escalate to the deep slot, up to `agent.max_deep_escalations`. Off by default.
     pub enable_deep_escalation: bool,
     /// Minimum confidence an ESCALATE decision needs before the deep slot is asked. The rules give a repeated failure
     /// 0.75 at the third identical failure (the default threshold), 0.875 at the fourth and 0.9375 at the fifth. A
@@ -765,6 +779,7 @@ pub enum DecisionProviderKind {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DecisionsSection {
+    /// The decision backend: `rules`, `local_lfm` or `jev`.
     pub provider: DecisionProviderKind,
     /// Used whenever the primary backend fails or returns an invalid decision.
     pub fallback: DecisionProviderKind,
@@ -809,8 +824,11 @@ impl ProfileKind {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ContextSection {
+    /// Token budget the OpenCode host trims tool output toward. The window's chat uses each slot's own `context` instead.
     pub target_tokens: u32,
+    /// Token count above which the OpenCode host drops the oldest reads. Not used by the window's chat.
     pub hard_limit: u32,
+    /// Let the OpenCode host shorten old tool output to stay inside the budget.
     pub compact_tool_outputs: bool,
 }
 
@@ -846,6 +864,7 @@ pub struct SecuritySection {
     pub privileged_commands: Verdict,
     /// Verdict for EXECUTE_RISKY-class operations (unrecognised programs, arbitrary scripts).
     pub risky_commands: Verdict,
+    /// Remove secrets (tokens, keys, `.env` values) from text before the model, the log or the screen sees it.
     pub secrets_redaction: bool,
     /// Extra directories (besides the workspace) that file tools may touch.
     pub allowed_paths: Vec<PathBuf>,
@@ -917,10 +936,13 @@ impl StepKind {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct VerificationSection {
+    /// Allow verification steps to run.
     pub enabled: bool,
     /// DONE requires a passing verification run.
     pub required_for_done: bool,
+    /// Time one verification step may run when it sets no `timeout_ms` of its own.
     pub default_timeout_ms: u64,
+    /// The verification steps, each a command with a kind. Edit them in the file (`[[verification.steps]]`).
     pub steps: Vec<VerificationStep>,
 }
 
@@ -946,7 +968,9 @@ pub enum TelemetryDestination {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct TelemetrySection {
+    /// Write the local event log (every tool call and verdict) under the state folder.
     pub enabled: bool,
+    /// Where events go. Only `local` exists.
     pub destination: TelemetryDestination,
     /// Maximum bytes of any single string field kept in an event (tool output previews etc.).
     pub max_field_bytes: usize,
@@ -1007,6 +1031,7 @@ pub struct ExternalSection {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LayaSection {
+    /// Use the Laya decision server on this machine. Off by default.
     pub enabled: bool,
     /// `http://` to a loopback host, for example `http://127.0.0.1:8000` (V42).
     pub endpoint: Option<String>,
@@ -1028,6 +1053,7 @@ impl Default for LayaSection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct JevSection {
+    /// Use the hosted decision engine. Off by default; never required.
     pub enabled: bool,
     /// `http://` only for a loopback host; a remote endpoint must use `https://` (V31 to V33).
     pub endpoint: Option<String>,
@@ -1052,5 +1078,6 @@ impl Default for JevSection {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct CloudModelsSection {
+    /// Permit model endpoints that are not on this machine. Off by default.
     pub enabled: bool,
 }

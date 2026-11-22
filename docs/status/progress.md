@@ -28,6 +28,24 @@ other pages must agree with it.
 
 M2 plan and result: [milestones/m2-tools.md](milestones/m2-tools.md).
 
+## 2026-11-22: the turn limit is a setting, and the window has a Settings tab
+
+- **Found:** the 30-call limit of a chat turn was a constant (`MAX_STEPS` in `chat.rs`), in no file. `agent.max_iterations` belongs to the
+  OpenCode task loop and the `context.*` keys to the OpenCode host's tool-output trimming; neither touches the window's chat.
+- **Changed:** `[agent] max_steps_per_turn` (default 30, 1 to 1000, rule V29) is read by the window chat, the terminal chat, team members and
+  board issues. `TurnEnd::StepLimit` carries the number, so the messages say it and name the key.
+- **Settings tab** (gear in the activity bar, Ctrl+,): the list is read from `schema.rs` itself (`harness-core/src/config/settings.rs`):
+  help text from each field's `///` comment, choices from the enums, defaults from `Config::default()`. A field without a comment fails a
+  test, so the editor cannot fall behind the schema. 19 fields that had none now have one. A change is written with `toml_edit` (comments
+  and order kept), the configuration is loaded again, and the file is put back if that fails or names the key as an error. Machine-only keys
+  are locked under Workspace (the same rule as `trust.rs`). Model slots, runtimes, adapters and verification steps stay in the file.
+- **Verified:** `scripts\dev.cmd gate` passes (11 new settings tests, a turn-limit test). In the real window: 60 saved with comments kept, 0 and
+  5000 refused with the reason and the file unchanged, reset removed the key, a machine-only key was locked under Workspace. The new e2e
+  step passes. Two older e2e steps failed in this session and were not investigated (see the report): the first-run step saw an existing
+  `bridle.toml`, and the run found two model servers and left one.
+- **Not done:** command palette, keybindings, themes, the chat rebuild and the workbench gaps (plan in `.claude/plans`), a comparison of the
+  Settings tab against VS Code at 1024 and 768 px, a keyboard-only pass.
+
 ## 2026-11-20: release 0.1.0 (tag `v0.1.0`)
 
 Branch `main`, tagged at `1a30be7`. Windows only. The Rust sources are those of the 2026-11-05 entry below, plus two changes that only matter on Linux.

@@ -336,7 +336,7 @@ function renderOpenEditors() {
     const name = baseName(entry.path);
     const dir = entry.path.includes("/") ? entry.path.slice(0, entry.path.lastIndexOf("/")) : "";
     const row = el("div", { class: `node oe${entry.id === activeId ? " selected" : ""}`, title: entry.path },
-      entry.kind === "diff" ? el("span", { class: "kind", text: "DIFF" }) : fileIcon(entry.path),
+      entry.kind === "diff" ? el("span", { class: "kind", text: "DIFF" }) : entry.kind === "settings" ? el("span", { class: "kind", text: "⚙" }) : fileIcon(entry.path),
       el("span", { class: "label" }, name, dir ? el("span", { class: "dir", text: ` ${dir}` }) : null),
       entry.dirty ? el("span", { class: "dirty", title: "Unsaved changes", text: "●" }) : null,
       el("button", { class: "oe-x", title: "Close", "aria-label": "Close", text: "✕" }));

@@ -184,11 +184,10 @@ pub fn turn_end(end: &TurnEnd) -> Value {
     let (kind, message) = match end {
         TurnEnd::Done => ("done", String::new()),
         TurnEnd::Stopped => ("stopped", String::new()),
-        TurnEnd::StepLimit => (
+        TurnEnd::StepLimit(steps) => (
             "step_limit",
             format!(
-                "The turn used its {} model calls and stopped. Send a message to continue.",
-                harness_cli::chat::MAX_STEPS
+                "The turn used its {steps} model calls and stopped. Send a message to continue, or raise agent.max_steps_per_turn in bridle.toml."
             ),
         ),
         TurnEnd::Failed(reason) => ("failed", reason.clone()),
