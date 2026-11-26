@@ -24,7 +24,7 @@ bridle --version
 ```
 
 ```text
-bridle 0.1.0
+bridle 0.3.0
 ```
 
 To build from source instead, see [install Bridle](../guide/installation.md#build-from-source).
@@ -109,7 +109,7 @@ from `config validate`, which is expected until you add a test command (see [run
 
 ## What success looks like
 
-- `bridle --version` prints `bridle 0.1.0`.
+- `bridle --version` prints `bridle 0.3.0`.
 - The policy check in step 2 returns `"action":"block"` for the `.env` file.
 - `bridle doctor` exits with code 0 and lists no errors.
 - `bridle health main` ends with `result: pass` once the model is running.

@@ -1,7 +1,7 @@
 BRIDLE - INSTRUCTION MANUAL
 ===========================
 
-For Bridle 0.1.0 on Windows 11 (x64). This is a plain-text manual: every step you need, in the order you will need it.
+For Bridle 0.3.0 on Windows 11 (x64). This is a plain-text manual: every step you need, in the order you will need it.
 The longer guides are in the project's docs\ folder; names like "guide/web-browser.md" point at them.
 
 Contents
@@ -55,14 +55,14 @@ as a command line tool.
 
 3. INSTALL
 ----------
-From the zip (bridle-0.1.0-windows-x64.zip):
+From the zip (bridle-0.3.0-windows-x64.zip):
 
   1. Unpack the folder anywhere.
   2. Check the download:   certutil -hashfile bridle.exe SHA256     and compare with SHA256SUMS.txt.
   3. Double-click install.cmd (or run it in a terminal). It copies bridle.exe to %LOCALAPPDATA%\Bridle\bin and adds that folder
      to your USER path. It changes nothing else on the machine.
   4. Open a NEW terminal (so the new path is read).
-  5. Check:   bridle --version      it prints "bridle 0.1.0".
+  5. Check:   bridle --version      it prints "bridle 0.3.0".
 
 Windows SmartScreen may warn the first time: the program is not code-signed.
 

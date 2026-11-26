@@ -10,7 +10,7 @@ command takes are listed first. Run `bridle <command> --help` for the same text 
 | `--config <file>` | A configuration file with the highest precedence. The environment variable `BRIDLE_CONFIG` does the same. |
 | `--workspace <dir>` | The repository root. Defaults to the current folder. |
 | `-h`, `--help` | Show the help. |
-| `-V`, `--version` | Show the version. `bridle --version` prints `bridle 0.1.0` in this release. |
+| `-V`, `--version` | Show the version. `bridle --version` prints `bridle 0.3.0` in this release. |
 
 ## Setup
 

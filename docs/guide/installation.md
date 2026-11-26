@@ -37,7 +37,7 @@ Bridle is verified on native Windows only. The steps below were run on Windows 1
    ```
 
    ```text
-   bridle 0.1.0
+   bridle 0.3.0
    ```
 
 The program is not code-signed, so Windows SmartScreen may warn the first time. To uninstall, delete `%LOCALAPPDATA%\Bridle\bin` and remove

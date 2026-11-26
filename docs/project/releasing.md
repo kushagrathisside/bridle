@@ -44,8 +44,8 @@ Bridle follows `MAJOR.MINOR.PATCH`. While it is `0.x`, a new feature raises the 
 
 The version lives in two places, and they must match:
 
-1. `Cargo.toml`, under `[workspace.package]`: `version = "0.1.0"`. Every crate and `make_bundle.py` read it.
-2. `crates/bridle-desktop/tauri.conf.json`: `"version": "0.1.0"`. The window reads it.
+1. `Cargo.toml`, under `[workspace.package]`: `version = "0.3.0"`. Every crate and `make_bundle.py` read it.
+2. `crates/bridle-desktop/tauri.conf.json`: `"version": "0.3.0"`. The window reads it.
 
 Change both, then rebuild once so `Cargo.lock` updates, and check that nothing else changed:
 

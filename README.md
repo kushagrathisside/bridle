@@ -17,7 +17,7 @@ on the right edge of the window: tag one with `@`, and the work goes onto a **bo
 Bridle is built for one developer's daily work first. It needs no cloud service: the model runs on the developer's own
 machine through [llama.cpp](https://github.com/ggml-org/llama.cpp), and the only network use is the one you turn on.
 
-**Status:** version 0.1.0. Native Windows only, verified on one machine (Windows 11, RTX 4060 Laptop with 8 GB of VRAM, 16 GB
+**Status:** version 0.3.0. Native Windows only, verified on one machine (Windows 11, RTX 4060 Laptop with 8 GB of VRAM, 16 GB
 of RAM). Web research, a managed browser, window screenshots and a small-model fleet with a scheduler exist, off by default (the web
 providers are tested against fake servers only; the fleet's answers are not graded). See [Status and known limits](#status-and-known-limits).
 
